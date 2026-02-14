@@ -3,6 +3,10 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import TextInput from "@/components/TextInput";
+import Button from "@/components/Button";
+import Card from "@/components/Card";
+import Snowfall from "react-snowfall";
 
 export default function Login() {
   const router = useRouter();
@@ -37,7 +41,7 @@ export default function Login() {
       // Store token in cookie
       document.cookie = `token=${data.token}; path=/; max-age=${60 * 60 * 24 * 7}`; // 7 days
 
-      router.push(redirect);
+      router.replace(redirect);
     } catch {
       setError("Network error");
       setLoading(false);
@@ -45,68 +49,41 @@ export default function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
-      <div className="w-full max-w-sm rounded-lg bg-white p-8 shadow dark:bg-zinc-900">
-        <h1 className="mb-6 text-2xl font-semibold text-zinc-900 dark:text-white">
-          Log In
-        </h1>
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-black">
+      <Snowfall color="white" snowflakeCount={150} />
+      <div className="absolute inset-0 bg-gradient-to-br from-zinc-900/50 via-black to-zinc-900/50" />
+      <div className="absolute -left-40 -top-40 h-80 w-80 animate-pulse rounded-full bg-white/5 blur-[100px]" />
+      <div className="absolute -bottom-40 -right-40 h-80 w-80 animate-pulse rounded-full bg-white/10 blur-[100px]" style={{ animationDelay: "1s" }} />
+      <div className="absolute left-1/2 top-1/2 h-60 w-60 -translate-x-1/2 -translate-y-1/2 animate-pulse rounded-full bg-zinc-500/10 blur-[80px]" style={{ animationDelay: "2s" }} />
 
-        {error && (
-          <div className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-400">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label
-              htmlFor="email"
-              className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
-            >
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full rounded border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
-            />
+      <div className="relative z-10 w-full max-w-md animate-[fadeIn_0.5s_ease-out] px-4">
+        <Card>
+          <div className="mb-6 text-center">
+            <h1 className="bg-gradient-to-r from-white to-zinc-500 bg-clip-text text-3xl font-bold text-transparent">Log In</h1>
+            <p className="mt-2 text-sm text-zinc-500">Welcome back — please sign in to continue</p>
           </div>
 
-          <div>
-            <label
-              htmlFor="password"
-              className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
-            >
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full rounded border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
-            />
-          </div>
+          {error && (
+            <div className="mb-6 animate-[shake_0.5s_ease-in-out] rounded-lg border border-zinc-700 bg-zinc-900 p-4 text-center text-sm text-zinc-300">
+              <span className="mr-2">⚠️</span>
+              {error}
+            </div>
+          )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded bg-blue-600 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {loading ? "Logging in..." : "Log In"}
-          </button>
-        </form>
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <TextInput id="email" label="Email address" value={email} onChange={setEmail} type="email" autoComplete="off" />
+            <TextInput id="password" label="Password" value={password} onChange={setPassword} type="password" autoComplete="current-password" />
 
-        <p className="mt-4 text-center text-sm text-zinc-600 dark:text-zinc-400">
-          Don&apos;t have an account?{" "}
-          <Link href="/signup" className="text-blue-600 hover:underline">
-            Sign up
-          </Link>
-        </p>
+            <Button loading={loading} type="submit">Log In</Button>
+          </form>
+
+          <p className="mt-8 text-center text-sm text-zinc-500">
+            Don&apos;t have an account?{" "}
+            <Link href="/signup" className="font-semibold text-white transition-all duration-300 hover:text-zinc-300">
+              Sign up
+            </Link>
+          </p>
+        </Card>
       </div>
     </div>
   );
