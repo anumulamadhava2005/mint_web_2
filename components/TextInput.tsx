@@ -29,7 +29,6 @@ export default function TextInput({
 }: Props) {
   const [focused, setFocused] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [revealKey, setRevealKey] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -46,31 +45,12 @@ export default function TextInput({
 
   return (
     <div className={`group relative ${className}`}>
-      <style>{`
-        @keyframes letterReveal {
-          0% { opacity: 0; transform: translateY(8px) scale(.98) blur(2px) }
-          60% { opacity: 1; transform: translateY(-2px) scale(1.01) blur(0) }
-          100% { opacity: 1; transform: translateY(0) scale(1) blur(0) }
-        }
-        .reveal-letter {
-          display: inline-block;
-          opacity: 0;
-          transform: translateY(8px) scale(.98);
-          filter: blur(2px);
-          animation-name: letterReveal;
-          animation-duration: 420ms;
-          animation-fill-mode: forwards;
-          animation-timing-function: cubic-bezier(.2,.9,.2,1);
-        }
-        .masked-dots { letter-spacing: 0.2em; opacity: .9 }
-      `}</style>
-
       <div className="relative">
         <input
           id={id}
           name={id}
           ref={inputRef}
-          type={type === "password" && showPassword ? "text" : type}
+          type={showPassword && type === "password" ? "text" : type}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onFocus={() => setFocused(true)}
@@ -79,34 +59,10 @@ export default function TextInput({
           minLength={minLength}
           placeholder={placeholder}
           autoComplete={autoComplete ?? "off"}
-          style={type === "password" ? { color: showPassword ? undefined : "transparent", caretColor: "white" } : undefined}
           className={`peer w-full rounded-xl border bg-white/5 px-4 py-4 text-white placeholder-transparent transition-all duration-300 focus:outline-none ${
             focused ? "border-white shadow-lg shadow-white/10" : "border-white/10 hover:border-white/20"
           }`}
         />
-
-        {type === "password" && (
-          <div className="absolute inset-y-0 left-4 right-12 flex items-center pointer-events-none">
-            {/* overlay text: either masked dots or animated letters */}
-            {showPassword ? (
-              <div key={revealKey} className="select-none text-white">
-                {Array.from(value).map((ch, i) => (
-                  <span
-                    key={i}
-                    className="reveal-letter"
-                    style={{ animationDelay: `${i * 60}ms` }}
-                  >
-                    {ch}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <div className="masked-dots text-white select-none">
-                {Array.from({ length: value.length }).map((_, i) => (<span key={i}>•</span>))}
-              </div>
-            )}
-          </div>
-        )}
 
         <label
           htmlFor={id}
@@ -126,17 +82,12 @@ export default function TextInput({
           aria-pressed={showPassword}
           onClick={(e) => {
             e.preventDefault();
-            // toggle and bump revealKey to restart animation on show
-            setShowPassword((s) => {
-              const next = !s;
-              if (next) setRevealKey((k) => k + 1);
-              return next;
-            });
+            setShowPassword((s) => !s);
             setTimeout(() => inputRef.current?.focus(), 0);
           }}
           className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-zinc-300 hover:text-white"
         >
-          {/* eye icon */}
+          {/* eye icon (no reveal animation) */}
           {showPassword ? (
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="h-5 w-5">
               <path strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />

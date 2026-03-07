@@ -1,0 +1,16 @@
+                           Table "public.file_changes"
+   Column   |           Type           | Collation | Nullable |      Default      
+------------+--------------------------+-----------+----------+-------------------
+ id         | uuid                     |           | not null | gen_random_uuid()
+ file_id    | uuid                     |           | not null | 
+ created_at | timestamp with time zone |           | not null | now()
+ session_id | uuid                     |           |          | 
+ revn       | bigint                   |           | not null | 0
+ changes    | jsonb                    |           | not null | '[]'::jsonb
+Indexes:
+    "file_changes_pkey" PRIMARY KEY, btree (id)
+    "idx_file_changes_file" btree (file_id)
+    "idx_file_changes_revn" btree (file_id, revn)
+Foreign-key constraints:
+    "file_changes_file_id_fkey" FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
+

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import TextInput from "@/components/TextInput";
@@ -8,7 +8,7 @@ import Button from "@/components/Button";
 import Card from "@/components/Card";
 import Snowfall from "react-snowfall";
 
-export default function Login() {
+function LoginInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirect = searchParams.get("redirect") || "/projects";
@@ -86,5 +86,13 @@ export default function Login() {
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function Login() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-black"><div className="h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent" /></div>}>
+      <LoginInner />
+    </Suspense>
   );
 }
