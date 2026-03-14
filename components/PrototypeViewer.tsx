@@ -325,6 +325,30 @@ export default function PrototypeViewer({ onClose }: PrototypeViewerProps) {
     height: currentFrame.height,
   };
 
+  const scrollContentSize = useMemo(() => {
+    const childShapes = Object.values(frameChildObjects).filter(
+      (s) => s.id !== currentFrame.id && !s.hidden,
+    );
+
+    if (childShapes.length === 0) {
+      return { width: currentFrame.width, height: currentFrame.height };
+    }
+
+    const maxX = Math.max(
+      currentFrame.x + currentFrame.width,
+      ...childShapes.map((s) => s.x + s.width),
+    );
+    const maxY = Math.max(
+      currentFrame.y + currentFrame.height,
+      ...childShapes.map((s) => s.y + s.height),
+    );
+
+    return {
+      width: Math.max(currentFrame.width, maxX - currentFrame.x),
+      height: Math.max(currentFrame.height, maxY - currentFrame.y),
+    };
+  }, [frameChildObjects, currentFrame]);
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black">
       {/* ── Toolbar ── */}
@@ -425,9 +449,9 @@ export default function PrototypeViewer({ onClose }: PrototypeViewerProps) {
               }}
             >
               <svg
-                viewBox={formatViewbox(vbox)}
-                width={currentFrame.width}
-                height={currentFrame.height}
+                viewBox={`${currentFrame.x} ${currentFrame.y} ${scrollContentSize.width} ${scrollContentSize.height}`}
+                width={scrollContentSize.width}
+                height={scrollContentSize.height}
                 style={{ display: "block" }}
               >
                 <InteractiveFrame
@@ -444,6 +468,31 @@ export default function PrototypeViewer({ onClose }: PrototypeViewerProps) {
                   hotspots={hotspots}
                 />
               </svg>
+
+              {fixedElements.size > 0 && (
+                <svg
+                  viewBox={formatViewbox(vbox)}
+                  width={currentFrame.width}
+                  height={currentFrame.height}
+                  className="pointer-events-auto absolute left-0 top-0"
+                  style={{ display: "block" }}
+                >
+                  <InteractiveFrame
+                    frame={currentFrame}
+                    objects={frameChildObjects}
+                    fixedElements={fixedElements}
+                    isFixed={true}
+                    renderFrameBackground={false}
+                    onClick={handleClick}
+                    onMouseDown={handleMouseDown}
+                    onMouseUp={handleMouseUp}
+                    onMouseOver={handleMouseOver}
+                    onMouseOut={handleMouseOut}
+                    showHotspots={showHotspots}
+                    hotspots={hotspots}
+                  />
+                </svg>
+              )}
             </div>
           ) : (
             <svg
@@ -549,6 +598,7 @@ const InteractiveFrame = memo(function InteractiveFrame({
   objects,
   fixedElements,
   isFixed,
+  renderFrameBackground = true,
   onClick,
   onMouseDown,
   onMouseUp,
@@ -561,6 +611,7 @@ const InteractiveFrame = memo(function InteractiveFrame({
   objects: Record<UUID, PenpotShape>;
   fixedElements: Set<UUID>;
   isFixed: boolean;
+  renderFrameBackground?: boolean;
   onClick: (e: React.MouseEvent) => void;
   onMouseDown: (e: React.MouseEvent) => void;
   onMouseUp: (e: React.MouseEvent) => void;
@@ -581,15 +632,17 @@ const InteractiveFrame = memo(function InteractiveFrame({
       style={{ cursor: "default" }}
     >
       {/* Frame background */}
-      <rect
-        x={frame.x}
-        y={frame.y}
-        width={frame.width}
-        height={frame.height}
-        fill={frame.fills?.[0]?.fillColor || "#FFFFFF"}
-        rx={frame.rx || 0}
-        ry={frame.ry || 0}
-      />
+      {renderFrameBackground && (
+        <rect
+          x={frame.x}
+          y={frame.y}
+          width={frame.width}
+          height={frame.height}
+          fill={frame.fills?.[0]?.fillColor || "#FFFFFF"}
+          rx={frame.rx || 0}
+          ry={frame.ry || 0}
+        />
+      )}
 
       {/* Children */}
       {frame.shapes?.map((childId) => {

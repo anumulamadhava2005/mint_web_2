@@ -1,0 +1,583 @@
+{
+  "version": 2,
+  "name": "Todo App Example",
+  "exportedAt": "2024-01-15T10:30:00Z",
+  "payload": {
+    "roots": [
+      {
+        "id": "frame_main",
+        "name": "TodoApp",
+        "type": "FRAME",
+        "x": 0,
+        "y": 0,
+        "width": 375,
+        "height": 812,
+        "fills": [
+          {
+            "type": "SOLID",
+            "color": "#1a1a2e",
+            "visible": true
+          }
+        ],
+        "children": [
+          {
+            "id": "header",
+            "name": "Header",
+            "type": "FRAME",
+            "x": 0,
+            "y": 0,
+            "width": 375,
+            "height": 88,
+            "fills": [
+              {
+                "type": "GRADIENT_LINEAR",
+                "gradientAngle": 90,
+                "gradientStops": [
+                  { "position": 0, "color": "#667eea" },
+                  { "position": 1, "color": "#764ba2" }
+                ],
+                "visible": true
+              }
+            ],
+            "children": [
+              {
+                "id": "title",
+                "name": "Title",
+                "type": "TEXT",
+                "x": 24,
+                "y": 50,
+                "width": 200,
+                "height": 28,
+                "text": {
+                  "characters": "My Tasks",
+                  "fontFamily": "Inter",
+                  "fontSize": 24,
+                  "fontWeight": 700,
+                  "color": "#ffffff"
+                }
+              },
+              {
+                "id": "add_button",
+                "name": "AddButton",
+                "type": "FRAME",
+                "x": 319,
+                "y": 44,
+                "width": 40,
+                "height": 40,
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": "#ffffff",
+                    "opacity": 0.2,
+                    "visible": true
+                  }
+                ],
+                "corners": {
+                  "uniform": 20
+                },
+                "children": [
+                  {
+                    "id": "add_icon",
+                    "name": "PlusIcon",
+                    "type": "TEXT",
+                    "x": 12,
+                    "y": 8,
+                    "width": 16,
+                    "height": 24,
+                    "text": {
+                      "characters": "+",
+                      "fontFamily": "Inter",
+                      "fontSize": 24,
+                      "fontWeight": 300,
+                      "color": "#ffffff"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "search_container",
+            "name": "SearchContainer",
+            "type": "FRAME",
+            "x": 16,
+            "y": 104,
+            "width": 343,
+            "height": 48,
+            "fills": [
+              {
+                "type": "SOLID",
+                "color": "#16213e",
+                "visible": true
+              }
+            ],
+            "corners": {
+              "uniform": 12
+            },
+            "strokes": [
+              {
+                "color": "#2d3a5c",
+                "weight": 1
+              }
+            ],
+            "children": [
+              {
+                "id": "search_text",
+                "name": "SearchPlaceholder",
+                "type": "TEXT",
+                "x": 16,
+                "y": 14,
+                "width": 200,
+                "height": 20,
+                "text": {
+                  "characters": "Search tasks...",
+                  "fontFamily": "Inter",
+                  "fontSize": 14,
+                  "fontWeight": 400,
+                  "color": "#6b7280"
+                }
+              }
+            ]
+          },
+          {
+            "id": "task_list",
+            "name": "TaskList",
+            "type": "FRAME",
+            "x": 16,
+            "y": 168,
+            "width": 343,
+            "height": 520,
+            "layout": {
+              "mode": "VERTICAL",
+              "direction": "COLUMN",
+              "gap": 12
+            },
+            "children": [
+              {
+                "id": "task_1",
+                "name": "TaskCard",
+                "type": "FRAME",
+                "x": 0,
+                "y": 0,
+                "width": 343,
+                "height": 72,
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": "#16213e",
+                    "visible": true
+                  }
+                ],
+                "corners": {
+                  "uniform": 12
+                },
+                "effects": [
+                  {
+                    "type": "DROP_SHADOW",
+                    "color": "rgba(0,0,0,0.1)",
+                    "offsetX": 0,
+                    "offsetY": 2,
+                    "blur": 8,
+                    "spread": 0,
+                    "visible": true
+                  }
+                ],
+                "children": [
+                  {
+                    "id": "checkbox_1",
+                    "name": "Checkbox",
+                    "type": "FRAME",
+                    "x": 16,
+                    "y": 24,
+                    "width": 24,
+                    "height": 24,
+                    "fills": [
+                      {
+                        "type": "SOLID",
+                        "color": "#667eea",
+                        "visible": true
+                      }
+                    ],
+                    "corners": {
+                      "uniform": 6
+                    }
+                  },
+                  {
+                    "id": "task_title_1",
+                    "name": "TaskTitle",
+                    "type": "TEXT",
+                    "x": 56,
+                    "y": 16,
+                    "width": 250,
+                    "height": 20,
+                    "text": {
+                      "characters": "Design new landing page",
+                      "fontFamily": "Inter",
+                      "fontSize": 16,
+                      "fontWeight": 500,
+                      "color": "#ffffff"
+                    }
+                  },
+                  {
+                    "id": "task_meta_1",
+                    "name": "TaskMeta",
+                    "type": "TEXT",
+                    "x": 56,
+                    "y": 40,
+                    "width": 200,
+                    "height": 16,
+                    "text": {
+                      "characters": "Due tomorrow • High priority",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": 400,
+                      "color": "#9ca3af"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "task_2",
+                "name": "TaskCard",
+                "type": "FRAME",
+                "x": 0,
+                "y": 84,
+                "width": 343,
+                "height": 72,
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": "#16213e",
+                    "visible": true
+                  }
+                ],
+                "corners": {
+                  "uniform": 12
+                },
+                "effects": [
+                  {
+                    "type": "DROP_SHADOW",
+                    "color": "rgba(0,0,0,0.1)",
+                    "offsetX": 0,
+                    "offsetY": 2,
+                    "blur": 8,
+                    "spread": 0,
+                    "visible": true
+                  }
+                ],
+                "children": [
+                  {
+                    "id": "checkbox_2",
+                    "name": "Checkbox",
+                    "type": "FRAME",
+                    "x": 16,
+                    "y": 24,
+                    "width": 24,
+                    "height": 24,
+                    "corners": {
+                      "uniform": 6
+                    },
+                    "strokes": [
+                      {
+                        "color": "#4b5563",
+                        "weight": 2
+                      }
+                    ]
+                  },
+                  {
+                    "id": "task_title_2",
+                    "name": "TaskTitle",
+                    "type": "TEXT",
+                    "x": 56,
+                    "y": 16,
+                    "width": 250,
+                    "height": 20,
+                    "text": {
+                      "characters": "Review pull requests",
+                      "fontFamily": "Inter",
+                      "fontSize": 16,
+                      "fontWeight": 500,
+                      "color": "#ffffff"
+                    }
+                  },
+                  {
+                    "id": "task_meta_2",
+                    "name": "TaskMeta",
+                    "type": "TEXT",
+                    "x": 56,
+                    "y": 40,
+                    "width": 200,
+                    "height": 16,
+                    "text": {
+                      "characters": "Due in 3 days • Medium priority",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": 400,
+                      "color": "#9ca3af"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "task_3",
+                "name": "TaskCard",
+                "type": "FRAME",
+                "x": 0,
+                "y": 168,
+                "width": 343,
+                "height": 72,
+                "fills": [
+                  {
+                    "type": "SOLID",
+                    "color": "#16213e",
+                    "visible": true
+                  }
+                ],
+                "corners": {
+                  "uniform": 12
+                },
+                "effects": [
+                  {
+                    "type": "DROP_SHADOW",
+                    "color": "rgba(0,0,0,0.1)",
+                    "offsetX": 0,
+                    "offsetY": 2,
+                    "blur": 8,
+                    "spread": 0,
+                    "visible": true
+                  }
+                ],
+                "children": [
+                  {
+                    "id": "checkbox_3",
+                    "name": "Checkbox",
+                    "type": "FRAME",
+                    "x": 16,
+                    "y": 24,
+                    "width": 24,
+                    "height": 24,
+                    "corners": {
+                      "uniform": 6
+                    },
+                    "strokes": [
+                      {
+                        "color": "#4b5563",
+                        "weight": 2
+                      }
+                    ]
+                  },
+                  {
+                    "id": "task_title_3",
+                    "name": "TaskTitle",
+                    "type": "TEXT",
+                    "x": 56,
+                    "y": 16,
+                    "width": 250,
+                    "height": 20,
+                    "text": {
+                      "characters": "Update documentation",
+                      "fontFamily": "Inter",
+                      "fontSize": 16,
+                      "fontWeight": 500,
+                      "color": "#ffffff"
+                    }
+                  },
+                  {
+                    "id": "task_meta_3",
+                    "name": "TaskMeta",
+                    "type": "TEXT",
+                    "x": 56,
+                    "y": 40,
+                    "width": 200,
+                    "height": 16,
+                    "text": {
+                      "characters": "No due date • Low priority",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": 400,
+                      "color": "#9ca3af"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "bottom_nav",
+            "name": "BottomNav",
+            "type": "FRAME",
+            "x": 0,
+            "y": 728,
+            "width": 375,
+            "height": 84,
+            "fills": [
+              {
+                "type": "SOLID",
+                "color": "#0f0f23",
+                "visible": true
+              }
+            ],
+            "children": [
+              {
+                "id": "nav_home",
+                "name": "NavHome",
+                "type": "FRAME",
+                "x": 32,
+                "y": 16,
+                "width": 56,
+                "height": 48,
+                "children": [
+                  {
+                    "id": "nav_home_icon",
+                    "name": "HomeIcon",
+                    "type": "TEXT",
+                    "x": 16,
+                    "y": 8,
+                    "width": 24,
+                    "height": 24,
+                    "text": {
+                      "characters": "🏠",
+                      "fontSize": 20
+                    }
+                  },
+                  {
+                    "id": "nav_home_label",
+                    "name": "HomeLabel",
+                    "type": "TEXT",
+                    "x": 8,
+                    "y": 32,
+                    "width": 40,
+                    "height": 14,
+                    "text": {
+                      "characters": "Home",
+                      "fontFamily": "Inter",
+                      "fontSize": 10,
+                      "fontWeight": 500,
+                      "color": "#667eea",
+                      "textAlign": "CENTER"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "nav_calendar",
+                "name": "NavCalendar",
+                "type": "FRAME",
+                "x": 159,
+                "y": 16,
+                "width": 56,
+                "height": 48,
+                "children": [
+                  {
+                    "id": "nav_calendar_icon",
+                    "name": "CalendarIcon",
+                    "type": "TEXT",
+                    "x": 16,
+                    "y": 8,
+                    "width": 24,
+                    "height": 24,
+                    "text": {
+                      "characters": "📅",
+                      "fontSize": 20
+                    }
+                  },
+                  {
+                    "id": "nav_calendar_label",
+                    "name": "CalendarLabel",
+                    "type": "TEXT",
+                    "x": 0,
+                    "y": 32,
+                    "width": 56,
+                    "height": 14,
+                    "text": {
+                      "characters": "Calendar",
+                      "fontFamily": "Inter",
+                      "fontSize": 10,
+                      "fontWeight": 500,
+                      "color": "#6b7280",
+                      "textAlign": "CENTER"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "nav_profile",
+                "name": "NavProfile",
+                "type": "FRAME",
+                "x": 287,
+                "y": 16,
+                "width": 56,
+                "height": 48,
+                "children": [
+                  {
+                    "id": "nav_profile_icon",
+                    "name": "ProfileIcon",
+                    "type": "TEXT",
+                    "x": 16,
+                    "y": 8,
+                    "width": 24,
+                    "height": 24,
+                    "text": {
+                      "characters": "👤",
+                      "fontSize": 20
+                    }
+                  },
+                  {
+                    "id": "nav_profile_label",
+                    "name": "ProfileLabel",
+                    "type": "TEXT",
+                    "x": 6,
+                    "y": 32,
+                    "width": 44,
+                    "height": 14,
+                    "text": {
+                      "characters": "Profile",
+                      "fontFamily": "Inter",
+                      "fontSize": 10,
+                      "fontWeight": 500,
+                      "color": "#6b7280",
+                      "textAlign": "CENTER"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "referenceFrame": {
+    "id": "frame_main",
+    "x": 0,
+    "y": 0,
+    "width": 375,
+    "height": 812
+  },
+  "interactions": [
+    {
+      "id": "int_1",
+      "sourceId": "add_button",
+      "trigger": "ON_CLICK",
+      "action": "OPEN_OVERLAY",
+      "targetId": "new_task_modal",
+      "animation": {
+        "type": "SLIDE_IN",
+        "direction": "BOTTOM",
+        "duration": 300
+      }
+    },
+    {
+      "id": "int_2",
+      "sourceId": "nav_calendar",
+      "trigger": "ON_CLICK",
+      "action": "NAVIGATE",
+      "targetId": "calendar_screen",
+      "animation": {
+        "type": "PUSH",
+        "direction": "LEFT",
+        "duration": 250
+      }
+    }
+  ]
+}

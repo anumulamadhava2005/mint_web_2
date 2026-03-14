@@ -11,6 +11,7 @@ import { SVGViewport } from "./penpot/SVGViewport";
 import type { UUID, PenpotShape } from "@/lib/penpot/types";
 import { ROOT_FRAME_ID } from "@/lib/penpot/types";
 import { DEVICE_PRESETS, type DevicePreset } from "@/lib/devicePresets";
+import ConvertDialog from "./ConvertDialog";
 
 // ── Props ─────────────────────────────────────────────────────
 interface PenpotEditorProps {
@@ -47,6 +48,7 @@ export default function PenpotEditor({
 
   const setProfile = useWorkspaceStore((s) => s.setProfile);
   const [loading, setLoading] = useState(true);
+  const [convertOpen, setConvertOpen] = useState(false);
 
   // Initialize workspace on mount + set profile for collaboration
   useEffect(() => {
@@ -105,6 +107,7 @@ export default function PenpotEditor({
         onBack={onBack}
         onSave={saveFile}
         onPlay={() => setViewerMode(true)}
+        onConvert={() => setConvertOpen(true)}
         onUndo={undo}
         onRedo={redo}
       />
@@ -137,6 +140,9 @@ export default function PenpotEditor({
           onModeChange={setOptionsMode}
         />
       </div>
+
+      {/* Convert to code dialog */}
+      <ConvertDialog open={convertOpen} onClose={() => setConvertOpen(false)} />
     </div>
   );
 }
@@ -153,6 +159,7 @@ const Header = memo(function Header({
   onBack,
   onSave,
   onPlay,
+  onConvert,
   onUndo,
   onRedo,
 }: {
@@ -164,6 +171,7 @@ const Header = memo(function Header({
   onBack: () => void;
   onSave: () => void;
   onPlay: () => void;
+  onConvert: () => void;
   onUndo: () => void;
   onRedo: () => void;
 }) {
@@ -229,6 +237,16 @@ const Header = memo(function Header({
           className="rounded px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-white"
         >
           Save
+        </button>
+        <button
+          onClick={onConvert}
+          className="flex items-center gap-1.5 rounded border border-emerald-500/30 bg-emerald-600/10 px-3 py-1 text-xs font-medium text-emerald-400 hover:bg-emerald-600/20 hover:text-emerald-300 transition-colors"
+          title="Export design to code"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M16 18l6-6-6-6M8 6l-6 6 6 6" />
+          </svg>
+          Convert
         </button>
         <button
           onClick={onPlay}
@@ -426,9 +444,11 @@ const LeftPanel = memo(function LeftPanel() {
   const addPage = useWorkspaceStore((s) => s.addPage);
   const selected = useWorkspaceStore((s) => s.local.selected);
   const selectShape = useWorkspaceStore((s) => s.selectShape);
-  const deselectAll = useWorkspaceStore((s) => s.deselectAll);
+  const moveShapes = useWorkspaceStore((s) => s.moveShapes);
 
   const [tab, setTab] = useState<"layers" | "pages">("layers");
+  const [draggedId, setDraggedId] = useState<UUID | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ id: UUID; position: "before" | "inside" | "after" } | null>(null);
 
   const pageObjects = useWorkspaceStore((s) => {
     if (!s.file || !s.currentPageId) return {};
@@ -436,6 +456,91 @@ const LeftPanel = memo(function LeftPanel() {
   });
 
   const rootChildren: UUID[] = pageObjects[ROOT_FRAME_ID]?.shapes || [];
+
+  const isDescendantOf = useCallback(
+    (ancestorId: UUID, nodeId: UUID): boolean => {
+      let current = pageObjects[nodeId];
+      while (current?.parentId) {
+        if (current.parentId === ancestorId) return true;
+        if (current.parentId === ROOT_FRAME_ID) break;
+        current = pageObjects[current.parentId];
+      }
+      return false;
+    },
+    [pageObjects],
+  );
+
+  const resolvePlacement = useCallback(
+    (targetId: UUID, position: "before" | "inside" | "after", movingId: UUID) => {
+      const target = pageObjects[targetId];
+      if (!target) return null;
+
+      if (position === "inside") {
+        return { parentId: targetId, index: undefined as number | undefined };
+      }
+
+      const parentId = target.parentId || ROOT_FRAME_ID;
+      const parent = pageObjects[parentId];
+      const siblings = parent?.shapes || [];
+      const targetIndex = siblings.indexOf(targetId);
+      if (targetIndex === -1) {
+        return { parentId, index: undefined as number | undefined };
+      }
+
+      // Layers are rendered in reverse order (top-most first), so before/after
+      // in UI maps inversely to child array insertion index.
+      let index = position === "before" ? targetIndex + 1 : targetIndex;
+
+      const moving = pageObjects[movingId];
+      const currentParentId = moving?.parentId || ROOT_FRAME_ID;
+      if (currentParentId === parentId) {
+        const movingIndex = siblings.indexOf(movingId);
+        if (movingIndex !== -1 && movingIndex < index) {
+          index -= 1;
+        }
+      }
+
+      return { parentId, index };
+    },
+    [pageObjects],
+  );
+
+  const handleDropOnLayer = useCallback(
+    (targetId: UUID, fallbackPosition: "before" | "inside" | "after" = "inside") => {
+      if (!draggedId) return;
+      if (draggedId === targetId) {
+        setDropTarget(null);
+        setDraggedId(null);
+        return;
+      }
+
+      const position = dropTarget?.id === targetId ? dropTarget.position : fallbackPosition;
+      const placement = resolvePlacement(targetId, position, draggedId);
+      if (!placement) return;
+
+      // Prevent cycles (cannot move into own descendant subtree)
+      if (
+        placement.parentId === draggedId ||
+        isDescendantOf(draggedId, placement.parentId)
+      ) {
+        setDropTarget(null);
+        setDraggedId(null);
+        return;
+      }
+
+      moveShapes([draggedId], placement.parentId, placement.index);
+      setDropTarget(null);
+      setDraggedId(null);
+    },
+    [draggedId, dropTarget, isDescendantOf, moveShapes, resolvePlacement],
+  );
+
+  const handleDropToRoot = useCallback(() => {
+    if (!draggedId) return;
+    moveShapes([draggedId], ROOT_FRAME_ID);
+    setDropTarget(null);
+    setDraggedId(null);
+  }, [draggedId, moveShapes]);
 
   if (!file) return null;
 
@@ -462,7 +567,20 @@ const LeftPanel = memo(function LeftPanel() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-1">
+      <div
+        className="flex-1 overflow-y-auto p-1"
+        onDragOver={(e) => {
+          if (!draggedId || tab !== "layers") return;
+          e.preventDefault();
+        }}
+        onDrop={(e) => {
+          if (!draggedId || tab !== "layers") return;
+          e.preventDefault();
+          if (!(e.target as HTMLElement).closest("[data-layer-row='true']")) {
+            handleDropToRoot();
+          }
+        }}
+      >
         {tab === "pages" ? (
           <div className="space-y-0.5">
             {file.pages.map((pid) => {
@@ -495,6 +613,28 @@ const LeftPanel = memo(function LeftPanel() {
             depth={0}
             selected={selected}
             onSelect={selectShape}
+            draggedId={draggedId}
+            dropTarget={dropTarget}
+            onDragStart={setDraggedId}
+            onDragEnd={() => {
+              setDraggedId(null);
+              setDropTarget(null);
+            }}
+            onDragOverLayer={(e, id) => {
+              if (!draggedId) return;
+              e.preventDefault();
+              const el = e.currentTarget;
+              const rect = el.getBoundingClientRect();
+              const y = e.clientY - rect.top;
+              const threshold = Math.max(4, rect.height * 0.25);
+              const position = y < threshold
+                ? "before"
+                : y > rect.height - threshold
+                  ? "after"
+                  : "inside";
+              setDropTarget({ id, position });
+            }}
+            onDropOnLayer={handleDropOnLayer}
           />
         )}
       </div>
@@ -509,12 +649,24 @@ function LayerTree({
   depth,
   selected,
   onSelect,
+  draggedId,
+  dropTarget,
+  onDragStart,
+  onDragEnd,
+  onDragOverLayer,
+  onDropOnLayer,
 }: {
   objects: Record<UUID, PenpotShape>;
   childIds: UUID[];
   depth: number;
   selected: Set<UUID>;
   onSelect: (id: UUID, multi?: boolean) => void;
+  draggedId: UUID | null;
+  dropTarget: { id: UUID; position: "before" | "inside" | "after" } | null;
+  onDragStart: (id: UUID) => void;
+  onDragEnd: () => void;
+  onDragOverLayer: (e: React.DragEvent<HTMLButtonElement>, id: UUID) => void;
+  onDropOnLayer: (id: UUID, fallbackPosition?: "before" | "inside" | "after") => void;
 }) {
   return (
     <>
@@ -523,16 +675,33 @@ function LayerTree({
         if (!shape) return null;
         const isSelected = selected.has(id);
         const hasChildren = shape.shapes && shape.shapes.length > 0;
+        const isDragging = draggedId === id;
+        const isDropBefore = dropTarget?.id === id && dropTarget.position === "before";
+        const isDropInside = dropTarget?.id === id && dropTarget.position === "inside";
+        const isDropAfter = dropTarget?.id === id && dropTarget.position === "after";
 
         return (
           <div key={id}>
             <button
+              data-layer-row="true"
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", id);
+                onDragStart(id);
+              }}
+              onDragEnd={onDragEnd}
+              onDragOver={(e) => onDragOverLayer(e, id)}
+              onDrop={(e) => {
+                e.preventDefault();
+                onDropOnLayer(id);
+              }}
               onClick={(e) => onSelect(id, e.shiftKey)}
               className={`flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs ${
                 isSelected
                   ? "bg-indigo-600/20 text-indigo-300"
                   : "text-zinc-400 hover:bg-zinc-800"
-              }`}
+              } ${isDragging ? "opacity-40" : ""} ${isDropInside ? "bg-indigo-600/25 ring-1 ring-indigo-500/50" : ""} ${isDropBefore ? "border-t border-indigo-500" : ""} ${isDropAfter ? "border-b border-indigo-500" : ""}`}
               style={{ paddingLeft: `${depth * 12 + 6}px` }}
             >
               <ShapeIcon type={shape.type} />
@@ -551,6 +720,12 @@ function LayerTree({
                 depth={depth + 1}
                 selected={selected}
                 onSelect={onSelect}
+                draggedId={draggedId}
+                dropTarget={dropTarget}
+                onDragStart={onDragStart}
+                onDragEnd={onDragEnd}
+                onDragOverLayer={onDragOverLayer}
+                onDropOnLayer={onDropOnLayer}
               />
             )}
           </div>
