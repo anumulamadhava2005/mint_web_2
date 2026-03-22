@@ -108,6 +108,14 @@ export function clamp(v: number, min: number, max: number): number {
 export function deg2rad(d: number): number { return (d * Math.PI) / 180; }
 export function rad2deg(r: number): number { return (r * 180) / Math.PI; }
 
+// ── Text-specific types ───────────────────────────────────────
+export type TextAlign = "left" | "center" | "right" | "justified";
+export type VerticalAlign = "top" | "center" | "bottom";
+export type TextResizeMode = "autoWidth" | "autoHeight" | "fixed";
+export type TextDecoration = "none" | "underline" | "strikethrough";
+export type TextCase = "none" | "uppercase" | "lowercase" | "titleCase";
+export type ListType = "none" | "bullet" | "numbered";
+
 // ── Shape types ───────────────────────────────────────────────
 export type ShapeType =
   | "rectangle"
@@ -189,6 +197,17 @@ export interface CanvasShape {
   text?: string;
   fontSize?: number;
   fontFamily?: string;
+  fontWeight?: number;       // 100-900 (default 400)
+  fontStyle?: "normal" | "italic";
+  lineHeight?: number;       // px value, 0 = auto (~1.2×fontSize)
+  letterSpacing?: number;    // px value
+  paragraphSpacing?: number; // px between paragraphs
+  textAlign?: TextAlign;
+  verticalAlign?: VerticalAlign;
+  textResizeMode?: TextResizeMode;
+  textDecoration?: TextDecoration;
+  textCase?: TextCase;
+  listType?: ListType;
   starInnerRadius?: number;  // 0-1 ratio for star
   sides?: number;            // polygon side count
   // Page
@@ -657,7 +676,7 @@ export function createShape(
     rotation: 0,
     scaleX: 1,
     scaleY: 1,
-    fill: "#818CF8",
+    fill: type === "text" ? "#FFFFFF" : "#818CF8",
     stroke: "",
     strokeWidth: 0,
     opacity: 1,
@@ -670,6 +689,23 @@ export function createShape(
     pageId,
     sides: type === "polygon" ? 6 : type === "star" ? 5 : undefined,
     starInnerRadius: type === "star" ? 0.4 : undefined,
+    // Text defaults
+    ...(type === "text" ? {
+      text: "Text",
+      fontSize: 16,
+      fontFamily: "Inter",
+      fontWeight: 400,
+      fontStyle: "normal" as const,
+      lineHeight: 0,
+      letterSpacing: 0,
+      paragraphSpacing: 0,
+      textAlign: "left" as TextAlign,
+      verticalAlign: "top" as VerticalAlign,
+      textResizeMode: "autoWidth" as TextResizeMode,
+      textDecoration: "none" as TextDecoration,
+      textCase: "none" as TextCase,
+      listType: "none" as ListType,
+    } : {}),
     // Constraint defaults
     constraints: { horizontal: "LEFT", vertical: "TOP" },
   };

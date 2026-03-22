@@ -93,6 +93,7 @@ interface ConvertDialogProps {
 export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
   const file = useWorkspaceStore((s) => s.file);
   const currentPageId = useWorkspaceStore((s) => s.currentPageId);
+  const profile = useWorkspaceStore((s) => s.profile);
 
   const [selected, setSelected] = useState<TargetFramework | null>(null);
   const [converting, setConverting] = useState(false);
@@ -362,6 +363,12 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
           generateTypeScript: true,
           cssFramework: "tailwind" as const,
           includeComments: true,
+          // Include connector + the_god so the project can receive
+          // code updates when the user commits from the editor
+          enableLiveSync: true,
+          fileKey: file.id,
+          projectId: file.projectId,
+          userId: profile?.id,
         },
       };
 

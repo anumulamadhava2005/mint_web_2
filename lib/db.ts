@@ -164,6 +164,21 @@ async function init() {
     )
   `).catch(() => {});
 
+  // ── Project commits (versioned mobile config) ────────────
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS project_commits (
+      id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id  uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      version     integer NOT NULL,
+      config_json jsonb NOT NULL,
+      committed_by uuid REFERENCES users(id),
+      message     text DEFAULT '',
+      created_at  timestamptz DEFAULT now(),
+      UNIQUE(project_id, version)
+    )
+  `).catch(() => {});
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_project_commits_project ON project_commits(project_id, version DESC)`).catch(() => {});
+
   // ── Auto-update triggers ─────────────────────────────────
   // The trigger function uses modified_at. Add modified_at to projects if needed.
   await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS modified_at timestamptz DEFAULT now()`).catch(() => {});

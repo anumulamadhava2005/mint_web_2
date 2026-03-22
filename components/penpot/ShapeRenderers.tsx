@@ -141,38 +141,108 @@ const PathShape = memo(function PathShape({ shape }: { shape: PenpotShape }) {
 // ── Text Shape ────────────────────────────────────────────────
 const TextShape = memo(function TextShape({ shape }: { shape: PenpotShape }) {
   const fillProps = fillToSVG(shape.fills);
+  const defaultFill = fillProps.fill === "none" ? "#000" : fillProps.fill;
 
-  const paragraphs = useMemo(() => {
-    if (!shape.content) return [""];
-    return shape.content.children.map(
-      (p) => p.children.map((r) => r.text).join("")
+  const content = shape.content;
+  if (!content || !content.children || content.children.length === 0) {
+    // Fallback: simple text
+    return (
+      <text
+        x={shape.x}
+        y={shape.y + 16}
+        fontSize={16}
+        fontFamily="sans-serif"
+        fill={defaultFill}
+        opacity={shape.opacity}
+        data-shape-id={shape.id}
+      >
+        Text
+      </text>
     );
-  }, [shape.content]);
+  }
 
-  const fontSize = shape.content?.children?.[0]?.children?.[0]?.fontSize || 16;
-  const fontFamily = shape.content?.children?.[0]?.children?.[0]?.fontFamily || "sans-serif";
-  const fontWeight = shape.content?.children?.[0]?.children?.[0]?.fontWeight || 400;
-  const lineHeight = fontSize * 1.4;
+  // Render each paragraph and its runs
+  let yOffset = 0;
+  const elements: React.ReactNode[] = [];
 
-  return (
-    <text
-      x={shape.x}
-      y={shape.y + fontSize}
-      fontSize={fontSize}
-      fontFamily={fontFamily}
-      fontWeight={fontWeight}
-      fill={fillProps.fill === "none" ? "#000" : fillProps.fill}
-      fillOpacity={fillProps.fillOpacity}
-      opacity={shape.opacity}
-      data-shape-id={shape.id}
-    >
-      {paragraphs.map((line, i) => (
-        <tspan key={i} x={shape.x} dy={i === 0 ? 0 : lineHeight}>
-          {line}
+  content.children.forEach((para, pi) => {
+    const textAlign = para.textAlign || "left";
+
+    // Compute paragraph line height from first run
+    const firstRun = para.children?.[0];
+    const pFontSize = firstRun?.fontSize || 16;
+    const pLineHeight = firstRun?.lineHeight
+      ? firstRun.lineHeight
+      : pFontSize * 1.4;
+
+    if (pi > 0) yOffset += pLineHeight;
+
+    // Compute anchor for text alignment
+    let anchor: "start" | "middle" | "end" = "start";
+    let xPos = shape.x;
+    if (textAlign === "center") {
+      anchor = "middle";
+      xPos = shape.x + shape.width / 2;
+    } else if (textAlign === "right") {
+      anchor = "end";
+      xPos = shape.x + shape.width;
+    }
+
+    // Check if paragraph is empty
+    const paraText = para.children.map(r => r.text).join("");
+    if (paraText === "" && pi > 0) {
+      yOffset += pLineHeight;
+      return;
+    }
+
+    // Render runs within this paragraph as tspans
+    const tspans = para.children.map((run, ri) => {
+      const fontSize = run.fontSize || pFontSize;
+      const fontFamily = run.fontFamily || "sans-serif";
+      const fontWeight = run.fontWeight || 400;
+      const fontStyle = run.fontStyle || "normal";
+      const letterSpacing = run.letterSpacing || 0;
+      const runFill = run.fill || defaultFill;
+      const textDecoration = run.textDecoration === "underline"
+        ? "underline"
+        : run.textDecoration === "line-through"
+          ? "line-through"
+          : "none";
+
+      return (
+        <tspan
+          key={ri}
+          fontFamily={fontFamily}
+          fontSize={fontSize}
+          fontWeight={fontWeight}
+          fontStyle={fontStyle}
+          fill={runFill}
+          letterSpacing={letterSpacing}
+          textDecoration={textDecoration !== "none" ? textDecoration : undefined}
+        >
+          {run.text}
         </tspan>
-      ))}
-    </text>
-  );
+      );
+    });
+
+    elements.push(
+      <text
+        key={pi}
+        x={xPos}
+        y={shape.y + yOffset + pFontSize}
+        textAnchor={anchor}
+        fillOpacity={fillProps.fillOpacity}
+        opacity={shape.opacity}
+        data-shape-id={shape.id}
+      >
+        {tspans}
+      </text>
+    );
+
+    yOffset += pLineHeight;
+  });
+
+  return <g data-shape-id={shape.id}>{elements}</g>;
 });
 
 // ── Image Shape ───────────────────────────────────────────────

@@ -40,6 +40,7 @@ import type { SceneGraph } from "./sceneGraph";
 import type { Matrix3 } from "./matrix3";
 import type { SnapGuide } from "./snappingEngine";
 import { mat3ConcatToContext, mat3TransformPoint, mat3Multiply, mat3Translate, mat3Scale } from "./matrix3";
+import { renderText as renderTextEngine } from "./textEngine";
 
 // ── Constants ─────────────────────────────────────────────────
 const HANDLE_SIZE = 8;       // px on screen — NEVER scales
@@ -285,14 +286,7 @@ function drawShapeWithMatrix(
       break;
     }
     case "text": {
-      const size = s.fontSize || 16;
-      ctx.font = `${size}px ${s.fontFamily || TEXT_FONT_FALLBACK}`;
-      ctx.fillStyle = s.fill || "#FFFFFF";
-      ctx.textBaseline = "top";
-      const lines = (s.text || "Text").split("\n");
-      for (let i = 0; i < lines.length; i++) {
-        ctx.fillText(lines[i], 0, i * size * 1.3);
-      }
+      renderTextEngine(ctx, s);
       break;
     }
     case "polygon":
@@ -407,12 +401,10 @@ function drawShapeLegacy(ctx: CanvasRenderingContext2D, s: CanvasShape, cam: Cam
       ctx.stroke();
       break;
     case "text": {
-      const size = s.fontSize || 16;
-      ctx.font = `${size}px ${s.fontFamily || TEXT_FONT_FALLBACK}`;
-      ctx.fillStyle = s.fill || "#FFFFFF";
-      ctx.textBaseline = "top";
-      const lines = (s.text || "Text").split("\n");
-      for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], s.x, s.y + i * size * 1.3);
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      renderTextEngine(ctx, s);
+      ctx.restore();
       break;
     }
     case "polygon":

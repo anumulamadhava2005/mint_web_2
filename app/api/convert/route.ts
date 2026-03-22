@@ -52,6 +52,8 @@ const ConversionRequestSchema = z.object({
       reactUseHooks: z.boolean().optional(),
       enableLiveSync: z.boolean().optional(),
       fileKey: z.string().optional(),
+      projectId: z.string().optional(),
+      userId: z.string().optional(),
     })
     .optional(),
 });

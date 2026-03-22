@@ -12,6 +12,7 @@ import type { UUID, PenpotShape } from "@/lib/penpot/types";
 import { ROOT_FRAME_ID } from "@/lib/penpot/types";
 import { DEVICE_PRESETS, type DevicePreset } from "@/lib/devicePresets";
 import ConvertDialog from "./ConvertDialog";
+// socket.io-client removed — sync daemon uses HTTP polling now
 
 // ── Props ─────────────────────────────────────────────────────
 interface PenpotEditorProps {
@@ -49,6 +50,154 @@ export default function PenpotEditor({
   const setProfile = useWorkspaceStore((s) => s.setProfile);
   const [loading, setLoading] = useState(true);
   const [convertOpen, setConvertOpen] = useState(false);
+  const [committing, setCommitting] = useState(false);
+  const [commitFramework, setCommitFramework] = useState<string>("react");
+  const [commitToast, setCommitToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  // ── Commit handler ───────────────────────────────────────
+  const handleCommit = useCallback(async () => {
+    if (!file || committing || !currentPageId) return;
+
+    setCommitting(true);
+    try {
+      // Save first to ensure latest state is persisted
+      await saveFile();
+
+      // Build design payload from current canvas state
+      const page = file.pagesIndex[currentPageId];
+      if (!page) throw new Error("No current page");
+
+      const objects = page.objects;
+      const root = objects[ROOT_FRAME_ID];
+      if (!root?.shapes?.length) throw new Error("No frames on canvas");
+
+      function r(n: number) { return Math.round(n * 10) / 10; }
+
+      function shapeToNode(shape: PenpotShape, parentX: number, parentY: number): Record<string, unknown> {
+        const typeMap: Record<string, string> = {
+          frame: "FRAME", group: "GROUP", rect: "RECTANGLE", circle: "ELLIPSE",
+          text: "TEXT", image: "IMAGE", path: "VECTOR", bool: "BOOLEAN_OPERATION", "svg-raw": "VECTOR",
+        };
+        const node: Record<string, unknown> = {
+          id: shape.id, name: shape.name, type: typeMap[shape.type] || "FRAME",
+          x: r(shape.x - parentX), y: r(shape.y - parentY),
+          width: r(shape.width), height: r(shape.height), visible: !shape.hidden,
+        };
+        if (shape.rotation) node.rotation = shape.rotation;
+        if (shape.opacity !== undefined && shape.opacity !== 1) node.opacity = shape.opacity;
+        if (shape.fills?.length) {
+          node.fills = shape.fills.map((f) => ({
+            type: f.fillColorGradient ? `GRADIENT_${f.fillColorGradient.type.toUpperCase()}` : "SOLID",
+            color: f.fillColor, opacity: f.fillOpacity,
+          }));
+        }
+        if (shape.strokes?.length) {
+          node.strokes = shape.strokes.map((s) => ({
+            color: s.strokeColor, opacity: s.strokeOpacity,
+            weight: s.strokeWidth, align: s.strokeAlignment?.toUpperCase() || "CENTER",
+          }));
+        }
+        if (shape.rx || shape.ry) node.corners = { uniform: shape.rx || shape.ry };
+        if (shape.shadow?.length) {
+          node.effects = shape.shadow.filter((s) => !s.hidden).map((s) => ({
+            type: s.type === "inner-shadow" ? "INNER_SHADOW" : "DROP_SHADOW",
+            color: s.color, offsetX: s.offsetX, offsetY: s.offsetY, blur: s.blur, spread: s.spread,
+          }));
+        }
+        if (shape.type === "text" && shape.content) {
+          const firstP = shape.content.children?.[0];
+          const firstR = firstP?.children?.[0];
+          if (firstR) {
+            node.text = {
+              characters: shape.content.children.flatMap((p: any) => p.children.map((r: any) => r.text)).join("\n"),
+              fontFamily: firstR.fontFamily, fontSize: firstR.fontSize,
+              fontWeight: firstR.fontWeight, color: firstR.fill || shape.fills?.[0]?.fillColor,
+            };
+          }
+        }
+        if (shape.layoutProps?.layout) {
+          const lp = shape.layoutProps;
+          node.layout = {
+            mode: lp.layout === "flex"
+              ? (lp.layoutFlexDir === "column" || lp.layoutFlexDir === "column-reverse" ? "VERTICAL" : "HORIZONTAL")
+              : lp.layout === "grid" ? "GRID" : "NONE",
+            gap: lp.layoutGap, paddingTop: lp.layoutPaddingTop, paddingRight: lp.layoutPaddingRight,
+            paddingBottom: lp.layoutPaddingBottom, paddingLeft: lp.layoutPaddingLeft,
+          };
+        }
+        if (shape.type === "image" && shape.imageMetadata) {
+          node.fills = [{ type: "IMAGE", imageRef: shape.imageMetadata.url || shape.id }];
+        }
+        if (shape.shapes?.length) {
+          const kids = shape.shapes.map((id: string) => objects[id]).filter((s: any): s is PenpotShape => !!s && !s.hidden);
+          if (kids.length > 0) node.children = kids.map((k: PenpotShape) => shapeToNode(k, shape.x, shape.y));
+        }
+        return node;
+      }
+
+      const topFrames = root.shapes
+        .map((id: string) => objects[id])
+        .filter((s: any): s is PenpotShape => !!s && s.type === "frame" && !s.hidden);
+
+      if (topFrames.length === 0) throw new Error("No visible frames to commit");
+
+      const nodes = topFrames.map((f: PenpotShape) => shapeToNode(f, f.x, f.y));
+      const maxW = Math.max(...topFrames.map((f: PenpotShape) => f.width));
+      const maxH = Math.max(...topFrames.map((f: PenpotShape) => f.height));
+      const referenceFrame = { id: topFrames[0].id, x: 0, y: 0, width: r(maxW), height: r(maxH) };
+
+      // Collect interactions
+      const interactions: Record<string, unknown>[] = [];
+      const triggerMap: Record<string, string> = {
+        click: "ON_CLICK", "mouse-press": "ON_PRESS", "mouse-over": "ON_HOVER",
+        "mouse-enter": "MOUSE_ENTER", "mouse-leave": "MOUSE_LEAVE",
+      };
+      const actionMap: Record<string, string> = {
+        navigate: "NAVIGATE", "open-overlay": "OPEN_OVERLAY", "close-overlay": "CLOSE_OVERLAY",
+        "prev-screen": "BACK", "open-url": "OPEN_URL", "scroll-to": "SCROLL_TO",
+      };
+      for (const shape of Object.values(objects) as PenpotShape[]) {
+        if (shape.interactions?.length) {
+          for (const ix of shape.interactions) {
+            interactions.push({
+              sourceId: shape.id,
+              trigger: triggerMap[ix.eventType] || "ON_CLICK",
+              action: actionMap[ix.actionType] || "NAVIGATE",
+              targetId: ix.actionType === "scroll-to" ? ix.scrollTargetId : ix.destination,
+            });
+          }
+        }
+      }
+
+      // POST to commit API with nodes
+      const res = await fetch("/api/commit", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId, fileId,
+          targetFramework: commitFramework,
+          fileName: file.name || "design-export",
+          nodes, referenceFrame, interactions,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Commit failed");
+      }
+
+      const result = await res.json();
+      const fw = commitFramework.charAt(0).toUpperCase() + commitFramework.slice(1);
+      setCommitToast({ message: `Committed v${result.version} → ${fw} (${result.fileCount} files)`, type: "success" });
+    } catch (e: any) {
+      console.error("Commit failed:", e);
+      setCommitToast({ message: e.message || "Commit failed", type: "error" });
+    } finally {
+      setCommitting(false);
+      setTimeout(() => setCommitToast(null), 4000);
+    }
+  }, [file, committing, saveFile, projectId, fileId, commitFramework, currentPageId]);
 
   // Initialize workspace on mount + set profile for collaboration
   useEffect(() => {
@@ -104,10 +253,14 @@ export default function PenpotEditor({
         saving={saving}
         lastSaved={lastSaved}
         connected={connected}
+        committing={committing}
+        commitFramework={commitFramework}
+        onCommitFrameworkChange={setCommitFramework}
         onBack={onBack}
         onSave={saveFile}
         onPlay={() => setViewerMode(true)}
         onConvert={() => setConvertOpen(true)}
+        onCommit={handleCommit}
         onUndo={undo}
         onRedo={redo}
       />
@@ -143,6 +296,29 @@ export default function PenpotEditor({
 
       {/* Convert to code dialog */}
       <ConvertDialog open={convertOpen} onClose={() => setConvertOpen(false)} />
+
+      {/* Commit toast notification */}
+      {commitToast && (
+        <div
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-medium shadow-lg backdrop-blur-sm transition-all animate-in slide-in-from-bottom-2 ${
+            commitToast.type === "success"
+              ? "border border-emerald-500/30 bg-emerald-950/90 text-emerald-300"
+              : "border border-red-500/30 bg-red-950/90 text-red-300"
+          }`}
+        >
+          {commitToast.type === "success" ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M20 6L9 17l-5-5" />
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M15 9l-6 6M9 9l6 6" />
+            </svg>
+          )}
+          {commitToast.message}
+        </div>
+      )}
     </div>
   );
 }
@@ -156,10 +332,14 @@ const Header = memo(function Header({
   saving,
   lastSaved,
   connected,
+  committing,
+  commitFramework,
+  onCommitFrameworkChange,
   onBack,
   onSave,
   onPlay,
   onConvert,
+  onCommit,
   onUndo,
   onRedo,
 }: {
@@ -168,10 +348,14 @@ const Header = memo(function Header({
   saving: boolean;
   lastSaved: string | null;
   connected: boolean;
+  committing: boolean;
+  commitFramework: string;
+  onCommitFrameworkChange: (fw: string) => void;
   onBack: () => void;
   onSave: () => void;
   onPlay: () => void;
   onConvert: () => void;
+  onCommit: () => void;
   onUndo: () => void;
   onRedo: () => void;
 }) {
@@ -248,6 +432,43 @@ const Header = memo(function Header({
           </svg>
           Convert
         </button>
+        {/* Commit: framework selector + commit button */}
+        <div className="flex items-center gap-0.5">
+          <select
+            value={commitFramework}
+            onChange={(e) => onCommitFrameworkChange(e.target.value)}
+            disabled={committing}
+            className="h-[26px] rounded-l border border-r-0 border-violet-500/30 bg-violet-600/10 px-1.5 text-[10px] font-medium text-violet-400 focus:outline-none focus:border-violet-500 appearance-none cursor-pointer"
+            title="Target framework for commit"
+          >
+            <option value="react">React</option>
+            <option value="nextjs">Next.js</option>
+            <option value="vue">Vue</option>
+            <option value="svelte">Svelte</option>
+            <option value="react-native">RN</option>
+            <option value="flutter">Flutter</option>
+            <option value="html">HTML</option>
+          </select>
+          <button
+            onClick={onCommit}
+            disabled={committing}
+            className={`flex items-center gap-1.5 rounded-r border px-3 py-1 text-xs font-medium transition-colors ${
+              committing
+                ? "border-amber-500/30 bg-amber-600/10 text-amber-300 cursor-wait"
+                : "border-violet-500/30 bg-violet-600/10 text-violet-400 hover:bg-violet-600/20 hover:text-violet-300"
+            }`}
+            title="Commit design → generate code → push to running app"
+          >
+            {committing ? (
+              <div className="h-3 w-3 animate-spin rounded-full border-2 border-violet-400 border-t-transparent" />
+            ) : (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 19V5m0 0l-4 4m4-4l4 4" />
+              </svg>
+            )}
+            {committing ? "Committing..." : "Commit"}
+          </button>
+        </div>
         <button
           onClick={onPlay}
           className="flex items-center gap-1.5 rounded bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-500"
@@ -935,6 +1156,206 @@ function DesignPanel() {
           <PropertyInput label="R" value={shape.rx ?? 0} onChange={(v) => updateShape(shape.id, { rx: v, ry: v })} />
         </div>
       )}
+
+      {/* Typography (for text shapes) */}
+      {shape.type === "text" && (() => {
+        // Extract current text properties from the first run
+        const firstPara = shape.content?.children?.[0];
+        const firstRun = firstPara?.children?.[0];
+        const currentFontFamily = firstRun?.fontFamily || "Inter";
+        const currentFontSize = firstRun?.fontSize || 16;
+        const currentFontWeight = firstRun?.fontWeight || 400;
+        const currentFontStyle = firstRun?.fontStyle || "normal";
+        const currentLetterSpacing = firstRun?.letterSpacing || 0;
+        const currentLineHeight = firstRun?.lineHeight || 0;
+        const currentTextDecoration = firstRun?.textDecoration || "none";
+        const currentTextAlign = firstPara?.textAlign || "left";
+        const currentGrowType = shape.growType || "auto-height";
+
+        // Helper: update all runs in the content
+        const updateAllRuns = (runUpdates: Record<string, any>) => {
+          if (!shape.content) {
+            updateShape(shape.id, {
+              content: {
+                type: "root" as const,
+                children: [{
+                  type: "paragraph" as const,
+                  children: [{ text: "Text", fontFamily: "Inter", fontSize: 16, fontWeight: 400, fontStyle: "normal" as const, ...runUpdates }],
+                }],
+              },
+            });
+            return;
+          }
+          const newContent = {
+            ...shape.content,
+            children: shape.content.children.map(para => ({
+              ...para,
+              children: para.children.map(run => ({ ...run, ...runUpdates })),
+            })),
+          };
+          updateShape(shape.id, { content: newContent });
+        };
+
+        // Helper: update all paragraphs
+        const updateAllParagraphs = (paraUpdates: Record<string, any>) => {
+          if (!shape.content) return;
+          const newContent = {
+            ...shape.content,
+            children: shape.content.children.map(para => ({
+              ...para,
+              ...paraUpdates,
+            })),
+          };
+          updateShape(shape.id, { content: newContent });
+        };
+
+        // Get plain text from content
+        const plainText = shape.content?.children?.map(
+          p => p.children.map(r => r.text).join("")
+        ).join("\n") || "";
+
+        return (
+          <div>
+            <label className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">Typography</label>
+            <div className="space-y-2">
+              {/* Font Family */}
+              <select
+                value={currentFontFamily}
+                onChange={(e) => updateAllRuns({ fontFamily: e.target.value })}
+                className="w-full rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-200 outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                {["Inter", "Roboto", "Arial", "Helvetica", "Georgia", "Times New Roman", "Courier New", "Verdana", "system-ui", "sans-serif", "serif", "monospace"].map(f => (
+                  <option key={f} value={f}>{f}</option>
+                ))}
+              </select>
+
+              {/* Weight + Style */}
+              <div className="flex gap-1.5">
+                <select
+                  value={currentFontWeight}
+                  onChange={(e) => updateAllRuns({ fontWeight: Number(e.target.value) })}
+                  className="flex-1 rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  {[{v:100,l:"Thin"},{v:200,l:"ExtraLight"},{v:300,l:"Light"},{v:400,l:"Regular"},{v:500,l:"Medium"},{v:600,l:"SemiBold"},{v:700,l:"Bold"},{v:800,l:"ExtraBold"},{v:900,l:"Black"}].map(w => (
+                    <option key={w.v} value={w.v}>{w.l}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => updateAllRuns({ fontStyle: currentFontStyle === "italic" ? "normal" : "italic" })}
+                  className={`rounded px-2 py-1 text-xs transition-colors ${currentFontStyle === "italic" ? "bg-indigo-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-white"}`}
+                  title="Italic"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <line x1="19" y1="4" x2="10" y2="4" /><line x1="14" y1="20" x2="5" y2="20" /><line x1="15" y1="4" x2="9" y2="20" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Size + Line Height */}
+              <div className="grid grid-cols-2 gap-1.5">
+                <PropertyInput label="Size" value={currentFontSize} onChange={(v) => updateAllRuns({ fontSize: Math.max(1, v) })} />
+                <PropertyInput label="LH" value={currentLineHeight} onChange={(v) => updateAllRuns({ lineHeight: Math.max(0, v) })} />
+              </div>
+
+              {/* Letter Spacing */}
+              <PropertyInput label="Spacing" value={currentLetterSpacing} onChange={(v) => updateAllRuns({ letterSpacing: v })} />
+
+              {/* Text Alignment */}
+              <div>
+                <label className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">Alignment</label>
+                <div className="flex gap-0.5">
+                  {(["left", "center", "right", "justify"] as const).map(align => (
+                    <button
+                      key={align}
+                      onClick={() => updateAllParagraphs({ textAlign: align })}
+                      className={`flex-1 rounded px-1 py-1 transition-colors ${currentTextAlign === align ? "bg-indigo-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-white"}`}
+                      title={align}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mx-auto">
+                        {align === "left" && <><line x1="3" y1="6" x2="16" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="14" y2="18" /></>}
+                        {align === "center" && <><line x1="6" y1="6" x2="18" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="7" y1="18" x2="17" y2="18" /></>}
+                        {align === "right" && <><line x1="8" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="10" y1="18" x2="21" y2="18" /></>}
+                        {align === "justify" && <><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></>}
+                      </svg>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Text Decoration */}
+              <div>
+                <label className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">Decoration</label>
+                <div className="flex gap-0.5">
+                  {(["none", "underline", "line-through"] as const).map(deco => (
+                    <button
+                      key={deco}
+                      onClick={() => updateAllRuns({ textDecoration: deco })}
+                      className={`flex-1 rounded px-1 py-1 text-[10px] transition-colors ${currentTextDecoration === deco ? "bg-indigo-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-white"}`}
+                      title={deco}
+                    >
+                      {deco === "none" ? "—" : deco === "underline" ? "U̲" : "S̶"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Grow Type (Resize Mode) */}
+              <div>
+                <label className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">Resize</label>
+                <div className="flex gap-0.5">
+                  {([
+                    { val: "auto-width" as const, label: "Auto W" },
+                    { val: "auto-height" as const, label: "Auto H" },
+                    { val: "fixed" as const, label: "Fixed" },
+                  ]).map(g => (
+                    <button
+                      key={g.val}
+                      onClick={() => updateShape(shape.id, { growType: g.val })}
+                      className={`flex-1 rounded px-1 py-1 text-[10px] transition-colors ${currentGrowType === g.val ? "bg-indigo-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-white"}`}
+                      title={g.label}
+                    >
+                      {g.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Text Content Editor */}
+              <div>
+                <label className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">Content</label>
+                <textarea
+                  value={plainText}
+                  onChange={(e) => {
+                    const newText = e.target.value;
+                    const paragraphs = newText.split("\n");
+                    const newContent = {
+                      type: "root" as const,
+                      children: paragraphs.map(paraText => ({
+                        type: "paragraph" as const,
+                        textAlign: currentTextAlign as "left" | "center" | "right" | "justify",
+                        children: [{
+                          text: paraText,
+                          fontFamily: currentFontFamily,
+                          fontSize: currentFontSize,
+                          fontWeight: currentFontWeight,
+                          fontStyle: currentFontStyle as "normal" | "italic",
+                          letterSpacing: currentLetterSpacing,
+                          lineHeight: currentLineHeight,
+                          textDecoration: currentTextDecoration as "none" | "underline" | "line-through",
+                        }],
+                      })),
+                    };
+                    updateShape(shape.id, { content: newContent });
+                  }}
+                  className="w-full rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-200 outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+                  rows={3}
+                  placeholder="Enter text..."
+                />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Fill */}
       <div>

@@ -33,8 +33,18 @@ import type {
   LayoutJustify,
   SizingMode,
 } from "./canvasEngine";
+import { computeTextSize } from "./textEngine";
 
 // ── Layout Node (intermediate representation) ─────────────────
+
+/** Get intrinsic size for a shape, using text measurement for text shapes */
+function getIntrinsicSize(child: CanvasShape): { width: number; height: number } {
+  if (child.type === "text") {
+    const sz = computeTextSize(child);
+    return { width: sz.width, height: sz.height };
+  }
+  return { width: child.width, height: child.height };
+}
 
 interface LayoutNode {
   id: string;
@@ -86,17 +96,20 @@ export class AutoLayoutEngine {
     if (directChildren.length === 0) return children;
 
     // Build layout nodes
-    const nodes: LayoutNode[] = directChildren.map(child => ({
-      id: child.id,
-      intrinsicWidth: child.width,
-      intrinsicHeight: child.height,
-      computedX: 0,
-      computedY: 0,
-      computedWidth: child.width,
-      computedHeight: child.height,
-      overrides: child.layoutChildOverrides ?? DEFAULT_OVERRIDES,
-      shape: child,
-    }));
+    const nodes: LayoutNode[] = directChildren.map(child => {
+      const intrinsic = getIntrinsicSize(child);
+      return {
+        id: child.id,
+        intrinsicWidth: intrinsic.width,
+        intrinsicHeight: intrinsic.height,
+        computedX: 0,
+        computedY: 0,
+        computedWidth: intrinsic.width,
+        computedHeight: intrinsic.height,
+        overrides: child.layoutChildOverrides ?? DEFAULT_OVERRIDES,
+        shape: child,
+      };
+    });
 
     // Determine main and cross axes
     const isRow = al.direction === "row";

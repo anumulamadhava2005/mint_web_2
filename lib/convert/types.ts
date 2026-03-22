@@ -477,6 +477,8 @@ export interface ConversionOptions {
   // Live features
   enableLiveSync?: boolean;
   fileKey?: string;
+  projectId?: string;
+  userId?: string;
 }
 
 export interface ConversionResult {

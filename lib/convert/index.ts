@@ -16,6 +16,11 @@ import type {
 } from "./types";
 
 import {
+  generateLiveSyncFiles,
+  patchPackageJsonForSync,
+} from "./liveSyncFiles";
+
+import {
   buildDrawableTree,
   applyUXEnhancements,
   flattenTree,
@@ -108,6 +113,23 @@ export async function convertDesign(
       manifest,
       filteredInteractions
     );
+
+    // 7. Inject live sync files if enabled
+    if (options.enableLiveSync) {
+      const syncFiles = generateLiveSyncFiles(options);
+      files.push(...syncFiles);
+
+      // Patch package.json to add sync dependencies + script
+      const pkgIdx = files.findIndex(
+        (f) => f.path === "package.json" || f.path.endsWith("/package.json")
+      );
+      if (pkgIdx !== -1 && files[pkgIdx].type === "text") {
+        files[pkgIdx] = {
+          ...files[pkgIdx],
+          content: patchPackageJsonForSync(files[pkgIdx].content as string),
+        };
+      }
+    }
 
     return {
       success: true,

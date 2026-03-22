@@ -30,6 +30,22 @@ import {
   ArrowDown,
   Undo2,
   Redo2,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignJustify,
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
+  WrapText,
+  MoveHorizontal,
+  Maximize2,
+  List,
+  ListOrdered,
+  AlignVerticalJustifyStart,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
 } from "lucide-react";
 import { useCollaboration } from "@/hooks/useCollaboration";
 import {
@@ -71,6 +87,8 @@ import {
   CRDTDocument,
 } from "@/lib/canvasEngine";
 import type { SnapGuide } from "@/lib/snappingEngine";
+import type { TextAlign, VerticalAlign, TextResizeMode, TextDecoration, TextCase, ListType } from "@/lib/canvasEngine";
+import { computeTextSize, buildFontString, getLineHeight } from "@/lib/textEngine";
 import { mat3TransformPoint, mat3Inverse } from "@/lib/matrix3";
 import { renderAll } from "@/lib/canvasRenderer";
 
@@ -97,7 +115,8 @@ type InteractionMode =
   | "moving"
   | "resizing"
   | "rotating"
-  | "pen-drawing";
+  | "pen-drawing"
+  | "text-editing";
 
 interface Page {
   id: string;
@@ -133,6 +152,7 @@ export default function FigmaCanvas({
   const [tool, setTool] = useState<Tool>("select");
   const [mode, setMode] = useState<InteractionMode>("idle");
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
 
   // Pages
   const [pages, setPages] = useState<Page[]>([{ id: "page-1", name: "Page 1" }]);
@@ -940,10 +960,19 @@ export default function FigmaCanvas({
           strokeWidth: currentTool === "line" ? 2 : 0,
           text: currentTool === "text" ? "Text" : undefined,
           fontSize: currentTool === "text" ? 16 : undefined,
+          fontFamily: currentTool === "text" ? "Inter" : undefined,
+          textResizeMode: currentTool === "text" ? (w > 110 ? "autoHeight" : "autoWidth") as TextResizeMode : undefined,
         });
         addShape(s);
         setSelectedIds(new Set([s.id]));
         selectedIdsRef.current = new Set([s.id]);
+
+        // Auto-enter text editing for text tool
+        if (currentTool === "text") {
+          setEditingTextId(s.id);
+          modeRef.current = "text-editing";
+          setMode("text-editing");
+        }
 
         if (currentTool !== "pen") {
           setTool("select");
@@ -999,8 +1028,11 @@ export default function FigmaCanvas({
         .map(id => shapesRef.current.find(s => s.id === id))
         .find(s => s?.type === "text");
       if (hit) {
-        const newText = prompt("Edit text:", hit.text || "");
-        if (newText !== null) updateShape(hit.id, { text: newText });
+        setEditingTextId(hit.id);
+        setSelectedIds(new Set([hit.id]));
+        selectedIdsRef.current = new Set([hit.id]);
+        modeRef.current = "text-editing";
+        setMode("text-editing");
       }
     }
   };
@@ -1501,12 +1533,103 @@ export default function FigmaCanvas({
             ref={canvasRef}
             className="absolute inset-0 w-full h-full"
             style={{ cursor: canvasCursor() }}
-            onMouseDown={handleMouseDown}
+            onMouseDown={(e) => {
+              // If we're editing text and click outside, exit editing
+              if (editingTextId && modeRef.current === "text-editing") {
+                const wp = worldPosFromEvent(e);
+                const sg = sceneGraphRef.current;
+                const hitIds = sg.hitTestPoint(wp);
+                if (!hitIds.includes(editingTextId)) {
+                  setEditingTextId(null);
+                  modeRef.current = "idle";
+                  setMode("idle");
+                  // Auto-resize after editing
+                  const editedShape = shapesRef.current.find(s => s.id === editingTextId);
+                  if (editedShape && editedShape.type === "text") {
+                    const sz = computeTextSize(editedShape);
+                    if (editedShape.textResizeMode === "autoWidth") {
+                      updateShape(editedShape.id, { width: sz.width, height: sz.height });
+                    } else if (editedShape.textResizeMode === "autoHeight") {
+                      updateShape(editedShape.id, { height: sz.height });
+                    }
+                  }
+                  return;
+                }
+              }
+              handleMouseDown(e);
+            }}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onDoubleClick={handleDoubleClick}
             onContextMenu={(e) => e.preventDefault()}
           />
+
+          {/* Inline Text Editing Overlay */}
+          {editingTextId && (() => {
+            const editShape = shapesRef.current.find(s => s.id === editingTextId);
+            if (!editShape) return null;
+            const cam = camera;
+            const sg = sceneGraphRef.current;
+            const wt = sg.getWorldTransform(editShape.id);
+            // Get screen position of top-left corner
+            const worldTL = { x: wt[4], y: wt[5] };
+            const screenX = worldTL.x * cam.zoom + cam.x;
+            const screenY = worldTL.y * cam.zoom + cam.y;
+            const screenW = editShape.width * cam.zoom;
+            const screenH = editShape.height * cam.zoom;
+            const scaledFontSize = (editShape.fontSize || 16) * cam.zoom;
+            const scaledLineHeight = getLineHeight(editShape) * cam.zoom;
+            const scaledLetterSpacing = (editShape.letterSpacing ?? 0) * cam.zoom;
+
+            return (
+              <textarea
+                autoFocus
+                value={editShape.text || ""}
+                onChange={(e) => {
+                  const newText = e.target.value;
+                  updateShape(editShape.id, { text: newText });
+                  // Auto-resize
+                  const updated = { ...editShape, text: newText };
+                  const sz = computeTextSize(updated);
+                  if (editShape.textResizeMode === "autoWidth" || !editShape.textResizeMode) {
+                    updateShape(editShape.id, { width: sz.width, height: sz.height });
+                  } else if (editShape.textResizeMode === "autoHeight") {
+                    updateShape(editShape.id, { height: sz.height });
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    setEditingTextId(null);
+                    modeRef.current = "idle";
+                    setMode("idle");
+                  }
+                  e.stopPropagation();
+                }}
+                onBlur={() => {
+                  setEditingTextId(null);
+                  modeRef.current = "idle";
+                  setMode("idle");
+                }}
+                className="absolute outline-none resize-none bg-transparent border-none p-0 m-0 overflow-hidden"
+                style={{
+                  left: screenX,
+                  top: screenY,
+                  width: editShape.textResizeMode === "autoWidth" ? "auto" : screenW,
+                  minWidth: editShape.textResizeMode === "autoWidth" ? 20 : screenW,
+                  height: editShape.textResizeMode === "fixed" ? screenH : "auto",
+                  minHeight: editShape.textResizeMode === "fixed" ? screenH : scaledLineHeight + 4,
+                  font: buildFontString({ ...editShape, fontSize: scaledFontSize }),
+                  color: editShape.fill || "#FFFFFF",
+                  textAlign: (editShape.textAlign || "left") as any,
+                  letterSpacing: scaledLetterSpacing + "px",
+                  lineHeight: scaledLineHeight + "px",
+                  caretColor: "#4F8EF7",
+                  zIndex: 100,
+                }}
+              />
+            );
+          })()}
 
           {/* Floating Toolbar */}
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-[#2c2c2c] border border-white/10 rounded-lg px-1.5 py-1.5 flex items-center gap-1 shadow-2xl">
@@ -1732,6 +1855,223 @@ export default function FigmaCanvas({
                     />
                   </div>
                 </div>
+
+                {/* Typography (text shapes only) */}
+                {selShape.type === "text" && (
+                  <div className="px-2 py-2.5 border-b border-white/[0.08]">
+                    <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide mb-2 block">
+                      Typography
+                    </span>
+                    <div className="space-y-2">
+                      {/* Font Family */}
+                      <div className="flex items-center gap-1">
+                        <select
+                          value={selShape.fontFamily || "Inter"}
+                          onChange={(e) => {
+                            updateShape(selShape.id, { fontFamily: e.target.value });
+                            const sz = computeTextSize({ ...selShape, fontFamily: e.target.value });
+                            if (selShape.textResizeMode === "autoWidth" || !selShape.textResizeMode) updateShape(selShape.id, { width: sz.width, height: sz.height });
+                            else if (selShape.textResizeMode === "autoHeight") updateShape(selShape.id, { height: sz.height });
+                          }}
+                          className="flex-1 h-6 bg-white/[0.03] border border-white/[0.1] rounded px-1.5 text-[10px] text-zinc-300 outline-none focus:border-white/[0.2]"
+                        >
+                          {["Inter", "Roboto", "SF Pro", "Arial", "Helvetica", "Georgia", "Times New Roman", "Courier New", "Verdana", "system-ui"].map(f => (
+                            <option key={f} value={f} className="bg-[#2c2c2c]">{f}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Weight + Style row */}
+                      <div className="flex items-center gap-1">
+                        <select
+                          value={selShape.fontWeight ?? 400}
+                          onChange={(e) => {
+                            updateShape(selShape.id, { fontWeight: Number(e.target.value) });
+                            const sz = computeTextSize({ ...selShape, fontWeight: Number(e.target.value) });
+                            if (selShape.textResizeMode === "autoWidth" || !selShape.textResizeMode) updateShape(selShape.id, { width: sz.width, height: sz.height });
+                            else if (selShape.textResizeMode === "autoHeight") updateShape(selShape.id, { height: sz.height });
+                          }}
+                          className="flex-1 h-6 bg-white/[0.03] border border-white/[0.1] rounded px-1.5 text-[10px] text-zinc-300 outline-none focus:border-white/[0.2]"
+                        >
+                          {[{v:100,l:"Thin"},{v:200,l:"ExtraLight"},{v:300,l:"Light"},{v:400,l:"Regular"},{v:500,l:"Medium"},{v:600,l:"SemiBold"},{v:700,l:"Bold"},{v:800,l:"ExtraBold"},{v:900,l:"Black"}].map(w => (
+                            <option key={w.v} value={w.v} className="bg-[#2c2c2c]">{w.l}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => updateShape(selShape.id, { fontStyle: selShape.fontStyle === "italic" ? "normal" : "italic" })}
+                          className={`p-1 rounded transition-colors ${selShape.fontStyle === "italic" ? "bg-white/[0.15] text-white" : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.08]"}`}
+                          title="Italic"
+                        >
+                          <Italic className="w-3 h-3" />
+                        </button>
+                      </div>
+
+                      {/* Size + Line Height */}
+                      <div className="grid grid-cols-2 gap-1">
+                        <PropInput
+                          label="Sz"
+                          value={selShape.fontSize || 16}
+                          onChange={(v) => {
+                            updateShape(selShape.id, { fontSize: Math.max(1, v) });
+                            const sz = computeTextSize({ ...selShape, fontSize: Math.max(1, v) });
+                            if (selShape.textResizeMode === "autoWidth" || !selShape.textResizeMode) updateShape(selShape.id, { width: sz.width, height: sz.height });
+                            else if (selShape.textResizeMode === "autoHeight") updateShape(selShape.id, { height: sz.height });
+                          }}
+                        />
+                        <PropInput
+                          label="LH"
+                          value={selShape.lineHeight ?? 0}
+                          onChange={(v) => {
+                            updateShape(selShape.id, { lineHeight: Math.max(0, v) });
+                            const sz = computeTextSize({ ...selShape, lineHeight: Math.max(0, v) });
+                            if (selShape.textResizeMode === "autoWidth" || !selShape.textResizeMode) updateShape(selShape.id, { width: sz.width, height: sz.height });
+                            else if (selShape.textResizeMode === "autoHeight") updateShape(selShape.id, { height: sz.height });
+                          }}
+                        />
+                      </div>
+
+                      {/* Letter Spacing + Paragraph Spacing */}
+                      <div className="grid grid-cols-2 gap-1">
+                        <PropInput
+                          label="LS"
+                          value={selShape.letterSpacing ?? 0}
+                          onChange={(v) => {
+                            updateShape(selShape.id, { letterSpacing: v });
+                            const sz = computeTextSize({ ...selShape, letterSpacing: v });
+                            if (selShape.textResizeMode === "autoWidth" || !selShape.textResizeMode) updateShape(selShape.id, { width: sz.width, height: sz.height });
+                            else if (selShape.textResizeMode === "autoHeight") updateShape(selShape.id, { height: sz.height });
+                          }}
+                        />
+                        <PropInput
+                          label="PS"
+                          value={selShape.paragraphSpacing ?? 0}
+                          onChange={(v) => {
+                            updateShape(selShape.id, { paragraphSpacing: Math.max(0, v) });
+                            const sz = computeTextSize({ ...selShape, paragraphSpacing: Math.max(0, v) });
+                            if (selShape.textResizeMode === "autoWidth" || !selShape.textResizeMode) updateShape(selShape.id, { width: sz.width, height: sz.height });
+                            else if (selShape.textResizeMode === "autoHeight") updateShape(selShape.id, { height: sz.height });
+                          }}
+                        />
+                      </div>
+
+                      {/* Text Alignment (Horizontal) */}
+                      <div className="flex items-center gap-0.5">
+                        <span className="text-[9px] text-zinc-600 w-6">Align</span>
+                        {([
+                          { val: "left" as TextAlign, icon: <AlignLeft className="w-3 h-3" /> },
+                          { val: "center" as TextAlign, icon: <AlignCenter className="w-3 h-3" /> },
+                          { val: "right" as TextAlign, icon: <AlignRight className="w-3 h-3" /> },
+                          { val: "justified" as TextAlign, icon: <AlignJustify className="w-3 h-3" /> },
+                        ]).map(a => (
+                          <button
+                            key={a.val}
+                            onClick={() => updateShape(selShape.id, { textAlign: a.val })}
+                            className={`p-1 rounded transition-colors ${(selShape.textAlign ?? "left") === a.val ? "bg-white/[0.15] text-white" : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.08]"}`}
+                            title={a.val}
+                          >
+                            {a.icon}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Vertical Alignment */}
+                      <div className="flex items-center gap-0.5">
+                        <span className="text-[9px] text-zinc-600 w-6">V</span>
+                        {([
+                          { val: "top" as VerticalAlign, icon: <AlignVerticalJustifyStart className="w-3 h-3" /> },
+                          { val: "center" as VerticalAlign, icon: <AlignVerticalJustifyCenter className="w-3 h-3" /> },
+                          { val: "bottom" as VerticalAlign, icon: <AlignVerticalJustifyEnd className="w-3 h-3" /> },
+                        ]).map(a => (
+                          <button
+                            key={a.val}
+                            onClick={() => updateShape(selShape.id, { verticalAlign: a.val })}
+                            className={`p-1 rounded transition-colors ${(selShape.verticalAlign ?? "top") === a.val ? "bg-white/[0.15] text-white" : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.08]"}`}
+                            title={a.val}
+                          >
+                            {a.icon}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Resize Mode */}
+                      <div className="flex items-center gap-0.5">
+                        <span className="text-[9px] text-zinc-600 w-6">Size</span>
+                        {([
+                          { val: "autoWidth" as TextResizeMode, icon: <MoveHorizontal className="w-3 h-3" />, tip: "Auto Width" },
+                          { val: "autoHeight" as TextResizeMode, icon: <WrapText className="w-3 h-3" />, tip: "Auto Height" },
+                          { val: "fixed" as TextResizeMode, icon: <Maximize2 className="w-3 h-3" />, tip: "Fixed" },
+                        ]).map(r => (
+                          <button
+                            key={r.val}
+                            onClick={() => {
+                              updateShape(selShape.id, { textResizeMode: r.val });
+                              const sz = computeTextSize({ ...selShape, textResizeMode: r.val });
+                              if (r.val === "autoWidth") updateShape(selShape.id, { width: sz.width, height: sz.height });
+                              else if (r.val === "autoHeight") updateShape(selShape.id, { height: sz.height });
+                            }}
+                            className={`p-1 rounded transition-colors ${(selShape.textResizeMode ?? "autoWidth") === r.val ? "bg-white/[0.15] text-white" : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.08]"}`}
+                            title={r.tip}
+                          >
+                            {r.icon}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Decoration */}
+                      <div className="flex items-center gap-0.5">
+                        <span className="text-[9px] text-zinc-600 w-6">Deco</span>
+                        {([
+                          { val: "none" as TextDecoration, label: "—" },
+                          { val: "underline" as TextDecoration, icon: <Underline className="w-3 h-3" /> },
+                          { val: "strikethrough" as TextDecoration, icon: <Strikethrough className="w-3 h-3" /> },
+                        ]).map(d => (
+                          <button
+                            key={d.val}
+                            onClick={() => updateShape(selShape.id, { textDecoration: d.val })}
+                            className={`px-1 py-1 rounded transition-colors text-[10px] ${(selShape.textDecoration ?? "none") === d.val ? "bg-white/[0.15] text-white" : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.08]"}`}
+                            title={d.val}
+                          >
+                            {d.icon || d.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Text Case */}
+                      <div className="flex items-center gap-0.5">
+                        <span className="text-[9px] text-zinc-600 w-6">Case</span>
+                        <select
+                          value={selShape.textCase ?? "none"}
+                          onChange={(e) => updateShape(selShape.id, { textCase: e.target.value as TextCase })}
+                          className="flex-1 h-6 bg-white/[0.03] border border-white/[0.1] rounded px-1.5 text-[10px] text-zinc-300 outline-none focus:border-white/[0.2]"
+                        >
+                          <option value="none" className="bg-[#2c2c2c]">None</option>
+                          <option value="uppercase" className="bg-[#2c2c2c]">UPPERCASE</option>
+                          <option value="lowercase" className="bg-[#2c2c2c]">lowercase</option>
+                          <option value="titleCase" className="bg-[#2c2c2c]">Title Case</option>
+                        </select>
+                      </div>
+
+                      {/* List Type */}
+                      <div className="flex items-center gap-0.5">
+                        <span className="text-[9px] text-zinc-600 w-6">List</span>
+                        {([
+                          { val: "none" as ListType, label: "—" },
+                          { val: "bullet" as ListType, icon: <List className="w-3 h-3" /> },
+                          { val: "numbered" as ListType, icon: <ListOrdered className="w-3 h-3" /> },
+                        ]).map(l => (
+                          <button
+                            key={l.val}
+                            onClick={() => updateShape(selShape.id, { listType: l.val })}
+                            className={`px-1 py-1 rounded transition-colors text-[10px] ${(selShape.listType ?? "none") === l.val ? "bg-white/[0.15] text-white" : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.08]"}`}
+                            title={l.val}
+                          >
+                            {l.icon || l.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Fill */}
                 <div className="px-2 py-2.5 border-b border-white/[0.08]">

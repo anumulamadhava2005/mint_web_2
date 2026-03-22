@@ -287,6 +287,49 @@ io.on("connection", (socket) => {
 
   socket.on("viewport_change", (_data: any) => {});
 
+  // ── Project subscription (for mobile preview / live update) ─
+  // Preview clients subscribe to project-level config updates
+  socket.on("subscribe-project", ({ projectId }) => {
+    if (!projectId) {
+      socket.emit("error", { message: "projectId required" });
+      return;
+    }
+    socket.join(`project:${projectId}`);
+    socket.emit("project-subscribed", { projectId });
+    console.log(`📱 Preview client subscribed to project ${projectId}`);
+  });
+
+  socket.on("unsubscribe-project", ({ projectId }) => {
+    if (projectId) {
+      socket.leave(`project:${projectId}`);
+      console.log(`📱 Preview client unsubscribed from project ${projectId}`);
+    }
+  });
+
+  // Editor broadcasts config-update after a successful commit
+  socket.on("config-update", ({ projectId, version, config }) => {
+    if (!projectId) return;
+    // Broadcast to all preview clients watching this project
+    socket.to(`project:${projectId}`).emit("config-update", {
+      projectId,
+      version,
+      config,
+    });
+    console.log(`🚀 Config update v${version} broadcast to project ${projectId}`);
+  });
+
+  // Editor broadcasts code-update with generated files for live sync daemons
+  socket.on("code-update", ({ projectId, version, framework, files }) => {
+    if (!projectId) return;
+    socket.to(`project:${projectId}`).emit("code-update", {
+      projectId,
+      version,
+      framework,
+      files,
+    });
+    console.log(`🔄 Code update v${version} (${framework}) → ${files?.length || 0} files broadcast to project ${projectId}`);
+  });
+
   // ── Heartbeat ───────────────────────────────────────────
   socket.on("heartbeat", () => {
     socket.emit("heartbeat_ack", { timestamp: Date.now() });
