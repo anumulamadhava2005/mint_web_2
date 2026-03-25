@@ -2,14 +2,23 @@
 // Code Conversion API Route
 // POST /api/convert - Converts design JSON to framework code
 // ═══════════════════════════════════════════════════════════════
-
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { exec } from "child_process";
+import util from "util";
+import fs from "fs/promises";
+import path from "path";
+import os from "os";
+import crypto from "crypto";
+
+const execAsync = util.promisify(exec);
+
 import {
   convertDesign,
   getAvailableFrameworks,
   type TargetFramework,
 } from "@/lib/convert";
+import { patchPackageJsonForSync } from "@/lib/convert/liveSyncFiles";
 
 // ── Request Schema ────────────────────────────────────────────
 
@@ -117,8 +126,91 @@ export async function POST(request: Request) {
       );
     }
 
+    let finalFiles = result.files;
+
+    if (conversionRequest.target === "react-native") {
+      const tempDir = path.join(os.tmpdir(), `mint-export-${crypto.randomUUID()}`);
+      await fs.mkdir(tempDir, { recursive: true });
+
+      try {
+        // Run create-expo-app
+        await execAsync(`npx create-expo-app@latest . -y --no-install`, { cwd: tempDir });
+
+        // Delete boilerplate folders
+        const dirsToRemove = ["app", "components", "constants", "hooks", "scripts"];
+        for (const dir of dirsToRemove) {
+          await fs.rm(path.join(tempDir, dir), { recursive: true, force: true }).catch(() => {});
+        }
+
+        // Read and modify package.json
+        const pkgPath = path.join(tempDir, "package.json");
+        const pkgText = await fs.readFile(pkgPath, "utf-8");
+        const pkg = JSON.parse(pkgText);
+        
+        // Add required dependencies for SDUI
+        pkg.dependencies = pkg.dependencies || {};
+        pkg.dependencies["@react-native-async-storage/async-storage"] = "1.21.0";
+        // Ensure slugified name
+        pkg.name = conversionRequest.fileName?.toLowerCase().replace(/\s+/g, "-") || "design-export";
+        
+        let pkgStr = JSON.stringify(pkg, null, 2);
+        if (conversionRequest.options?.enableLiveSync) {
+          pkgStr = patchPackageJsonForSync(pkgStr);
+        }
+        
+        await fs.writeFile(pkgPath, pkgStr);
+
+        // Read and modify app.json
+        const appJsonPath = path.join(tempDir, "app.json");
+        const appJsonText = await fs.readFile(appJsonPath, "utf-8");
+        const appJson = JSON.parse(appJsonText);
+        
+        if (appJson.expo) {
+          appJson.expo.name = conversionRequest.fileName || "Design Export";
+          appJson.expo.slug = conversionRequest.fileName?.toLowerCase().replace(/\s+/g, "-") || "design-export";
+          appJson.expo.scheme = conversionRequest.fileName?.toLowerCase().replace(/\s+/g, "-") || "design-export";
+        }
+        
+        await fs.writeFile(appJsonPath, JSON.stringify(appJson, null, 2));
+
+        // Read all remaining scaffolded files
+        const scaffoldedFiles: Array<{ path: string; content: Buffer; type: "binary" }> = [];
+        
+        async function readDirRecursive(dir: string, baseDir: string = dir) {
+          const entries = await fs.readdir(dir, { withFileTypes: true });
+          for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+              if (entry.name !== "node_modules" && entry.name !== ".git") {
+                await readDirRecursive(fullPath, baseDir);
+              }
+            } else {
+              const relativePath = path.relative(baseDir, fullPath).replace(/\\/g, "/");
+              scaffoldedFiles.push({
+                path: relativePath,
+                content: await fs.readFile(fullPath),
+                type: "binary"
+              });
+            }
+          }
+        }
+        
+        await readDirRecursive(tempDir);
+        
+        // Combine keeping builder files replacing scaffolded ones if conflict
+        const builderFilePaths = new Set(finalFiles.map(f => f.path));
+        finalFiles = [
+          ...scaffoldedFiles.filter(f => !builderFilePaths.has(f.path)),
+          ...finalFiles
+        ];
+        
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      }
+    }
+
     // Generate ZIP file
-    const zipBuffer = await generateZip(result.files);
+    const zipBuffer = await generateZip(finalFiles);
 
     // Return ZIP file - convert Uint8Array to Buffer for Response compatibility
     const filename = `${conversionRequest.fileName}-${conversionRequest.target}.zip`;

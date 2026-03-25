@@ -90,11 +90,19 @@ export async function POST(req: Request) {
       .filter((f) => f.type === "text")
       .map((f) => ({ path: f.path, content: f.content as string, type: f.type }));
 
+    // For mobile frameworks, also store raw design data for Server-Driven UI.
+    // Production apps fetch this via /api/design-data and render dynamically
+    // without needing an app-store update.
+    const isMobileFramework = targetFramework === "react-native" || targetFramework === "flutter";
+
     const commitData = {
       framework: targetFramework,
       fileCount: codeFiles.length,
       files: codeFiles,
       warnings: conversionResult.warnings,
+      designData: isMobileFramework
+        ? { nodes, interactions, referenceFrame }
+        : undefined,
     };
 
     await db.query(

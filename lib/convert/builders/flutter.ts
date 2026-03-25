@@ -557,8 +557,8 @@ function renderFlutterWidget(
   props.push(`width: ${Math.round(node.w)}`);
   props.push(`height: ${Math.round(node.h)}`);
 
-  // Background color
-  if (node.fill?.type === "SOLID" && node.fill.color) {
+  // Background color (skip for text nodes — their fill = text color, not background)
+  if (node.fill?.type === "SOLID" && node.fill.color && node.type !== "TEXT") {
     props.push(`backgroundColor: ${colorToFlutter(node.fill.color)}`);
   }
 
@@ -621,6 +621,10 @@ function renderFlutterWidget(
       styleProps.push(
         `fontWeight: ${fontWeightToFlutter(node.text.fontWeight)}`
       );
+    if (node.text.fontFamily) {
+      const clean = node.text.fontFamily.replace(/["']/g, "").trim();
+      styleProps.push(`fontFamily: '${clean}'`);
+    }
 
     if (styleProps.length > 0) {
       props.push(

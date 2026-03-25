@@ -143,8 +143,8 @@ export function cssFromDrawable(
   style.height = roundPx(node.h);
   style.boxSizing = "border-box";
 
-  // Background
-  if (node.fill) {
+  // Background (skip for text nodes — their fill is the text color, not background)
+  if (node.fill && node.type !== "TEXT") {
     Object.assign(style, cssFromFill(node.fill));
   }
 
@@ -360,7 +360,9 @@ export function cssFromText(text: TextStyle): CSSProperties {
   const style: CSSProperties = {};
 
   if (text.fontFamily) {
-    style.fontFamily = `"${text.fontFamily}", system-ui, sans-serif`;
+    // Strip any existing quotes around the font name to avoid double-quoting
+    const clean = text.fontFamily.replace(/["']/g, "").trim();
+    style.fontFamily = `"${clean}", system-ui, sans-serif`;
   }
   if (text.fontSize) {
     style.fontSize = text.fontSize;

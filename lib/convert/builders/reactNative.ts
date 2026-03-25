@@ -57,101 +57,8 @@ export const reactNativeBuilder: FrameworkBuilder = {
     );
     const transitionMap = buildTransitionMap(interactions);
 
-    // package.json
-    files.push({
-      path: "package.json",
-      content: JSON.stringify(
-        {
-          name: options.fileName?.toLowerCase().replace(/\s+/g, "-") || "design-export",
-          version: "1.0.0",
-          main: "expo-router/entry",
-          scripts: {
-            start: "expo start",
-            android: "expo start --android",
-            ios: "expo start --ios",
-            web: "expo start --web",
-          },
-          dependencies: {
-            expo: "~50.0.0",
-            "expo-router": "~3.4.0",
-            "expo-status-bar": "~1.11.0",
-            react: "18.2.0",
-            "react-native": "0.73.0",
-            "react-native-safe-area-context": "4.8.0",
-            "react-native-screens": "~3.29.0",
-          },
-          devDependencies: {
-            "@babel/core": "^7.23.0",
-            "@types/react": "~18.2.0",
-            typescript: "^5.3.0",
-          },
-          private: true,
-        },
-        null,
-        2
-      ),
-      type: "text",
-    });
-
-    // app.json
-    files.push({
-      path: "app.json",
-      content: JSON.stringify(
-        {
-          expo: {
-            name: options.fileName || "Design Export",
-            slug: options.fileName?.toLowerCase().replace(/\s+/g, "-") || "design-export",
-            version: "1.0.0",
-            orientation: "portrait",
-            icon: "./assets/icon.png",
-            userInterfaceStyle: "automatic",
-            splash: {
-              image: "./assets/splash.png",
-              resizeMode: "contain",
-              backgroundColor: "#1a1a1a",
-            },
-            assetBundlePatterns: ["**/*"],
-            ios: {
-              supportsTablet: true,
-            },
-            android: {
-              adaptiveIcon: {
-                foregroundImage: "./assets/adaptive-icon.png",
-                backgroundColor: "#1a1a1a",
-              },
-            },
-            web: {
-              bundler: "metro",
-              favicon: "./assets/favicon.png",
-            },
-            scheme: options.fileName?.toLowerCase().replace(/\s+/g, "-") || "design-export",
-          },
-        },
-        null,
-        2
-      ),
-      type: "text",
-    });
-
-    // tsconfig.json
-    files.push({
-      path: "tsconfig.json",
-      content: JSON.stringify(
-        {
-          extends: "expo/tsconfig.base",
-          compilerOptions: {
-            strict: true,
-            paths: {
-              "@/*": ["./*"],
-            },
-          },
-          include: ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"],
-        },
-        null,
-        2
-      ),
-      type: "text",
-    });
+    // We no longer generate package.json, app.json, and tsconfig.json here.
+    // They are generated dynamically via \`npx create-expo-app\` in the convert API route.
 
     // ── app/_layout.tsx — Stack navigator with transitions ───
     const screenEntries = routes.map((r) => {
@@ -173,15 +80,18 @@ export const reactNativeBuilder: FrameworkBuilder = {
       path: "app/_layout.tsx",
       content: `import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { MintLiveProvider } from "../providers/MintLiveProvider";
 ${overlayProviderImport}
 export default function RootLayout() {
   return (
     <>
       <StatusBar style="light" />
+      <MintLiveProvider>
 ${overlayProviderOpen}      <Stack>
 ${screenEntries}
       </Stack>
-${overlayProviderClose}    </>
+${overlayProviderClose}      </MintLiveProvider>
+    </>
   );
 }
 `,
@@ -247,13 +157,15 @@ interface Props {
 }
 
 export function DesignNode({ node }: Props) {
+  const isText = node.type === "TEXT";
   const containerStyle: ViewStyle = {
     position: "absolute",
     left: node.x,
     top: node.y,
     width: node.w,
     height: node.h,
-    ...(node.fill?.type === "SOLID" && node.fill.color
+    // Only apply background fill to non-text nodes (text uses fill as text color)
+    ...(node.fill?.type === "SOLID" && node.fill.color && !isText
       ? { backgroundColor: node.fill.color }
       : {}),
     ...(node.corners?.uniform ? { borderRadius: node.corners.uniform } : {}),
@@ -261,12 +173,13 @@ export function DesignNode({ node }: Props) {
   };
 
   // Text node
-  if (node.type === "TEXT" && node.text) {
+  if (isText && node.text) {
     const textStyle: TextStyle = {
       color: node.text.color || "#000",
       fontSize: node.text.fontSize || 14,
       fontWeight: (node.text.fontWeight as TextStyle["fontWeight"]) || "400",
       textAlign: (node.text.textAlign?.toLowerCase() as TextStyle["textAlign"]) || "left",
+      ...(node.text.fontFamily ? { fontFamily: node.text.fontFamily.replace(/["']/g, "").trim() } : {}),
     };
 
     return (
@@ -359,6 +272,12 @@ ${interactions
         type: "text",
       });
     }
+
+    // ── Server-Driven UI runtime files ─────────────────────────
+    // These enable live OTA updates in production apps.
+    // The app polls /api/design-data for new design JSON and
+    // MintRenderer renders the UI dynamically from that JSON.
+    files.push(...generateSDUIFiles(options, routes));
 
     // Add placeholder assets
     files.push({
@@ -762,7 +681,8 @@ function generateRNStyle(node: DrawableNode): string {
   parts.push(`width: ${Math.round(node.w)}`);
   parts.push(`height: ${Math.round(node.h)}`);
 
-  if (node.fill?.type === "SOLID" && node.fill.color) {
+  // Only apply background fill to non-text nodes (text fill = text color, not bg)
+  if (node.fill?.type === "SOLID" && node.fill.color && node.type !== "TEXT") {
     parts.push(`backgroundColor: "${node.fill.color}"`);
   }
 
@@ -782,7 +702,7 @@ function generateRNStyle(node: DrawableNode): string {
     }
   }
 
-  return `{{ ${parts.join(", ")} }}`;
+  return `{ ${parts.join(", ")} }`;
 }
 
 function generateRNTextStyle(text: TextStyle): string {
@@ -791,10 +711,15 @@ function generateRNTextStyle(text: TextStyle): string {
   if (text.color) parts.push(`color: "${text.color}"`);
   if (text.fontSize) parts.push(`fontSize: ${text.fontSize}`);
   if (text.fontWeight) parts.push(`fontWeight: "${text.fontWeight}"`);
+  if (text.fontFamily) {
+    // Strip any stale quotes to avoid double-quoting
+    const clean = text.fontFamily.replace(/["']/g, "").trim();
+    parts.push(`fontFamily: "${clean}"`);
+  }
   if (text.textAlign)
     parts.push(`textAlign: "${text.textAlign.toLowerCase()}"`);
 
-  return `{{ ${parts.join(", ")} }}`;
+  return `{ ${parts.join(", ")} }`;
 }
 
 function escapeRNText(text: string): string {
@@ -957,6 +882,738 @@ const overlayStyles = StyleSheet.create({
   },
 });
 `;
+}
+// ═══════════════════════════════════════════════════════════════
+// Server-Driven UI — Runtime files for OTA design updates
+//
+// These 4 files ship inside the generated Expo project ZIP.
+// They allow a production app (Play Store / App Store) to
+// receive design updates from the Mint server without
+// requiring a new app-store release.
+//
+//   1. mint.config.ts          — API URL, projectId, poll interval
+//   2. services/MintConnector  — HTTP polling service
+//   3. providers/MintLiveProvider — React Context + AsyncStorage cache
+//   4. components/MintRenderer — Renders DrawableNode[] at runtime
+// ═══════════════════════════════════════════════════════════════
+
+function generateSDUIFiles(
+  options: ConversionOptions,
+  routes: FrameRoute[]
+): GeneratedFile[] {
+  const files: GeneratedFile[] = [];
+  const projectId = options.projectId || options.fileKey || "unknown";
+  const userId = options.userId || "unknown";
+  // In production the app should point at the deployed Mint server
+  const apiOrigin = "http://localhost:3001";
+
+  // ── 1. mint.config.ts ───────────────────────────────────────
+  files.push({
+    path: "mint.config.ts",
+    content: `// ═══════════════════════════════════════════════════════════════
+// Mint Live Config — Connection settings for OTA design updates
+//
+// In PRODUCTION, replace apiOrigin with your deployed Mint URL.
+// The app polls this server for design data updates.
+// ═══════════════════════════════════════════════════════════════
+import Constants from "expo-constants";
+
+// Dynamically use the host machine's IP (from Expo metro server) during dev
+// so Android emulators don't fail trying to connect to their own localhost.
+const devHost = Constants.expoConfig?.hostUri
+  ? Constants.expoConfig.hostUri.split(":")[0]
+  : "localhost";
+
+export const MINT_CONFIG = {
+  /** Base URL of the Mint editor server */
+  apiOrigin: __DEV__ ? \`http://\${devHost}:3001\` : "${apiOrigin}",
+
+  /** Project identifier (set at conversion time) */
+  projectId: "${projectId}",
+
+  /** User identifier (set at conversion time) */
+  userId: "${userId}",
+
+  /** Polling interval in milliseconds (default 3 seconds) */
+  pollInterval: 3000,
+
+  /** Enable live updates (set false to disable OTA entirely) */
+  enabled: true,
+};
+`,
+    type: "text",
+  });
+
+  // ── 2. services/MintConnector.ts ────────────────────────────
+  files.push({
+    path: "services/MintConnector.ts",
+    content: `// ═══════════════════════════════════════════════════════════════
+// Mint Connector — Polls /api/design-data for OTA design updates
+//
+// Usage:
+//   const connector = new MintConnector(config);
+//   connector.onUpdate((data) => { ... });
+//   connector.start();
+//   connector.stop();
+// ═══════════════════════════════════════════════════════════════
+
+export interface DesignDataResponse {
+  projectId: string;
+  version: number;
+  framework: string;
+  designData: {
+    nodes: any[];
+    interactions: any[];
+    referenceFrame?: {
+      id: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
+  } | null;
+  committedAt?: string;
+}
+
+export interface MintConnectorConfig {
+  apiOrigin: string;
+  projectId: string;
+  pollInterval: number;
+}
+
+type UpdateCallback = (data: DesignDataResponse) => void;
+
+export class MintConnector {
+  private config: MintConnectorConfig;
+  private lastVersion = 0;
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private listeners: UpdateCallback[] = [];
+  private isPolling = false;
+
+  constructor(config: MintConnectorConfig) {
+    this.config = config;
+  }
+
+  /** Set the last-known version (e.g. from cache) to avoid re-fetching. */
+  setLastVersion(version: number) {
+    this.lastVersion = version;
+  }
+
+  /** Register a callback for design data updates. */
+  onUpdate(cb: UpdateCallback) {
+    this.listeners.push(cb);
+    return () => {
+      this.listeners = this.listeners.filter((l) => l !== cb);
+    };
+  }
+
+  /** Start polling. */
+  start() {
+    if (this.timer) return;
+    // Fetch immediately on start
+    this.poll();
+    this.timer = setInterval(() => this.poll(), this.config.pollInterval);
+  }
+
+  /** Stop polling. */
+  stop() {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+  }
+
+  /** Fetch the latest design data once (used internally + for manual refresh). */
+  async fetchLatest(): Promise<DesignDataResponse | null> {
+    try {
+      const url = \`\${this.config.apiOrigin}/api/design-data/\${this.config.projectId}\`;
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      return (await res.json()) as DesignDataResponse;
+    } catch {
+      return null;
+    }
+  }
+
+  private async poll() {
+    if (this.isPolling) return;
+    this.isPolling = true;
+    try {
+      const url = \`\${this.config.apiOrigin}/api/design-data/\${this.config.projectId}?since=\${this.lastVersion}\`;
+      const res = await fetch(url);
+      if (res.status === 204) {
+        // No new version
+        return;
+      }
+      if (!res.ok) return;
+
+      const data = (await res.json()) as DesignDataResponse;
+      if (data.version && data.version > this.lastVersion && data.designData) {
+        this.lastVersion = data.version;
+        for (const cb of this.listeners) {
+          cb(data);
+        }
+      }
+    } catch {
+      // Silently retry on next interval
+    } finally {
+      this.isPolling = false;
+    }
+  }
+}
+`,
+    type: "text",
+  });
+
+  // Build route lookup: frameId → routePath for the MintLiveProvider
+  const routeEntries = routes.map((r) => {
+    return `  "${r.frame.id}": "${r.isHome ? "/" : `/${r.slug}`}"`;
+  }).join(",\n");
+
+  // ── 3. providers/MintLiveProvider.tsx ────────────────────────
+  files.push({
+    path: "providers/MintLiveProvider.tsx",
+    content: `// ═══════════════════════════════════════════════════════════════
+// Mint Live Provider — Manages OTA design data state
+//
+// Wraps the app in a React Context that:
+//   1. Starts the MintConnector on mount
+//   2. Caches design data in AsyncStorage for offline use
+//   3. Provides \`useMintDesign(routeId)\` hook for screens
+// ═══════════════════════════════════════════════════════════════
+
+import React, { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { MINT_CONFIG } from "../mint.config";
+import { MintConnector, DesignDataResponse } from "../services/MintConnector";
+
+const CACHE_KEY = "@mint_design_data";
+
+// ── Route map: frameId → route path ───────────────────────────
+const ROUTE_MAP: Record<string, string> = {
+${routeEntries}
+};
+
+// ── Context ───────────────────────────────────────────────────
+interface MintLiveContextValue {
+  /** The latest design data (null if not yet loaded or disabled). */
+  designData: DesignDataResponse["designData"];
+  /** Current version number. */
+  version: number;
+  /** Whether live data is available and loaded. */
+  isLive: boolean;
+  /** Whether a fetch is in progress. */
+  isLoading: boolean;
+  /** Get the design nodes for a specific screen by route path or frame ID. */
+  getScreenNodes: (screenIdOrRoute: string) => any | null;
+  /** Force a refresh from the server. */
+  refresh: () => Promise<void>;
+}
+
+const MintLiveContext = createContext<MintLiveContextValue>({
+  designData: null,
+  version: 0,
+  isLive: false,
+  isLoading: false,
+  getScreenNodes: () => null,
+  refresh: async () => {},
+});
+
+export function useMintDesign(screenIdOrRoute?: string) {
+  const ctx = useContext(MintLiveContext);
+  if (!screenIdOrRoute) return ctx;
+
+  return {
+    ...ctx,
+    screenData: ctx.getScreenNodes(screenIdOrRoute),
+  };
+}
+
+// ── Provider ──────────────────────────────────────────────────
+export function MintLiveProvider({ children }: { children: ReactNode }) {
+  const [designData, setDesignData] = useState<DesignDataResponse["designData"]>(null);
+  const [version, setVersion] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const [connector] = useState(() =>
+    new MintConnector({
+      apiOrigin: MINT_CONFIG.apiOrigin,
+      projectId: MINT_CONFIG.projectId,
+      pollInterval: MINT_CONFIG.pollInterval,
+    })
+  );
+
+  // Load cached data on mount
+  useEffect(() => {
+    if (!MINT_CONFIG.enabled) return;
+
+    (async () => {
+      try {
+        const cached = await AsyncStorage.getItem(CACHE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached) as DesignDataResponse;
+          if (parsed.designData) {
+            setDesignData(parsed.designData);
+            setVersion(parsed.version);
+            connector.setLastVersion(parsed.version);
+          }
+        }
+      } catch {
+        // Ignore cache read errors
+      }
+
+      // Start polling
+      connector.start();
+    })();
+
+    return () => connector.stop();
+  }, [connector]);
+
+  // Listen for updates
+  useEffect(() => {
+    if (!MINT_CONFIG.enabled) return;
+
+    const unsub = connector.onUpdate((data) => {
+      if (data.designData) {
+        setDesignData(data.designData);
+        setVersion(data.version);
+        // Cache to AsyncStorage
+        AsyncStorage.setItem(CACHE_KEY, JSON.stringify(data)).catch(() => {});
+      }
+    });
+
+    return unsub;
+  }, [connector]);
+
+  // Get screen nodes by route path or frame ID
+  const getScreenNodes = useCallback(
+    (screenIdOrRoute: string) => {
+      if (!designData?.nodes) return null;
+
+      // Try matching by frame ID directly
+      const byId = designData.nodes.find((n: any) => n.id === screenIdOrRoute);
+      if (byId) return byId;
+
+      // Try matching by route path → frame ID
+      for (const [frameId, routePath] of Object.entries(ROUTE_MAP)) {
+        if (routePath === screenIdOrRoute || routePath === \`/\${screenIdOrRoute}\`) {
+          const node = designData.nodes.find((n: any) => n.id === frameId);
+          if (node) return node;
+        }
+      }
+
+      // Try matching by name
+      return designData.nodes.find(
+        (n: any) => n.name?.toLowerCase().replace(/\\s+/g, "-") === screenIdOrRoute
+      ) || null;
+    },
+    [designData]
+  );
+
+  // Manual refresh
+  const refresh = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const data = await connector.fetchLatest();
+      if (data?.designData) {
+        setDesignData(data.designData);
+        setVersion(data.version);
+        connector.setLastVersion(data.version);
+        await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(data));
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [connector]);
+
+  const value: MintLiveContextValue = {
+    designData,
+    version,
+    isLive: !!designData,
+    isLoading,
+    getScreenNodes,
+    refresh,
+  };
+
+  return (
+    <MintLiveContext.Provider value={value}>
+      {children}
+    </MintLiveContext.Provider>
+  );
+}
+`,
+    type: "text",
+  });
+
+  // ── 4. components/MintRenderer.tsx ──────────────────────────
+  files.push({
+    path: "components/MintRenderer.tsx",
+    content: `// ═══════════════════════════════════════════════════════════════
+// Mint Renderer — Dynamic runtime renderer for design nodes
+//
+// Takes a design node tree (JSON from /api/design-data) and
+// renders it using React Native primitives. This is the runtime
+// equivalent of the static code generated by the builder.
+//
+// Usage:
+//   import { MintRenderer } from "../components/MintRenderer";
+//   <MintRenderer node={screenNode} />
+// ═══════════════════════════════════════════════════════════════
+
+import React from "react";
+import {
+  View,
+  Text,
+  Image,
+  Pressable,
+  ScrollView,
+  Dimensions,
+  Linking,
+  ViewStyle,
+  TextStyle,
+  ImageStyle,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+
+// ── Types ─────────────────────────────────────────────────────
+
+interface DesignNode {
+  id: string;
+  name?: string;
+  type: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  visible?: boolean;
+  rotation?: number;
+  opacity?: number;
+  fills?: Array<{
+    type: string;
+    color?: string;
+    opacity?: number;
+    imageRef?: string;
+  }>;
+  strokes?: Array<{
+    color?: string;
+    opacity?: number;
+    weight?: number;
+    align?: string;
+  }>;
+  corners?: {
+    uniform?: number;
+    topLeft?: number;
+    topRight?: number;
+    bottomRight?: number;
+    bottomLeft?: number;
+  };
+  effects?: Array<{
+    type: string;
+    color?: string;
+    offsetX?: number;
+    offsetY?: number;
+    blur?: number;
+    spread?: number;
+  }>;
+  text?: {
+    characters?: string;
+    fontFamily?: string;
+    fontWeight?: number | string;
+    fontSize?: number;
+    lineHeight?: number | string;
+    letterSpacing?: number;
+    textAlign?: string;
+    color?: string;
+  };
+  layout?: {
+    mode?: string;
+    gap?: number;
+    paddingTop?: number;
+    paddingRight?: number;
+    paddingBottom?: number;
+    paddingLeft?: number;
+  };
+  clipContent?: boolean;
+  overflowBehavior?: string;
+  fixedWhenScrolling?: boolean;
+  children?: DesignNode[];
+}
+
+interface Interaction {
+  sourceId: string;
+  trigger: string;
+  action: string;
+  targetId?: string;
+  destinationUrl?: string;
+}
+
+// ── Route map (for navigation) ────────────────────────────────
+const ROUTE_MAP: Record<string, string> = {
+${routeEntries}
+};
+
+// ── Main Renderer ─────────────────────────────────────────────
+
+interface MintRendererProps {
+  /** A single screen node (top-level frame). */
+  node: DesignNode;
+  /** Interactions array for the entire project. */
+  interactions?: Interaction[];
+}
+
+export function MintRenderer({ node, interactions = [] }: MintRendererProps) {
+  const refW = node.width;
+  const refH = node.height;
+  const scale = Math.min(SCREEN_WIDTH / refW, SCREEN_HEIGHT / refH, 1);
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#1a1a1a" }}>
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+        <View
+          style={{
+            width: refW,
+            height: refH,
+            position: "relative",
+            transform: [{ scale }],
+          }}
+        >
+          {node.children?.map((child) => (
+            <NodeRenderer key={child.id} node={child} interactions={interactions} />
+          ))}
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+// ── Recursive Node Renderer ───────────────────────────────────
+
+function NodeRenderer({ node, interactions }: { node: DesignNode; interactions: Interaction[] }) {
+  const router = useRouter();
+
+  if (node.visible === false) return null;
+
+  const isText = node.type === "TEXT";
+  const isImage = node.type === "IMAGE" || node.fills?.some((f) => f.type === "IMAGE");
+
+  // Build the style object
+  const style = buildNodeStyle(node);
+
+  // Check for interactions on this node
+  const nodeInteraction = interactions.find((ix) => ix.sourceId === node.id);
+  const isClickable = !!nodeInteraction;
+
+  // Determine scroll behavior
+  const isScrollContainer =
+    node.overflowBehavior && node.overflowBehavior !== "none";
+  const scrollH = node.overflowBehavior === "horizontal" || node.overflowBehavior === "both";
+
+  // Build content
+  let content: React.ReactNode;
+
+  if (isText && node.text) {
+    const textStyle = buildTextStyle(node.text);
+    content = (
+      <View style={style}>
+        <Text style={textStyle}>{node.text.characters || ""}</Text>
+      </View>
+    );
+  } else if (isImage) {
+    const imageRef = node.fills?.find((f) => f.type === "IMAGE")?.imageRef;
+    content = (
+      <View style={style}>
+        {imageRef && (
+          <Image
+            source={{ uri: imageRef }}
+            style={{
+              width: "100%" as unknown as number,
+              height: "100%" as unknown as number,
+              borderRadius: node.corners?.uniform || 0,
+            }}
+            resizeMode="cover"
+          />
+        )}
+      </View>
+    );
+  } else if (isScrollContainer && node.children?.length) {
+    content = (
+      <View style={style}>
+        <ScrollView
+          horizontal={scrollH}
+          showsVerticalScrollIndicator={false}
+          showsHorizontalScrollIndicator={false}
+          style={{ flex: 1 }}
+        >
+          {node.children.map((child) => (
+            <NodeRenderer key={child.id} node={child} interactions={interactions} />
+          ))}
+        </ScrollView>
+      </View>
+    );
+  } else if (node.children?.length) {
+    content = (
+      <View style={style}>
+        {node.children.map((child) => (
+          <NodeRenderer key={child.id} node={child} interactions={interactions} />
+        ))}
+      </View>
+    );
+  } else {
+    content = <View style={style} />;
+  }
+
+  // Wrap with Pressable if the node has an interaction
+  if (isClickable && nodeInteraction) {
+    return (
+      <Pressable onPress={() => handleInteraction(nodeInteraction, router)}>
+        {content}
+      </Pressable>
+    );
+  }
+
+  return <>{content}</>;
+}
+
+// ── Interaction Handler ───────────────────────────────────────
+
+function handleInteraction(ix: Interaction, router: any) {
+  switch (ix.action) {
+    case "NAVIGATE":
+      if (ix.targetId) {
+        const route = ROUTE_MAP[ix.targetId];
+        if (route) {
+          router.push(route);
+        }
+      }
+      break;
+    case "BACK":
+      router.back();
+      break;
+    case "OPEN_URL":
+      if (ix.destinationUrl) {
+        Linking.openURL(ix.destinationUrl);
+      }
+      break;
+    // OPEN_OVERLAY, CLOSE_OVERLAY, SWAP_OVERLAY are handled by
+    // the OverlayProvider if present. The renderer focuses on
+    // navigation interactions for production use.
+    default:
+      break;
+  }
+}
+
+// ── Style Builders ────────────────────────────────────────────
+
+function buildNodeStyle(node: DesignNode): ViewStyle {
+  const isText = node.type === "TEXT";
+
+  const style: ViewStyle = {
+    position: "absolute",
+    left: Math.round(node.x),
+    top: Math.round(node.y),
+    width: Math.round(node.width),
+    height: Math.round(node.height),
+  };
+
+  // Background color (only for non-text nodes)
+  if (!isText && node.fills?.length) {
+    const solidFill = node.fills.find((f) => f.type === "SOLID" && f.color);
+    if (solidFill) {
+      style.backgroundColor = solidFill.color;
+    }
+  }
+
+  // Corner radius
+  if (node.corners) {
+    if (node.corners.uniform) {
+      style.borderRadius = node.corners.uniform;
+    } else {
+      if (node.corners.topLeft) style.borderTopLeftRadius = node.corners.topLeft;
+      if (node.corners.topRight) style.borderTopRightRadius = node.corners.topRight;
+      if (node.corners.bottomRight) style.borderBottomRightRadius = node.corners.bottomRight;
+      if (node.corners.bottomLeft) style.borderBottomLeftRadius = node.corners.bottomLeft;
+    }
+  }
+
+  // Opacity
+  if (node.opacity !== undefined && node.opacity < 1) {
+    style.opacity = node.opacity;
+  }
+
+  // Stroke → border
+  if (node.strokes?.length) {
+    const stroke = node.strokes[0];
+    if (stroke.color && stroke.weight) {
+      style.borderWidth = stroke.weight;
+      style.borderColor = stroke.color;
+    }
+  }
+
+  // Layout (auto-layout → flexbox)
+  if (node.layout && node.layout.mode && node.layout.mode !== "NONE") {
+    style.flexDirection = node.layout.mode === "VERTICAL" ? "column" : "row";
+    if (node.layout.gap) {
+      style.gap = node.layout.gap;
+    }
+    if (node.layout.paddingTop) style.paddingTop = node.layout.paddingTop;
+    if (node.layout.paddingRight) style.paddingRight = node.layout.paddingRight;
+    if (node.layout.paddingBottom) style.paddingBottom = node.layout.paddingBottom;
+    if (node.layout.paddingLeft) style.paddingLeft = node.layout.paddingLeft;
+  }
+
+  // Clip content
+  if (node.clipContent && !node.overflowBehavior) {
+    style.overflow = "hidden";
+  }
+
+  // Drop shadow
+  if (node.effects?.length) {
+    const shadow = node.effects.find(
+      (e) => e.type === "DROP_SHADOW"
+    );
+    if (shadow) {
+      style.shadowColor = shadow.color || "#000";
+      style.shadowOffset = {
+        width: shadow.offsetX || 0,
+        height: shadow.offsetY || 0,
+      };
+      style.shadowOpacity = 1;
+      style.shadowRadius = (shadow.blur || 0) / 2;
+      style.elevation = Math.max(shadow.blur || 0, 1); // Android
+    }
+  }
+
+  return style;
+}
+
+function buildTextStyle(text: NonNullable<DesignNode["text"]>): TextStyle {
+  const style: TextStyle = {};
+
+  if (text.color) style.color = text.color;
+  if (text.fontSize) style.fontSize = text.fontSize;
+  if (text.fontWeight) style.fontWeight = String(text.fontWeight) as TextStyle["fontWeight"];
+  if (text.fontFamily) {
+    style.fontFamily = text.fontFamily.replace(/["']/g, "").trim();
+  }
+  if (text.textAlign) {
+    style.textAlign = text.textAlign.toLowerCase() as TextStyle["textAlign"];
+  }
+  if (text.lineHeight && text.lineHeight !== "AUTO" && text.fontSize) {
+    style.lineHeight = typeof text.lineHeight === "number" ? text.lineHeight : undefined;
+  }
+  if (text.letterSpacing) {
+    style.letterSpacing = text.letterSpacing;
+  }
+
+  return style;
+}
+`,
+    type: "text",
+  });
+
+  return files;
 }
 
 export default reactNativeBuilder;

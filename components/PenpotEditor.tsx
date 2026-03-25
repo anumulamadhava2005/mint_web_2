@@ -54,6 +54,15 @@ export default function PenpotEditor({
   const [commitFramework, setCommitFramework] = useState<string>("react");
   const [commitToast, setCommitToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
+  // Orphan frame confirmation for commit
+  const [commitOrphanDialog, setCommitOrphanDialog] = useState<{
+    orphans: { id: string; name: string }[];
+    allNodes: Record<string, unknown>[];
+    allInteractions: Record<string, unknown>[];
+    referenceFrame: any;
+  } | null>(null);
+  const [commitExcludedFrames, setCommitExcludedFrames] = useState<Set<string>>(new Set());
+
   // ── Commit handler ───────────────────────────────────────
   const handleCommit = useCallback(async () => {
     if (!file || committing || !currentPageId) return;
@@ -169,6 +178,68 @@ export default function PenpotEditor({
         }
       }
 
+      // ── Orphan frame detection ──────────────────────────────
+      if (nodes.length > 1) {
+        const homeId = (nodes[0] as Record<string, unknown>).id as string;
+        const navigatedTo = new Set<string>();
+        for (const ix of interactions) {
+          const action = ix.action as string;
+          const targetId = ix.targetId as string | undefined;
+          if ((action === "NAVIGATE" || action === "OPEN_OVERLAY" || action === "SWAP_OVERLAY") && targetId) {
+            navigatedTo.add(targetId);
+          }
+        }
+        const orphans = nodes
+          .map((n: Record<string, unknown>) => ({ id: n.id as string, name: n.name as string }))
+          .filter((f) => f.id !== homeId && !navigatedTo.has(f.id));
+
+        if (orphans.length > 0) {
+          // Show confirmation dialog — commit paused
+          setCommitting(false);
+          setCommitOrphanDialog({ orphans, allNodes: nodes, allInteractions: interactions, referenceFrame });
+          setCommitExcludedFrames(new Set());
+          return;
+        }
+      }
+
+      // No orphans — commit directly
+      await doCommit(nodes, interactions, referenceFrame);
+    } catch (e: any) {
+      console.error("Commit failed:", e);
+      setCommitToast({ message: e.message || "Commit failed", type: "error" });
+    } finally {
+      setCommitting(false);
+      setTimeout(() => setCommitToast(null), 4000);
+    }
+  }, [file, committing, saveFile, projectId, fileId, commitFramework, currentPageId]);
+
+  // ── Actual commit (after orphan confirmation if needed) ─────
+  const doCommit = useCallback(async (
+    nodes: Record<string, unknown>[],
+    interactions: Record<string, unknown>[],
+    referenceFrame: any,
+    excluded: Set<string> = new Set()
+  ) => {
+    if (!file) return;
+    setCommitting(true);
+
+    try {
+      const filteredNodes = excluded.size > 0
+        ? nodes.filter((n: Record<string, unknown>) => !excluded.has(n.id as string))
+        : nodes;
+      const filteredInteractions = excluded.size > 0
+        ? interactions.filter((ix: Record<string, unknown>) => {
+            const sourceId = ix.sourceId as string;
+            const targetId = ix.targetId as string | undefined;
+            return !excluded.has(sourceId) && (!targetId || !excluded.has(targetId));
+          })
+        : interactions;
+
+      if (filteredNodes.length === 0) {
+        setCommitToast({ message: "No frames remaining after exclusion.", type: "error" });
+        return;
+      }
+
       // POST to commit API with nodes
       const res = await fetch("/api/commit", {
         method: "POST",
@@ -178,7 +249,7 @@ export default function PenpotEditor({
           projectId, fileId,
           targetFramework: commitFramework,
           fileName: file.name || "design-export",
-          nodes, referenceFrame, interactions,
+          nodes: filteredNodes, referenceFrame, interactions: filteredInteractions,
         }),
       });
 
@@ -195,9 +266,10 @@ export default function PenpotEditor({
       setCommitToast({ message: e.message || "Commit failed", type: "error" });
     } finally {
       setCommitting(false);
+      setCommitOrphanDialog(null);
       setTimeout(() => setCommitToast(null), 4000);
     }
-  }, [file, committing, saveFile, projectId, fileId, commitFramework, currentPageId]);
+  }, [file, projectId, fileId, commitFramework]);
 
   // Initialize workspace on mount + set profile for collaboration
   useEffect(() => {
@@ -296,6 +368,128 @@ export default function PenpotEditor({
 
       {/* Convert to code dialog */}
       <ConvertDialog open={convertOpen} onClose={() => setConvertOpen(false)} />
+
+      {/* Commit orphan confirmation dialog */}
+      {commitOrphanDialog && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="relative w-full max-w-md rounded-2xl border border-white/10 bg-zinc-900 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/5 px-5 py-4">
+              <div>
+                <h2 className="text-base font-semibold text-white">Unreachable Screens</h2>
+                <p className="mt-0.5 text-xs text-zinc-400">
+                  These screens have no navigation pointing to them
+                </p>
+              </div>
+              <button
+                onClick={() => setCommitOrphanDialog(null)}
+                className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="px-5 py-4">
+              <div className="mb-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-400">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                    <line x1="12" y1="9" x2="12" y2="13" />
+                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
+                  <span className="text-xs font-medium text-amber-300">
+                    {commitOrphanDialog.orphans.length} screen{commitOrphanDialog.orphans.length > 1 ? "s" : ""} not linked
+                  </span>
+                </div>
+                <p className="mt-1 text-[11px] leading-relaxed text-amber-300/70">
+                  Include them in this commit or exclude them?
+                </p>
+              </div>
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {commitOrphanDialog.orphans.map((frame) => {
+                  const isExcluded = commitExcludedFrames.has(frame.id);
+                  return (
+                    <div
+                      key={frame.id}
+                      className={`flex items-center justify-between rounded-lg border p-3 transition-all ${
+                        isExcluded
+                          ? "border-white/5 bg-white/[0.01] opacity-50"
+                          : "border-emerald-500/20 bg-emerald-500/5"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-zinc-500">
+                          <rect x="2" y="2" width="20" height="20" rx="2" />
+                          <path d="M2 8h20M8 2v20" />
+                        </svg>
+                        <span className="text-sm text-zinc-200">{frame.name}</span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setCommitExcludedFrames((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(frame.id)) next.delete(frame.id);
+                            else next.add(frame.id);
+                            return next;
+                          });
+                        }}
+                        className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-colors ${
+                          isExcluded
+                            ? "bg-zinc-700 text-zinc-400 hover:bg-zinc-600"
+                            : "bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30"
+                        }`}
+                      >
+                        {isExcluded ? "Excluded" : "Included"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-white/5 px-5 py-4">
+              <button
+                onClick={() => setCommitOrphanDialog(null)}
+                className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (commitOrphanDialog) {
+                    doCommit(
+                      commitOrphanDialog.allNodes,
+                      commitOrphanDialog.allInteractions,
+                      commitOrphanDialog.referenceFrame,
+                      commitExcludedFrames
+                    );
+                  }
+                }}
+                disabled={committing}
+                className={`flex items-center gap-2 rounded-lg px-4 py-1.5 text-xs font-medium transition-all ${
+                  committing
+                    ? "cursor-not-allowed bg-zinc-700 text-zinc-500"
+                    : "bg-violet-600 text-white hover:bg-violet-500"
+                }`}
+              >
+                {committing ? (
+                  <>
+                    <div className="h-3 w-3 animate-spin rounded-full border border-white/30 border-t-white" />
+                    Committing...
+                  </>
+                ) : (
+                  <>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M20 6L9 17l-5-5" />
+                    </svg>
+                    Confirm & Commit
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Commit toast notification */}
       {commitToast && (

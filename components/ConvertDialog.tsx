@@ -101,6 +101,12 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
   const [showDetails, setShowDetails] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
 
+  // Step management: "framework" → "orphans" → converting
+  const [step, setStep] = useState<"framework" | "orphans">("framework");
+  // Orphan frames the user can include/exclude
+  const [orphanFrames, setOrphanFrames] = useState<{ id: string; name: string }[]>([]);
+  const [excludedFrames, setExcludedFrames] = useState<Set<string>>(new Set());
+
   // Run suggestion engine
   const suggestion = useMemo<FrameworkSuggestion | null>(() => {
     if (!file) return null;
@@ -118,6 +124,9 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
       setError("");
       setConverting(false);
       setShowDetails(false);
+      setStep("framework");
+      setOrphanFrames([]);
+      setExcludedFrames(new Set());
     }
   }, [open, suggestion]);
 
@@ -338,17 +347,94 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
     };
   }, [file, currentPageId]);
 
-  // ── Convert handler ─────────────────────────────────────────
-  const handleConvert = useCallback(async () => {
+  // ── Detect orphan frames (0 in-degree, not home) ────────────
+  const detectOrphans = useCallback(() => {
+    const payload = buildPayload();
+    if (!payload || payload.nodes.length <= 1) return { payload, orphans: [] };
+
+    // Home frame is always the first top-level frame (route "/")
+    const homeId = (payload.nodes[0] as Record<string, unknown>).id as string;
+
+    // Collect all NAVIGATE interaction target IDs
+    const navigatedTo = new Set<string>();
+    for (const ix of payload.interactions) {
+      const action = ix.action as string;
+      const targetId = ix.targetId as string | undefined;
+      if ((action === "NAVIGATE" || action === "OPEN_OVERLAY" || action === "SWAP_OVERLAY") && targetId) {
+        navigatedTo.add(targetId);
+      }
+    }
+
+    // Top-level frame IDs
+    const topFrameIds = payload.nodes.map((n: Record<string, unknown>) => ({
+      id: n.id as string,
+      name: n.name as string,
+    }));
+
+    // Orphans: not home, and not navigated to by any interaction
+    const orphans = topFrameIds.filter(
+      (f) => f.id !== homeId && !navigatedTo.has(f.id)
+    );
+
+    return { payload, orphans };
+  }, [buildPayload]);
+
+  // ── Step 1 → orphan check (called when user clicks Export) ──
+  const handleExportClick = useCallback(() => {
+    if (!selected || !file) return;
+    setError("");
+
+    const { payload, orphans } = detectOrphans();
+    if (!payload || payload.nodes.length === 0) {
+      setError("No frames found on the current page to convert.");
+      return;
+    }
+
+    if (orphans.length > 0) {
+      // Show orphan confirmation step
+      setOrphanFrames(orphans);
+      setExcludedFrames(new Set()); // default: include all
+      setStep("orphans");
+    } else {
+      // No orphans — proceed directly
+      doConvert(payload, new Set());
+    }
+  }, [selected, file, detectOrphans]);
+
+  // ── Proceed from orphans step ───────────────────────────────
+  const handleOrphanConfirm = useCallback(() => {
+    const { payload } = detectOrphans();
+    if (!payload) return;
+    doConvert(payload, excludedFrames);
+  }, [detectOrphans, excludedFrames]);
+
+  // ── Convert handler (actual conversion) ─────────────────────
+  const doConvert = useCallback(async (
+    payload: { nodes: Record<string, unknown>[]; referenceFrame: any; interactions: Record<string, unknown>[] },
+    excluded: Set<string>
+  ) => {
     if (!selected || !file) return;
 
     setConverting(true);
     setError("");
 
     try {
-      const payload = buildPayload();
-      if (!payload || payload.nodes.length === 0) {
-        setError("No frames found on the current page to convert.");
+      // Filter out excluded orphan frames
+      const filteredNodes = excluded.size > 0
+        ? payload.nodes.filter((n: Record<string, unknown>) => !excluded.has(n.id as string))
+        : payload.nodes;
+
+      // Also filter interactions that reference excluded frames
+      const filteredInteractions = excluded.size > 0
+        ? payload.interactions.filter((ix: Record<string, unknown>) => {
+            const sourceId = ix.sourceId as string;
+            const targetId = ix.targetId as string | undefined;
+            return !excluded.has(sourceId) && (!targetId || !excluded.has(targetId));
+          })
+        : payload.interactions;
+
+      if (filteredNodes.length === 0) {
+        setError("No frames remaining after exclusion.");
         setConverting(false);
         return;
       }
@@ -356,15 +442,13 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
       const body = {
         target: selected,
         fileName: file.name.replace(/\s+/g, "-").toLowerCase() || "design",
-        nodes: payload.nodes,
+        nodes: filteredNodes,
         referenceFrame: payload.referenceFrame,
-        interactions: payload.interactions,
+        interactions: filteredInteractions,
         options: {
           generateTypeScript: true,
           cssFramework: "tailwind" as const,
           includeComments: true,
-          // Include connector + the_god so the project can receive
-          // code updates when the user commits from the editor
           enableLiveSync: true,
           fileKey: file.id,
           projectId: file.projectId,
@@ -402,7 +486,7 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
     } finally {
       setConverting(false);
     }
-  }, [selected, file, buildPayload, onClose]);
+  }, [selected, file, onClose, profile]);
 
   if (!open) return null;
 
@@ -422,9 +506,13 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/5 px-5 py-4">
           <div>
-            <h2 className="text-base font-semibold text-white">Export to Code</h2>
+            <h2 className="text-base font-semibold text-white">
+              {step === "orphans" ? "Unreachable Screens" : "Export to Code"}
+            </h2>
             <p className="mt-0.5 text-xs text-zinc-400">
-              Choose a target framework for your design
+              {step === "orphans"
+                ? "These screens have no navigation pointing to them"
+                : "Choose a target framework for your design"}
             </p>
           </div>
           <button
@@ -437,123 +525,184 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
           </button>
         </div>
 
-        {/* Suggestion banner */}
-        {suggestion && (
-          <div className="mx-5 mt-4 rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-3 py-2.5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-indigo-400">
-                  <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                </svg>
-                <span className="text-xs font-medium text-indigo-300">
-                  Recommended: {suggestion.displayName}
-                </span>
-              </div>
-              <ConfidenceBadge level={suggestion.confidence} />
-            </div>
-            {suggestion.rankings[0]?.reasons.length > 0 && (
-              <p className="mt-1 text-[11px] leading-relaxed text-indigo-300/70">
-                {suggestion.rankings[0].reasons.slice(0, 2).join(" · ")}
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Framework grid */}
-        <div className="px-5 py-4">
-          <div className="grid grid-cols-2 gap-2">
-            {rankings.map((fw) => {
-              const info = FRAMEWORK_INFO[fw.framework];
-              if (!info) return null;
-              const isRecommended = fw.framework === recommended;
-              const isSelected = fw.framework === selected;
-
-              return (
-                <button
-                  key={fw.framework}
-                  onClick={() => setSelected(fw.framework)}
-                  className={`relative flex flex-col gap-1.5 rounded-xl border p-3 text-left transition-all ${
-                    isSelected
-                      ? "border-indigo-500 bg-indigo-500/10 ring-1 ring-indigo-500/30"
-                      : "border-white/5 bg-white/[0.02] hover:border-white/10 hover:bg-white/[0.04]"
-                  }`}
-                >
-                  {/* Recommended badge */}
-                  {isRecommended && (
-                    <span className="absolute -top-1.5 right-2 rounded-full bg-indigo-500 px-1.5 py-px text-[9px] font-semibold text-white">
-                      AI Pick
-                    </span>
-                  )}
-
+        {step === "framework" ? (
+          <>
+            {/* Suggestion banner */}
+            {suggestion && (
+              <div className="mx-5 mt-4 rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-3 py-2.5">
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-base">{info.icon}</span>
-                    <span className="text-sm font-medium text-zinc-200">
-                      {fw.displayName}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-indigo-400">
+                      <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                    <span className="text-xs font-medium text-indigo-300">
+                      Recommended: {suggestion.displayName}
                     </span>
                   </div>
-
-                  <p className="text-[11px] leading-snug text-zinc-500">
-                    {info.description}
+                  <ConfidenceBadge level={suggestion.confidence} />
+                </div>
+                {suggestion.rankings[0]?.reasons.length > 0 && (
+                  <p className="mt-1 text-[11px] leading-relaxed text-indigo-300/70">
+                    {suggestion.rankings[0].reasons.slice(0, 2).join(" · ")}
                   </p>
-
-                  <ScoreBar score={fw.score} />
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Details toggle */}
-        {suggestion && (
-          <div className="px-5 pb-2">
-            <button
-              onClick={() => setShowDetails(!showDetails)}
-              className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-300"
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                className={`transition-transform ${showDetails ? "rotate-90" : ""}`}
-              >
-                <path d="M9 18l6-6-6-6" />
-              </svg>
-              {showDetails ? "Hide" : "Show"} analysis details
-            </button>
-
-            {showDetails && (
-              <div className="mt-2 rounded-lg border border-white/5 bg-white/[0.02] p-3">
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px]">
-                  <Detail label="Total frames" value={suggestion.signals.totalFrames} />
-                  <Detail label="Total shapes" value={suggestion.signals.totalShapes} />
-                  <Detail label="Mobile frames" value={suggestion.signals.mobileFrames} />
-                  <Detail label="Desktop frames" value={suggestion.signals.desktopFrames} />
-                  <Detail label="Pages" value={suggestion.signals.pageCount} />
-                  <Detail label="Interactions" value={suggestion.signals.interactionCount} />
-                  <Detail label="Images" value={suggestion.signals.imageCount} />
-                  <Detail label="Text nodes" value={suggestion.signals.textCount} />
-                  <Detail label="Has navigation" value={suggestion.signals.hasNavigation ? "Yes" : "No"} />
-                  <Detail label="Has overlays" value={suggestion.signals.hasOverlays ? "Yes" : "No"} />
-                  <Detail label="Flex layout" value={suggestion.signals.hasFlexLayout ? "Yes" : "No"} />
-                  <Detail label="Grid layout" value={suggestion.signals.hasGridLayout ? "Yes" : "No"} />
-                  <Detail label="Bottom nav" value={suggestion.signals.hasBottomNav ? "Yes" : "No"} />
-                  <Detail label="Responsive" value={suggestion.signals.hasMultipleBreakpoints ? "Yes" : "No"} />
-                </div>
-
-                {/* Per-framework reasons */}
-                <div className="mt-3 space-y-1.5">
-                  {rankings.filter((r) => r.reasons.length > 0).map((r) => (
-                    <div key={r.framework} className="text-[10px]">
-                      <span className="font-medium text-zinc-400">{r.displayName}:</span>{" "}
-                      <span className="text-zinc-500">{r.reasons.join(" · ")}</span>
-                    </div>
-                  ))}
-                </div>
+                )}
               </div>
             )}
+
+            {/* Framework grid */}
+            <div className="px-5 py-4">
+              <div className="grid grid-cols-2 gap-2">
+                {rankings.map((fw) => {
+                  const info = FRAMEWORK_INFO[fw.framework];
+                  if (!info) return null;
+                  const isRecommended = fw.framework === recommended;
+                  const isSelected = fw.framework === selected;
+
+                  return (
+                    <button
+                      key={fw.framework}
+                      onClick={() => setSelected(fw.framework)}
+                      className={`relative flex flex-col gap-1.5 rounded-xl border p-3 text-left transition-all ${
+                        isSelected
+                          ? "border-indigo-500 bg-indigo-500/10 ring-1 ring-indigo-500/30"
+                          : "border-white/5 bg-white/[0.02] hover:border-white/10 hover:bg-white/[0.04]"
+                      }`}
+                    >
+                      {isRecommended && (
+                        <span className="absolute -top-1.5 right-2 rounded-full bg-indigo-500 px-1.5 py-px text-[9px] font-semibold text-white">
+                          AI Pick
+                        </span>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">{info.icon}</span>
+                        <span className="text-sm font-medium text-zinc-200">
+                          {fw.displayName}
+                        </span>
+                      </div>
+                      <p className="text-[11px] leading-snug text-zinc-500">
+                        {info.description}
+                      </p>
+                      <ScoreBar score={fw.score} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Details toggle */}
+            {suggestion && (
+              <div className="px-5 pb-2">
+                <button
+                  onClick={() => setShowDetails(!showDetails)}
+                  className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-300"
+                >
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    className={`transition-transform ${showDetails ? "rotate-90" : ""}`}
+                  >
+                    <path d="M9 18l6-6-6-6" />
+                  </svg>
+                  {showDetails ? "Hide" : "Show"} analysis details
+                </button>
+
+                {showDetails && (
+                  <div className="mt-2 rounded-lg border border-white/5 bg-white/[0.02] p-3">
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px]">
+                      <Detail label="Total frames" value={suggestion.signals.totalFrames} />
+                      <Detail label="Total shapes" value={suggestion.signals.totalShapes} />
+                      <Detail label="Mobile frames" value={suggestion.signals.mobileFrames} />
+                      <Detail label="Desktop frames" value={suggestion.signals.desktopFrames} />
+                      <Detail label="Pages" value={suggestion.signals.pageCount} />
+                      <Detail label="Interactions" value={suggestion.signals.interactionCount} />
+                      <Detail label="Images" value={suggestion.signals.imageCount} />
+                      <Detail label="Text nodes" value={suggestion.signals.textCount} />
+                      <Detail label="Has navigation" value={suggestion.signals.hasNavigation ? "Yes" : "No"} />
+                      <Detail label="Has overlays" value={suggestion.signals.hasOverlays ? "Yes" : "No"} />
+                      <Detail label="Flex layout" value={suggestion.signals.hasFlexLayout ? "Yes" : "No"} />
+                      <Detail label="Grid layout" value={suggestion.signals.hasGridLayout ? "Yes" : "No"} />
+                      <Detail label="Bottom nav" value={suggestion.signals.hasBottomNav ? "Yes" : "No"} />
+                      <Detail label="Responsive" value={suggestion.signals.hasMultipleBreakpoints ? "Yes" : "No"} />
+                    </div>
+                    <div className="mt-3 space-y-1.5">
+                      {rankings.filter((r) => r.reasons.length > 0).map((r) => (
+                        <div key={r.framework} className="text-[10px]">
+                          <span className="font-medium text-zinc-400">{r.displayName}:</span>{" "}
+                          <span className="text-zinc-500">{r.reasons.join(" · ")}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        ) : (
+          /* ── Orphan Frames Review Step ── */
+          <div className="px-5 py-4">
+            <div className="mb-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2.5">
+              <div className="flex items-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-400">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+                <span className="text-xs font-medium text-amber-300">
+                  {orphanFrames.length} screen{orphanFrames.length > 1 ? "s" : ""} not linked by any navigation
+                </span>
+              </div>
+              <p className="mt-1 text-[11px] leading-relaxed text-amber-300/70">
+                These frames can&apos;t be reached from the home screen. Include them anyway?
+              </p>
+            </div>
+
+            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+              {orphanFrames.map((frame) => {
+                const isExcluded = excludedFrames.has(frame.id);
+                return (
+                  <div
+                    key={frame.id}
+                    className={`flex items-center justify-between rounded-lg border p-3 transition-all ${
+                      isExcluded
+                        ? "border-white/5 bg-white/[0.01] opacity-50"
+                        : "border-emerald-500/20 bg-emerald-500/5"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-zinc-500">
+                        <rect x="2" y="2" width="20" height="20" rx="2" />
+                        <path d="M2 8h20M8 2v20" />
+                      </svg>
+                      <span className="text-sm text-zinc-200">{frame.name}</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setExcludedFrames((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(frame.id)) {
+                            next.delete(frame.id);
+                          } else {
+                            next.add(frame.id);
+                          }
+                          return next;
+                        });
+                      }}
+                      className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-colors ${
+                        isExcluded
+                          ? "bg-zinc-700 text-zinc-400 hover:bg-zinc-600"
+                          : "bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30"
+                      }`}
+                    >
+                      {isExcluded ? "Excluded" : "Included"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -570,35 +719,69 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
             {file?.name || "Untitled"} · Page {currentPageId ? "1" : "—"}
           </p>
           <div className="flex items-center gap-2">
+            {step === "orphans" && (
+              <button
+                onClick={() => setStep("framework")}
+                className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:text-white"
+              >
+                ← Back
+              </button>
+            )}
             <button
               onClick={onClose}
               className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:text-white"
             >
               Cancel
             </button>
-            <button
-              onClick={handleConvert}
-              disabled={!selected || converting}
-              className={`flex items-center gap-2 rounded-lg px-4 py-1.5 text-xs font-medium transition-all ${
-                !selected || converting
-                  ? "cursor-not-allowed bg-zinc-700 text-zinc-500"
-                  : "bg-indigo-600 text-white hover:bg-indigo-500"
-              }`}
-            >
-              {converting ? (
-                <>
-                  <div className="h-3 w-3 animate-spin rounded-full border border-white/30 border-t-white" />
-                  Converting...
-                </>
-              ) : (
-                <>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
-                  </svg>
-                  Export {selected ? FRAMEWORK_INFO[selected]?.icon : ""} ZIP
-                </>
-              )}
-            </button>
+            {step === "framework" ? (
+              <button
+                onClick={handleExportClick}
+                disabled={!selected || converting}
+                className={`flex items-center gap-2 rounded-lg px-4 py-1.5 text-xs font-medium transition-all ${
+                  !selected || converting
+                    ? "cursor-not-allowed bg-zinc-700 text-zinc-500"
+                    : "bg-indigo-600 text-white hover:bg-indigo-500"
+                }`}
+              >
+                {converting ? (
+                  <>
+                    <div className="h-3 w-3 animate-spin rounded-full border border-white/30 border-t-white" />
+                    Converting...
+                  </>
+                ) : (
+                  <>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                    </svg>
+                    Export {selected ? FRAMEWORK_INFO[selected]?.icon : ""} ZIP
+                  </>
+                )}
+              </button>
+            ) : (
+              <button
+                onClick={handleOrphanConfirm}
+                disabled={converting}
+                className={`flex items-center gap-2 rounded-lg px-4 py-1.5 text-xs font-medium transition-all ${
+                  converting
+                    ? "cursor-not-allowed bg-zinc-700 text-zinc-500"
+                    : "bg-indigo-600 text-white hover:bg-indigo-500"
+                }`}
+              >
+                {converting ? (
+                  <>
+                    <div className="h-3 w-3 animate-spin rounded-full border border-white/30 border-t-white" />
+                    Converting...
+                  </>
+                ) : (
+                  <>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M20 6L9 17l-5-5" />
+                    </svg>
+                    Confirm &amp; Export
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -1,0 +1,99 @@
+// ═══════════════════════════════════════════════════════════════
+// Design Data API — Public endpoint for the RN/Flutter runtime
+//
+// GET /api/design-data/[projectId]       — returns the latest
+//     raw design nodes + interactions for runtime rendering.
+//
+// GET /api/design-data/[projectId]?since=N — returns data only
+//     if there's a version newer than N (204 otherwise).
+//
+// Intentionally unauthenticated — projectId (UUID) acts as the
+// access token.  The production mobile app polls this endpoint
+// to receive design updates without an app-store release.
+// ═══════════════════════════════════════════════════════════════
+
+import { NextResponse } from "next/server";
+import db from "@/lib/db";
+
+export async function GET(
+  req: Request,
+  { params }: { params: Promise<{ projectId: string }> }
+) {
+  try {
+    const { projectId } = await params;
+    if (!projectId) {
+      return NextResponse.json({ error: "projectId required" }, { status: 400 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const since = searchParams.get("since");
+
+    // ── Incremental poll (since=N) ─────────────────────────────
+    if (since) {
+      const sinceVersion = parseInt(since, 10);
+      const res = await db.query(
+        `SELECT id, version, config_json, created_at
+         FROM project_commits
+         WHERE project_id = $1 AND version > $2
+         ORDER BY version DESC LIMIT 1`,
+        [projectId, sinceVersion]
+      );
+
+      if (res.rows.length === 0) {
+        return new NextResponse(null, { status: 204 });
+      }
+
+      const row = res.rows[0];
+      const data = typeof row.config_json === "string"
+        ? JSON.parse(row.config_json)
+        : row.config_json;
+
+      // Only return if designData exists (mobile commits)
+      if (!data.designData) {
+        return new NextResponse(null, { status: 204 });
+      }
+
+      return NextResponse.json({
+        projectId,
+        version: row.version,
+        framework: data.framework,
+        designData: data.designData,
+        committedAt: row.created_at,
+      });
+    }
+
+    // ── Latest commit ──────────────────────────────────────────
+    const res = await db.query(
+      `SELECT id, version, config_json, created_at
+       FROM project_commits
+       WHERE project_id = $1
+       ORDER BY version DESC LIMIT 1`,
+      [projectId]
+    );
+
+    if (res.rows.length === 0) {
+      return NextResponse.json({
+        projectId,
+        version: 0,
+        framework: null,
+        designData: null,
+      });
+    }
+
+    const row = res.rows[0];
+    const data = typeof row.config_json === "string"
+      ? JSON.parse(row.config_json)
+      : row.config_json;
+
+    return NextResponse.json({
+      projectId,
+      version: row.version,
+      framework: data.framework,
+      designData: data.designData || null,
+      committedAt: row.created_at,
+    });
+  } catch (e: any) {
+    console.error("GET /api/design-data error:", e);
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+  }
+}

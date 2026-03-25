@@ -56,11 +56,13 @@ export function patchPackageJsonForSync(
 
     // Auto-start connector alongside dev server so commits
     // are picked up automatically without running sync separately.
-    // Save the original dev command as dev:app, then create a
-    // compound dev script that starts both.
+    // Compound dev script that starts both.
     if (pkg.scripts.dev && !pkg.scripts["dev:app"]) {
       pkg.scripts["dev:app"] = pkg.scripts.dev;
       pkg.scripts.dev = "node mint-connector.mjs & npm run dev:app";
+    } else if (pkg.scripts.start && !pkg.scripts["start:app"]) {
+      pkg.scripts["start:app"] = pkg.scripts.start;
+      pkg.scripts.start = "node mint-connector.mjs & npm run start:app";
     }
 
     return JSON.stringify(pkg, null, 2);
