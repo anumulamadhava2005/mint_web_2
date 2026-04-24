@@ -44,6 +44,8 @@ export {
   UpdateShapeCommand,
   ReparentCommand,
   BatchCommand,
+  GroupShapesCommand,
+  UngroupShapesCommand,
 } from "./commandHistory";
 export type { Command, SyncOperation } from "./commandHistory";
 

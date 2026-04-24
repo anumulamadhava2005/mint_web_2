@@ -86,19 +86,68 @@ export async function POST(req: Request) {
     const nextVersion = parseInt(versionRes.rows[0].max_version, 10) + 1;
 
     // Only store text files for code sync
-    const codeFiles = conversionResult.files
+    const allCodeFiles = conversionResult.files
       .filter((f) => f.type === "text")
       .map((f) => ({ path: f.path, content: f.content as string, type: f.type }));
+
+    // ── Diff against previous commit — detect changed/new files ──
+    const changedPaths = new Set<string>();
+
+    if (nextVersion > 1) {
+      const prevRes = await db.query(
+        `SELECT config_json FROM project_commits
+         WHERE project_id = $1 AND version = $2`,
+        [projectId, nextVersion - 1]
+      );
+
+      if (prevRes.rows.length > 0) {
+        const prevData = typeof prevRes.rows[0].config_json === "string"
+          ? JSON.parse(prevRes.rows[0].config_json)
+          : prevRes.rows[0].config_json;
+
+        // Build map from the full file snapshot stored in previous commit
+        const prevFileMap = new Map<string, string>();
+        if (prevData.allFiles && Array.isArray(prevData.allFiles)) {
+          for (const f of prevData.allFiles) {
+            prevFileMap.set(f.path, f.content);
+          }
+        } else if (prevData.files && Array.isArray(prevData.files)) {
+          // Fallback for older commits that don't have allFiles
+          for (const f of prevData.files) {
+            prevFileMap.set(f.path, f.content);
+          }
+        }
+
+        // Only mark files that are new or have different content
+        for (const f of allCodeFiles) {
+          const prevContent = prevFileMap.get(f.path);
+          if (prevContent === undefined || prevContent !== f.content) {
+            changedPaths.add(f.path);
+          }
+        }
+      } else {
+        // No previous commit found — all files are new
+        for (const f of allCodeFiles) changedPaths.add(f.path);
+      }
+    } else {
+      // First commit — all files are new
+      for (const f of allCodeFiles) changedPaths.add(f.path);
+    }
+
+    const changedFiles = allCodeFiles.filter((f) => changedPaths.has(f.path));
 
     // For mobile frameworks, also store raw design data for Server-Driven UI.
     // Production apps fetch this via /api/design-data and render dynamically
     // without needing an app-store update.
     const isMobileFramework = targetFramework === "react-native" || targetFramework === "flutter";
 
+    // Store ALL files in DB (full snapshot for future diffs)
+    // but separately identify which files changed for the connector
     const commitData = {
       framework: targetFramework,
-      fileCount: codeFiles.length,
-      files: codeFiles,
+      fileCount: changedFiles.length,
+      files: changedFiles,          // Only changed files — sent to connector
+      allFiles: allCodeFiles,       // Full snapshot — used for diffing next commit
       warnings: conversionResult.warnings,
       designData: isMobileFramework
         ? { nodes, interactions, referenceFrame }
@@ -114,8 +163,9 @@ export async function POST(req: Request) {
     return NextResponse.json({
       version: nextVersion,
       framework: targetFramework,
-      fileCount: codeFiles.length,
-      files: codeFiles,
+      fileCount: changedFiles.length,
+      totalFiles: allCodeFiles.length,
+      files: changedFiles,
       warnings: conversionResult.warnings,
       committedAt: new Date().toISOString(),
     }, { status: 201 });

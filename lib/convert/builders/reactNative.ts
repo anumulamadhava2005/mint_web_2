@@ -407,6 +407,8 @@ ${rnContent}
 
   return `import { StyleSheet, View, Dimensions, Text, Image, Pressable, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useMintDesign } from "../providers/MintLiveProvider";
+import { MintRenderer } from "../components/MintRenderer";
 ${uniqueImports.join("\n")}
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -414,7 +416,20 @@ const DESIGN_WIDTH = ${refW};
 const DESIGN_HEIGHT = ${refH};
 const SCALE = Math.min(SCREEN_WIDTH / DESIGN_WIDTH, SCREEN_HEIGHT / DESIGN_HEIGHT, 1);
 
-export default function ${route.componentName}Screen() {${hookBlock}
+export default function ${route.componentName}Screen() {
+  const { screenData, designData, isLive } = useMintDesign("${frame.id}");
+${hookBlock}
+  // Live SDUI — render dynamically from server data (works in production)
+  if (isLive && screenData) {
+    return (
+      <MintRenderer
+        node={screenData}
+        interactions={designData?.interactions || []}
+      />
+    );
+  }
+
+  // Offline fallback — static generated UI
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.centered}>
@@ -459,6 +474,8 @@ function renderRNNode(
 ): string {
   const spaces = " ".repeat(indent);
   const style = generateRNStyle(node);
+  const pressableStyle = generateRNPressableStyle(node);
+  const innerStyle = generateRNInnerStyle(node);
 
   // Check for any interaction that needs Pressable wrapping
   let wrapWithPressable = false;
@@ -555,9 +572,15 @@ function renderRNNode(
   if (node.type === "TEXT" && node.text) {
     const textStyle = generateRNTextStyle(node.text);
     const text = node.text.characters ?? "";
-    content = `${spaces}<View style={${style}}>
+    if (wrapWithPressable) {
+      content = `${spaces}  <View style={${innerStyle}}>
+${spaces}    <Text style={${textStyle}}>${escapeRNText(text)}</Text>
+${spaces}  </View>`;
+    } else {
+      content = `${spaces}<View style={${style}}>
 ${spaces}  <Text style={${textStyle}}>${escapeRNText(text)}</Text>
 ${spaces}</View>`;
+    }
   }
   // Image node
   else if (node.type === "IMAGE" || node.fill?.type === "IMAGE") {
@@ -571,11 +594,19 @@ ${spaces}</View>`;
         ? `{ uri: "${src}" }`
         : `require("../assets${src.replace("/assets", "")}")`;
 
-      content = `${spaces}<View style={${style}}>
+      if (wrapWithPressable) {
+        content = `${spaces}  <View style={${innerStyle}}>
+${spaces}    <Image source={${source}} style={{ width: "100%", height: "100%", borderRadius: ${node.corners?.uniform || 0} }} resizeMode="cover" />
+${spaces}  </View>`;
+      } else {
+        content = `${spaces}<View style={${style}}>
 ${spaces}  <Image source={${source}} style={{ width: "100%", height: "100%", borderRadius: ${node.corners?.uniform || 0} }} resizeMode="cover" />
 ${spaces}</View>`;
+      }
     } else {
-      content = `${spaces}<View style={${style}} />`;
+      content = wrapWithPressable
+        ? `${spaces}  <View style={${innerStyle}} />`
+        : `${spaces}<View style={${style}} />`;
     }
   }
   // Container with children — may be scrollable
@@ -625,26 +656,31 @@ ${spaces}</View>`;
         )
         .join("\n");
 
+      const containerStyle = wrapWithPressable ? innerStyle : style;
       // Wrap in ScrollView inside the container
-      content = `${spaces}<View style={${style}}>
+      content = `${spaces}<View style={${containerStyle}}>
 ${spaces}  <ScrollView ${scrollProps.join(" ")} style={{ flex: 1 }}>
 ${childContent}
 ${spaces}  </ScrollView>${fixedContent ? `\n${fixedContent}` : ""}
 ${spaces}</View>`;
     } else {
-      content = `${spaces}<View style={${style}}>
+      const containerStyle = wrapWithPressable ? innerStyle : style;
+      content = `${spaces}<View style={${containerStyle}}>
 ${childContent}
 ${spaces}</View>`;
     }
   }
   // Simple view
   else {
-    content = `${spaces}<View style={${style}} />`;
+    content = wrapWithPressable
+      ? `${spaces}  <View style={${innerStyle}} />`
+      : `${spaces}<View style={${style}} />`;
   }
 
   // Wrap with Pressable if this node has an interaction
+  // Position/size styles go on the Pressable so it has a proper hit area
   if (wrapWithPressable && pressableAction) {
-    return `${spaces}<Pressable onPress={() => ${pressableAction}}>
+    return `${spaces}<Pressable style={${pressableStyle}} onPress={() => ${pressableAction}}>
 ${content}
 ${spaces}</Pressable>`;
   }
@@ -696,6 +732,44 @@ function generateRNStyle(node: DrawableNode): string {
 
   // Clip content (Figma "Clip Content") → overflow: hidden
   // Applies when clipContent is on and there is no active scroll direction
+  if (node.scroll?.clipContent) {
+    if (!node.scroll.overflowBehavior || node.scroll.overflowBehavior === "none") {
+      parts.push(`overflow: "hidden"`);
+    }
+  }
+
+  return `{ ${parts.join(", ")} }`;
+}
+
+/**
+ * Position/size style for the Pressable wrapper — gives it a real hit area.
+ */
+function generateRNPressableStyle(node: DrawableNode): string {
+  return `{ position: "absolute", left: ${Math.round(node.x)}, top: ${Math.round(node.y)}, width: ${Math.round(node.w)}, height: ${Math.round(node.h)} }`;
+}
+
+/**
+ * Visual-only style for the inner View when wrapped by a Pressable.
+ * Uses 100% width/height since the Pressable already handles positioning.
+ */
+function generateRNInnerStyle(node: DrawableNode): string {
+  const parts: string[] = [];
+
+  parts.push(`width: "100%"`);
+  parts.push(`height: "100%"`);
+
+  if (node.fill?.type === "SOLID" && node.fill.color && node.type !== "TEXT") {
+    parts.push(`backgroundColor: "${node.fill.color}"`);
+  }
+
+  if (node.corners?.uniform) {
+    parts.push(`borderRadius: ${node.corners.uniform}`);
+  }
+
+  if (node.opacity !== undefined && node.opacity < 1) {
+    parts.push(`opacity: ${node.opacity}`);
+  }
+
   if (node.scroll?.clipContent) {
     if (!node.scroll.overflowBehavior || node.scroll.overflowBehavior === "none") {
       parts.push(`overflow: "hidden"`);
@@ -904,8 +978,9 @@ function generateSDUIFiles(
   const files: GeneratedFile[] = [];
   const projectId = options.projectId || options.fileKey || "unknown";
   const userId = options.userId || "unknown";
-  // In production the app should point at the deployed Mint server
-  const apiOrigin = "http://localhost:3001";
+  // In production the app should point at the deployed Mint server.
+  // Users must replace this URL before publishing to the Play Store.
+  const apiOrigin = "https://YOUR_PRODUCTION_MINT_URL.com";
 
   // ── 1. mint.config.ts ───────────────────────────────────────
   files.push({
@@ -1405,10 +1480,28 @@ function NodeRenderer({ node, interactions }: { node: DesignNode; interactions: 
   const nodeInteraction = interactions.find((ix) => ix.sourceId === node.id);
   const isClickable = !!nodeInteraction;
 
+  // When clickable, split styles: position/size on Pressable, visuals on inner View
+  const pressableStyle: ViewStyle | undefined = isClickable ? {
+    position: "absolute" as const,
+    left: Math.round(node.x),
+    top: Math.round(node.y),
+    width: Math.round(node.width),
+    height: Math.round(node.height),
+  } : undefined;
+
+  // Inner style fills the Pressable and carries visual properties only
+  const innerStyle: ViewStyle | undefined = isClickable ? (() => {
+    const { position, left, top, width, height, ...visual } = style;
+    return { width: "100%" as unknown as number, height: "100%" as unknown as number, ...visual };
+  })() : undefined;
+
   // Determine scroll behavior
   const isScrollContainer =
     node.overflowBehavior && node.overflowBehavior !== "none";
   const scrollH = node.overflowBehavior === "horizontal" || node.overflowBehavior === "both";
+
+  // Pick the right container style
+  const containerStyle = isClickable ? innerStyle! : style;
 
   // Build content
   let content: React.ReactNode;
@@ -1416,14 +1509,14 @@ function NodeRenderer({ node, interactions }: { node: DesignNode; interactions: 
   if (isText && node.text) {
     const textStyle = buildTextStyle(node.text);
     content = (
-      <View style={style}>
+      <View style={containerStyle}>
         <Text style={textStyle}>{node.text.characters || ""}</Text>
       </View>
     );
   } else if (isImage) {
     const imageRef = node.fills?.find((f) => f.type === "IMAGE")?.imageRef;
     content = (
-      <View style={style}>
+      <View style={containerStyle}>
         {imageRef && (
           <Image
             source={{ uri: imageRef }}
@@ -1439,7 +1532,7 @@ function NodeRenderer({ node, interactions }: { node: DesignNode; interactions: 
     );
   } else if (isScrollContainer && node.children?.length) {
     content = (
-      <View style={style}>
+      <View style={containerStyle}>
         <ScrollView
           horizontal={scrollH}
           showsVerticalScrollIndicator={false}
@@ -1454,20 +1547,21 @@ function NodeRenderer({ node, interactions }: { node: DesignNode; interactions: 
     );
   } else if (node.children?.length) {
     content = (
-      <View style={style}>
+      <View style={containerStyle}>
         {node.children.map((child) => (
           <NodeRenderer key={child.id} node={child} interactions={interactions} />
         ))}
       </View>
     );
   } else {
-    content = <View style={style} />;
+    content = <View style={containerStyle} />;
   }
 
   // Wrap with Pressable if the node has an interaction
-  if (isClickable && nodeInteraction) {
+  // Position/size styles on Pressable give it a proper hit area
+  if (isClickable && nodeInteraction && pressableStyle) {
     return (
-      <Pressable onPress={() => handleInteraction(nodeInteraction, router)}>
+      <Pressable style={pressableStyle} onPress={() => handleInteraction(nodeInteraction, router)}>
         {content}
       </Pressable>
     );

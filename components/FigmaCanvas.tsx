@@ -78,6 +78,8 @@ import {
   UpdateShapeCommand,
   MoveCommand,
   BatchCommand,
+  GroupShapesCommand,
+  UngroupShapesCommand,
   // New engine modules
   ConstraintSolver,
   AutoLayoutEngine,
@@ -153,6 +155,7 @@ export default function FigmaCanvas({
   const [mode, setMode] = useState<InteractionMode>("idle");
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; show: boolean } | null>(null);
 
   // Pages
   const [pages, setPages] = useState<Page[]>([{ id: "page-1", name: "Page 1" }]);
@@ -205,6 +208,8 @@ export default function FigmaCanvas({
   const [canRedo, setCanRedo] = useState(false);
   // Snapshot for move / resize / rotate undo (captured at mouse-down)
   const moveSnapshotRef = useRef<CanvasShape[] | null>(null);
+  // Clipboard for copy/paste
+  const clipboardRef = useRef<CanvasShape[]>([]);
 
   // Sync refs
   useEffect(() => { modeRef.current = mode; }, [mode]);
@@ -403,6 +408,28 @@ export default function FigmaCanvas({
     setShapes(result);
     setSelectedIds(new Set());
   };
+  const copySelected = () => {
+    const selected = shapesRef.current.filter((s) => selectedIdsRef.current.has(s.id));
+    clipboardRef.current = selected.map(s => ({ ...s }));
+  };
+  const pasteClipboard = () => {
+    if (clipboardRef.current.length === 0) return;
+    const news: CanvasShape[] = [];
+    for (const s of clipboardRef.current) {
+      const dup = {
+        ...s,
+        id: `shape_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        x: s.x + 20,
+        y: s.y + 20,
+        zIndex: s.zIndex + 0.01 + news.length * 0.001,
+      };
+      news.push(dup);
+    }
+    setShapes((prev) => [...prev, ...news]);
+    const newIds = new Set(news.map((n) => n.id));
+    setSelectedIds(newIds);
+    selectedIdsRef.current = newIds;
+  };
   const duplicateSelected = () => {
     const news: CanvasShape[] = [];
     for (const s of shapesRef.current) {
@@ -420,6 +447,65 @@ export default function FigmaCanvas({
       setShapes((prev) => [...prev, ...news]);
       setSelectedIds(new Set(news.map((n) => n.id)));
     }
+  };
+
+  // Grouping
+  const groupSelected = () => {
+    if (selectedIdsRef.current.size < 2) return;
+    const selected = shapesRef.current.filter((s) => selectedIdsRef.current.has(s.id));
+    
+    // Check if they share the same parent. Simplified grouping: we just group them under the current page (or their common parent)
+    const commonParentId = selected[0].parentId;
+    
+    // Compute AABB for all selected
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    selected.forEach(s => {
+      const wb = sceneGraphRef.current.getWorldBounds(s.id);
+      if (wb.minX < minX) minX = wb.minX;
+      if (wb.minY < minY) minY = wb.minY;
+      if (wb.maxX > maxX) maxX = wb.maxX;
+      if (wb.maxY > maxY) maxY = wb.maxY;
+    });
+
+    // Create the group shape (using a transparent frame)
+    const groupShape = createShape(
+      "frame",
+      minX,
+      minY,
+      Math.max(1, maxX - minX),
+      Math.max(1, maxY - minY),
+      currentPageId,
+      {
+        fill: "transparent",
+        name: "Group",
+        parentId: commonParentId, // Reparenting handling will be improved later
+        children: selected.map(s => s.id)
+      }
+    );
+
+    const cmd = new GroupShapesCommand(groupShape, selected);
+    const result = cmdHistoryRef.current.execute(cmd, shapesRef.current);
+    setShapes(result);
+    setSelectedIds(new Set([groupShape.id]));
+    selectedIdsRef.current = new Set([groupShape.id]);
+  };
+
+  const ungroupSelected = () => {
+    if (selectedIdsRef.current.size === 0) return;
+    const selected = shapesRef.current.filter(s => selectedIdsRef.current.has(s.id) && s.type === "frame" && s.fill === "transparent" && s.name.startsWith("Group"));
+    if (selected.length === 0) return;
+
+    const cmd = new UngroupShapesCommand(selected, shapesRef.current);
+    const result = cmdHistoryRef.current.execute(cmd, shapesRef.current);
+    setShapes(result);
+    
+    // Select the children of the ungrouped groups
+    const newSel = new Set<string>();
+    for (const group of selected) {
+      group.children.forEach(id => newSel.add(id));
+    }
+    setSelectedIds(newSel);
+    selectedIdsRef.current = newSel;
   };
 
   // Layer ordering
@@ -1072,9 +1158,11 @@ export default function FigmaCanvas({
   // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
       if (
-        (e.target as HTMLElement).tagName === "INPUT" ||
-        (e.target as HTMLElement).tagName === "TEXTAREA"
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
       )
         return;
 
@@ -1122,9 +1210,31 @@ export default function FigmaCanvas({
         return;
       }
 
+      if (ctrl && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        copySelected();
+        return;
+      }
+
+      if (ctrl && e.key.toLowerCase() === "v") {
+        e.preventDefault();
+        pasteClipboard();
+        return;
+      }
+
       if (ctrl && e.key.toLowerCase() === "d") {
         e.preventDefault();
         duplicateSelected();
+        return;
+      }
+
+      if (ctrl && e.key.toLowerCase() === "g") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          ungroupSelected();
+        } else {
+          groupSelected();
+        }
         return;
       }
 
@@ -1199,6 +1309,7 @@ export default function FigmaCanvas({
       }
 
       if (e.key === "=" || e.key === "+") {
+        if (ctrl) e.preventDefault();
         const focalX = canvasRef.current
           ? canvasRef.current.getBoundingClientRect().width / 2
           : 400;
@@ -1215,6 +1326,7 @@ export default function FigmaCanvas({
         return;
       }
       if (e.key === "-") {
+        if (ctrl) e.preventDefault();
         const focalX = canvasRef.current
           ? canvasRef.current.getBoundingClientRect().width / 2
           : 400;
@@ -1246,10 +1358,10 @@ export default function FigmaCanvas({
       }
     };
 
-    window.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, { capture: true });
     window.addEventListener("keyup", onKeyUp);
     return () => {
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, { capture: true });
       window.removeEventListener("keyup", onKeyUp);
     };
   }, [currentPageId]);
@@ -1279,7 +1391,7 @@ export default function FigmaCanvas({
   // JSX
   // ═══════════════════════════════════════════════════════════
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#0d0d0d] text-white overflow-hidden select-none">
+    <div className="flex flex-col h-screen w-screen bg-[#0d0d0d] text-white overflow-hidden select-none" onContextMenu={(e) => e.preventDefault()}>
       {/* Top Header */}
       <div className="h-10 bg-[#2c2c2c] border-b border-white/5 flex items-center justify-between px-2 flex-shrink-0">
         <div className="flex items-center gap-2">
@@ -1556,13 +1668,86 @@ export default function FigmaCanvas({
                   return;
                 }
               }
+              setContextMenu(null);
               handleMouseDown(e);
             }}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onDoubleClick={handleDoubleClick}
-            onContextMenu={(e) => e.preventDefault()}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setContextMenu({ x: e.clientX, y: e.clientY, show: true });
+            }}
           />
+
+          {/* Context Menu Overlay */}
+          {contextMenu && contextMenu.show && (
+            <div
+              className="absolute bg-[#2c2c2c] border border-white/10 rounded-md shadow-xl py-1 z-50 min-w-[200px]"
+              style={{ left: contextMenu.x, top: contextMenu.y }}
+              onMouseLeave={() => setContextMenu(null)}
+              onClick={() => setContextMenu(null)}
+            >
+              <button
+                className="w-full text-left px-3 py-1.5 text-[13px] hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent flex justify-between items-center group cursor-pointer"
+                onClick={copySelected}
+                disabled={selectedIds.size === 0}
+              >
+                <span>Copy</span>
+                <span className="text-[11px] opacity-50">Ctrl+C</span>
+              </button>
+              <button
+                className="w-full text-left px-3 py-1.5 text-[13px] hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent flex justify-between items-center group cursor-pointer"
+                onClick={pasteClipboard}
+                disabled={clipboardRef.current.length === 0}
+              >
+                <span>Paste</span>
+                <span className="text-[11px] opacity-50">Ctrl+V</span>
+              </button>
+              <button
+                className="w-full text-left px-3 py-1.5 text-[13px] hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent flex justify-between items-center group cursor-pointer"
+                onClick={duplicateSelected}
+                disabled={selectedIds.size === 0}
+              >
+                <span>Duplicate</span>
+                <span className="text-[11px] opacity-50">Ctrl+D</span>
+              </button>
+              <div className="h-px bg-white/10 my-1 mx-2" />
+              <button
+                className="w-full text-left px-3 py-1.5 text-[13px] hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent flex justify-between items-center group cursor-pointer"
+                onClick={bringToFront}
+                disabled={selectedIds.size === 0}
+              >
+                <span>Bring to Front</span>
+                <span className="text-[11px] opacity-50">]</span>
+              </button>
+              <button
+                className="w-full text-left px-3 py-1.5 text-[13px] hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent flex justify-between items-center group cursor-pointer"
+                onClick={sendToBack}
+                disabled={selectedIds.size === 0}
+              >
+                <span>Send to Back</span>
+                <span className="text-[11px] opacity-50">[</span>
+              </button>
+              <div className="h-px bg-white/10 my-1 mx-2" />
+              <button
+                className="w-full text-left px-3 py-1.5 text-[13px] hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent flex justify-between items-center group cursor-pointer"
+                onClick={groupSelected}
+                disabled={selectedIds.size < 2}
+              >
+                <span>Group Selection</span>
+                <span className="text-[11px] opacity-50">Ctrl+G</span>
+              </button>
+              <button
+                className="w-full text-left px-3 py-1.5 text-[13px] hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent flex justify-between items-center group cursor-pointer"
+                onClick={ungroupSelected}
+                disabled={selectedShapes.filter(s => s.type === "frame" && s.fill === "transparent" && s.name.startsWith("Group")).length === 0}
+              >
+                <span>Ungroup</span>
+                <span className="text-[11px] opacity-50">Ctrl+Shift+G</span>
+              </button>
+            </div>
+          )}
 
           {/* Inline Text Editing Overlay */}
           {editingTextId && (() => {

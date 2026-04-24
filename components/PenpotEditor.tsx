@@ -160,20 +160,41 @@ export default function PenpotEditor({
       const triggerMap: Record<string, string> = {
         click: "ON_CLICK", "mouse-press": "ON_PRESS", "mouse-over": "ON_HOVER",
         "mouse-enter": "MOUSE_ENTER", "mouse-leave": "MOUSE_LEAVE",
+        "after-delay": "AFTER_TIMEOUT",
       };
       const actionMap: Record<string, string> = {
         navigate: "NAVIGATE", "open-overlay": "OPEN_OVERLAY", "close-overlay": "CLOSE_OVERLAY",
+        "toggle-overlay": "OPEN_OVERLAY", "swap-overlay": "SWAP_OVERLAY",
         "prev-screen": "BACK", "open-url": "OPEN_URL", "scroll-to": "SCROLL_TO",
       };
       for (const shape of Object.values(objects) as PenpotShape[]) {
         if (shape.interactions?.length) {
           for (const ix of shape.interactions) {
-            interactions.push({
+            const entry: Record<string, unknown> = {
               sourceId: shape.id,
               trigger: triggerMap[ix.eventType] || "ON_CLICK",
               action: actionMap[ix.actionType] || "NAVIGATE",
-              targetId: ix.actionType === "scroll-to" ? ix.scrollTargetId : ix.destination,
-            });
+            };
+            // Map target/destination fields based on action type
+            if (ix.actionType === "scroll-to") {
+              entry.targetId = ix.scrollTargetId;
+            } else if (ix.actionType === "open-url") {
+              entry.destinationUrl = ix.url;
+            } else {
+              entry.targetId = ix.destination;
+            }
+            // Include delay for after-delay triggers
+            if (ix.delay) entry.delay = ix.delay;
+            // Include animation data if present
+            if (ix.animation) {
+              entry.animation = {
+                type: ix.animation.animationType?.toUpperCase() || "INSTANT",
+                direction: ix.animation.direction?.toUpperCase(),
+                easing: ix.animation.easing?.toUpperCase().replace("-", "_") || "EASE_OUT",
+                duration: ix.animation.duration || 300,
+              };
+            }
+            interactions.push(entry);
           }
         }
       }
@@ -260,7 +281,8 @@ export default function PenpotEditor({
 
       const result = await res.json();
       const fw = commitFramework.charAt(0).toUpperCase() + commitFramework.slice(1);
-      setCommitToast({ message: `Committed v${result.version} → ${fw} (${result.fileCount} files)`, type: "success" });
+      const total = result.totalFiles ? ` of ${result.totalFiles}` : "";
+      setCommitToast({ message: `Committed v${result.version} → ${fw} (${result.fileCount}${total} files changed)`, type: "success" });
     } catch (e: any) {
       console.error("Commit failed:", e);
       setCommitToast({ message: e.message || "Commit failed", type: "error" });

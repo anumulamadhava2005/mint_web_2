@@ -306,3 +306,107 @@ export class BatchCommand implements Command {
     return result;
   }
 }
+
+// ── Group Shapes Command ────────────────────────────────────────
+
+export class GroupShapesCommand implements Command {
+  description: string = "Group shapes";
+  private groupShape: CanvasShape;
+  private childIds: Set<string>;
+  private originalPrefixes: Map<string, { x: number; y: number; parentId: string | null; constraints?: any }>;
+
+  constructor(groupShape: CanvasShape, childrenToGroup: CanvasShape[]) {
+    this.groupShape = groupShape;
+    this.childIds = new Set(childrenToGroup.map(c => c.id));
+    this.originalPrefixes = new Map(childrenToGroup.map(c => [
+      c.id,
+      { x: c.x, y: c.y, parentId: c.parentId, constraints: c.constraints }
+    ]));
+  }
+
+  execute(shapes: CanvasShape[]): CanvasShape[] {
+    let next = [...shapes, this.groupShape];
+    return next.map(s => {
+      if (this.childIds.has(s.id)) {
+        // Find existing to subtract group's top-left so they are relative to group
+        return {
+          ...s,
+          parentId: this.groupShape.id,
+          x: s.x - this.groupShape.x,
+          y: s.y - this.groupShape.y,
+          constraints: { horizontal: "SCALE", vertical: "SCALE" },
+        };
+      }
+      return s;
+    });
+  }
+
+  undo(shapes: CanvasShape[]): CanvasShape[] {
+    // Remove the group shape and restore original positions and parentIds
+    let next = shapes.filter(s => s.id !== this.groupShape.id);
+    return next.map(s => {
+      if (this.childIds.has(s.id)) {
+        const orig = this.originalPrefixes.get(s.id)!;
+        return { ...s, x: orig.x!, y: orig.y!, parentId: orig.parentId ?? null, constraints: orig.constraints || s.constraints };
+      }
+      return s;
+    });
+  }
+}
+
+// ── Ungroup Shapes Command ──────────────────────────────────────
+
+export class UngroupShapesCommand implements Command {
+  description: string = "Ungroup shapes";
+  private groupShapes: CanvasShape[];
+  private originalChildrenProps: Map<string, { x: number; y: number; parentId: string | null; constraints?: any }>;
+
+  constructor(groupShapes: CanvasShape[], currentShapes: CanvasShape[]) {
+    this.groupShapes = groupShapes;
+    this.originalChildrenProps = new Map();
+    
+    // Calculate new absolute positions for all children of these groups
+    const groupIds = new Set(groupShapes.map(g => g.id));
+    for (const s of currentShapes) {
+      if (s.parentId && groupIds.has(s.parentId)) {
+        const group = groupShapes.find(g => g.id === s.parentId)!;
+        this.originalChildrenProps.set(s.id, {
+          x: s.x,
+          y: s.y,
+          parentId: s.parentId,
+          constraints: s.constraints
+        });
+      }
+    }
+  }
+
+  execute(shapes: CanvasShape[]): CanvasShape[] {
+    const groupIds = new Set(this.groupShapes.map(g => g.id));
+    let next = shapes.filter(s => !groupIds.has(s.id));
+    return next.map(s => {
+      if (this.originalChildrenProps.has(s.id)) {
+        const group = this.groupShapes.find(g => g.id === s.parentId)!;
+        return {
+          ...s,
+          parentId: group.parentId,
+          x: s.x + group.x,
+          y: s.y + group.y,
+          constraints: { horizontal: "LEFT", vertical: "TOP" }, // Reset to defaults or potentially check original values if we had a deep history, but standard ungroup reverts to defaults in this simple system. Wait! For grouped items we just set it temporarily! So UngroupShapesCommand should probably keep what it had or set to LEFT/TOP. Let's just reset to LEFT/TOP.
+        };
+      }
+      return s;
+    });
+  }
+
+  undo(shapes: CanvasShape[]): CanvasShape[] {
+    let next = [...shapes, ...this.groupShapes];
+    return next.map(s => {
+      if (this.originalChildrenProps.has(s.id)) {
+        const orig = this.originalChildrenProps.get(s.id)!;
+        return { ...s, x: orig.x!, y: orig.y!, parentId: orig.parentId ?? null };
+      }
+      return s;
+    });
+  }
+}
+
