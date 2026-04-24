@@ -129,84 +129,75 @@ export async function POST(request: Request) {
     let finalFiles = result.files;
 
     if (conversionRequest.target === "react-native") {
-      const tempDir = path.join(os.tmpdir(), `mint-export-${crypto.randomUUID()}`);
-      await fs.mkdir(tempDir, { recursive: true });
+      const appName = conversionRequest.fileName || "Design Export";
+      const slugName = appName.toLowerCase().replace(/\s+/g, "-");
+      
+      let pkgStr = JSON.stringify({
+        name: slugName,
+        main: "expo-router/entry",
+        version: "1.0.0",
+        scripts: {
+          start: "expo start",
+          android: "expo start --android",
+          ios: "expo start --ios",
+          web: "expo start --web"
+        },
+        dependencies: {
+          "expo": "~50.0.0",
+          "expo-status-bar": "~1.11.1",
+          "react": "18.2.0",
+          "react-native": "0.73.6",
+          "expo-router": "~3.4.1",
+          "@react-native-async-storage/async-storage": "1.21.0"
+        },
+        devDependencies: {
+          "@babel/core": "^7.20.0",
+          "@types/react": "~18.2.45",
+          "typescript": "^5.1.3"
+        },
+        private: true
+      }, null, 2);
 
-      try {
-        // Run create-expo-app
-        await execAsync(`npx create-expo-app@latest . -y --no-install`, { cwd: tempDir });
-
-        // Delete boilerplate folders
-        const dirsToRemove = ["app", "components", "constants", "hooks", "scripts"];
-        for (const dir of dirsToRemove) {
-          await fs.rm(path.join(tempDir, dir), { recursive: true, force: true }).catch(() => {});
-        }
-
-        // Read and modify package.json
-        const pkgPath = path.join(tempDir, "package.json");
-        const pkgText = await fs.readFile(pkgPath, "utf-8");
-        const pkg = JSON.parse(pkgText);
-        
-        // Add required dependencies for SDUI
-        pkg.dependencies = pkg.dependencies || {};
-        pkg.dependencies["@react-native-async-storage/async-storage"] = "1.21.0";
-        // Ensure slugified name
-        pkg.name = conversionRequest.fileName?.toLowerCase().replace(/\s+/g, "-") || "design-export";
-        
-        let pkgStr = JSON.stringify(pkg, null, 2);
-        if (conversionRequest.options?.enableLiveSync) {
-          pkgStr = patchPackageJsonForSync(pkgStr);
-        }
-        
-        await fs.writeFile(pkgPath, pkgStr);
-
-        // Read and modify app.json
-        const appJsonPath = path.join(tempDir, "app.json");
-        const appJsonText = await fs.readFile(appJsonPath, "utf-8");
-        const appJson = JSON.parse(appJsonText);
-        
-        if (appJson.expo) {
-          appJson.expo.name = conversionRequest.fileName || "Design Export";
-          appJson.expo.slug = conversionRequest.fileName?.toLowerCase().replace(/\s+/g, "-") || "design-export";
-          appJson.expo.scheme = conversionRequest.fileName?.toLowerCase().replace(/\s+/g, "-") || "design-export";
-        }
-        
-        await fs.writeFile(appJsonPath, JSON.stringify(appJson, null, 2));
-
-        // Read all remaining scaffolded files
-        const scaffoldedFiles: Array<{ path: string; content: Buffer; type: "binary" }> = [];
-        
-        async function readDirRecursive(dir: string, baseDir: string = dir) {
-          const entries = await fs.readdir(dir, { withFileTypes: true });
-          for (const entry of entries) {
-            const fullPath = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-              if (entry.name !== "node_modules" && entry.name !== ".git") {
-                await readDirRecursive(fullPath, baseDir);
-              }
-            } else {
-              const relativePath = path.relative(baseDir, fullPath).replace(/\\/g, "/");
-              scaffoldedFiles.push({
-                path: relativePath,
-                content: await fs.readFile(fullPath),
-                type: "binary"
-              });
-            }
-          }
-        }
-        
-        await readDirRecursive(tempDir);
-        
-        // Combine keeping builder files replacing scaffolded ones if conflict
-        const builderFilePaths = new Set(finalFiles.map(f => f.path));
-        finalFiles = [
-          ...scaffoldedFiles.filter(f => !builderFilePaths.has(f.path)),
-          ...finalFiles
-        ];
-        
-      } finally {
-        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      if (conversionRequest.options?.enableLiveSync) {
+        pkgStr = patchPackageJsonForSync(pkgStr);
       }
+
+      const appJsonStr = JSON.stringify({
+        expo: {
+          name: appName,
+          slug: slugName,
+          scheme: slugName,
+          version: "1.0.0",
+          orientation: "portrait",
+          userInterfaceStyle: "light",
+          assetBundlePatterns: ["**/*"],
+          ios: { supportsTablet: true }
+        }
+      }, null, 2);
+
+      const babelConfigStr = `module.exports = function(api) {
+  api.cache(true);
+  return {
+    presets: ['babel-preset-expo'],
+  };
+};`;
+
+      const tsconfigStr = `{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@/*": ["./*"]
+    }
+  }
+}`;
+
+      finalFiles.push(
+        { path: "package.json", content: pkgStr, type: "text" },
+        { path: "app.json", content: appJsonStr, type: "text" },
+        { path: "babel.config.js", content: babelConfigStr, type: "text" },
+        { path: "tsconfig.json", content: tsconfigStr, type: "text" }
+      );
     }
 
     // Generate ZIP file
