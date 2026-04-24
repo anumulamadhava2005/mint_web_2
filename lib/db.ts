@@ -1,19 +1,31 @@
-import { Pool, PoolClient } from "pg";
+import { PoolClient } from "pg";
 
-const pool = new Pool({
-  user: process.env.DB_USER,
-  password: process.env.DB_PASS,
-  database: process.env.DB_NAME,
-  host: process.env.DB_HOST || "localhost",
-  port: process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : 5432,
-  max: 60,
-  idleTimeoutMillis: 120000,
-  connectionTimeoutMillis: 10000,
-});
-
-pool.on("error", (err) => {
-  console.error("Unexpected pool error:", err);
-});
+const pool = {
+  query: async (text: string, params?: any[]) => {
+    try {
+        const bridgeUrl = process.env.DB_PROXY_URL || "https://api.mintit.pro/api/mint-db";
+        const res = await fetch(bridgeUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, params }),
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error("HTTP " + res.status + ": " + errText);
+      }
+      return res.json();
+    } catch (e) {
+      console.error("DB Bridge Proxy Error:", e);
+      throw e;
+    }
+  },
+  on: (event: string, cb: any) => {},
+  connect: async () => ({
+    query: async (text: string, params?: any[]) => pool.query(text, params),
+    release: () => {},
+  } as unknown as PoolClient),
+};
 
 async function init() {
   // ── Core tables ──────────────────────────────────────────

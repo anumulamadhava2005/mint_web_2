@@ -14,8 +14,46 @@ export default function NewProjectDialog({ open, onClose, onCreated }: Props) {
   const [description, setDescription] = useState("");
   const [thumbnailUrl, setThumbnailUrl] = useState("");
   const [loading, setLoading] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [error, setError] = useState("");
   const nameRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingImage(true);
+    setError("");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("user_id", "web-client");
+      formData.append("is_public", "true");
+
+      const res = await fetch("https://api.mintit.pro/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.variants?.length > 0) {
+        const highQualityUrl = data.variants.find((v: any) => v.quality === "high")?.url;
+        setThumbnailUrl(highQualityUrl || data.variants[0].url);
+      } else if (data.thumbnailUrl) {
+         setThumbnailUrl(data.thumbnailUrl);
+      } else {
+        setError("Failed to upload image.");
+      }
+    } catch (err) {
+      setError("Network error uploading image");
+    } finally {
+      setUploadingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   // Focus name field when dialog opens
   useEffect(() => {
@@ -133,13 +171,30 @@ export default function NewProjectDialog({ open, onClose, onCreated }: Props) {
 
           {/* Thumbnail URL */}
           <div>
-            <label
-              htmlFor="project-thumb"
-              className="mb-1.5 block text-sm font-medium text-zinc-300"
-            >
-              Thumbnail URL{" "}
-              <span className="text-zinc-500 font-normal">(optional)</span>
-            </label>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label
+                htmlFor="project-thumb"
+                className="block text-sm font-medium text-zinc-300"
+              >
+                Thumbnail URL{" "}
+                <span className="text-zinc-500 font-normal">(optional)</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="text-xs font-medium text-indigo-400 hover:text-indigo-300 disabled:opacity-50"
+                disabled={uploadingImage}
+              >
+                {uploadingImage ? "Uploading..." : "Upload Image"}
+              </button>
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleImageUpload} 
+                accept="image/*" 
+                className="hidden" 
+              />
+            </div>
             <input
               id="project-thumb"
               type="url"
