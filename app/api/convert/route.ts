@@ -153,6 +153,7 @@ export async function POST(request: Request) {
           "react": "19.1.0",
           "react-dom": "19.1.0",
           "react-native": "0.81.5",
+          "@react-native-async-storage/async-storage": "2.1.2",
           "react-native-gesture-handler": "~2.28.0",
           "react-native-reanimated": "~4.1.1",
           "react-native-safe-area-context": "~5.6.0",
@@ -177,14 +178,27 @@ export async function POST(request: Request) {
           scheme: slugName,
           version: "1.0.0",
           orientation: "portrait",
+          icon: "./assets/icon.png",
           userInterfaceStyle: "automatic",
           newArchEnabled: true,
+          splash: {
+            image: "./assets/splash-icon.png",
+            resizeMode: "contain",
+            backgroundColor: "#ffffff"
+          },
           ios: { supportsTablet: true },
           android: {
+            adaptiveIcon: {
+              foregroundImage: "./assets/adaptive-icon.png",
+              backgroundColor: "#ffffff"
+            },
             edgeToEdgeEnabled: true,
             predictiveBackGestureEnabled: false
           },
-          web: { output: "static" },
+          web: {
+            favicon: "./assets/favicon.png",
+            output: "static"
+          },
           plugins: [
             "expo-router",
             ["expo-splash-screen", { resizeMode: "contain", backgroundColor: "#ffffff" }]

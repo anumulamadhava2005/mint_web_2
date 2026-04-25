@@ -279,12 +279,16 @@ ${interactions
     // MintRenderer renders the UI dynamically from that JSON.
     files.push(...generateSDUIFiles(options, routes));
 
-    // Add placeholder assets
-    files.push({
-      path: "assets/.gitkeep",
-      content: "",
-      type: "text",
-    });
+    // Add placeholder PNG assets required by Expo (icon, splash, adaptive-icon, favicon).
+    // These are minimal valid 1×1 transparent PNGs so asset references in app.json resolve.
+    const placeholderPng = buildMinimalPng();
+    for (const assetName of ["icon.png", "splash-icon.png", "adaptive-icon.png", "favicon.png"]) {
+      files.push({
+        path: `assets/${assetName}`,
+        content: placeholderPng,
+        type: "binary",
+      });
+    }
 
     // Add image assets
     for (const [localPath, blob] of manifest.blobs) {
@@ -1711,3 +1715,30 @@ function buildTextStyle(text: NonNullable<DesignNode["text"]>): TextStyle {
 }
 
 export default reactNativeBuilder;
+
+// ═══════════════════════════════════════════════════════════════
+// Minimal PNG builder — returns a valid 1×1 transparent PNG
+// Used to populate assets/ so Expo asset references resolve.
+// ═══════════════════════════════════════════════════════════════
+
+function buildMinimalPng(): Uint8Array {
+  // Pre-built 1×1 transparent PNG (68 bytes), no external library needed.
+  // Generated from: a valid PNG with IHDR (1×1, 8-bit RGBA) + IDAT (single
+  // transparent pixel compressed) + IEND chunks, including correct CRC values.
+  const base64 =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+  // Decode base64 → Uint8Array (works in both Node.js and browser/edge runtimes)
+  if (typeof Buffer !== "undefined") {
+    // Node.js runtime (Next.js API routes)
+    const buf = Buffer.from(base64, "base64");
+    return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+  }
+  // Browser / Edge runtime fallback
+  const binaryStr = atob(base64);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) {
+    bytes[i] = binaryStr.charCodeAt(i);
+  }
+  return bytes;
+}
