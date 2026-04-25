@@ -6,6 +6,8 @@
 // Transition animations via expo-router screen options
 // ═══════════════════════════════════════════════════════════════
 
+import { deflateSync } from "zlib";
+
 import type {
   DrawableNode,
   ImageManifest,
@@ -280,8 +282,9 @@ ${interactions
     files.push(...generateSDUIFiles(options, routes));
 
     // Add placeholder PNG assets required by Expo (icon, splash, adaptive-icon, favicon).
-    // These are minimal valid 1×1 transparent PNGs so asset references in app.json resolve.
-    const placeholderPng = buildMinimalPng();
+    // These are proper 512×512 solid-color PNGs so expo-splash-screen can generate
+    // the splashscreen_logo Android drawable correctly during npx expo prebuild.
+    const placeholderPng = buildSolidPng(512, 512, 99, 102, 241); // indigo #6366f1
     for (const assetName of ["icon.png", "splash-icon.png", "adaptive-icon.png", "favicon.png"]) {
       files.push({
         path: `assets/${assetName}`,
@@ -1717,28 +1720,71 @@ function buildTextStyle(text: NonNullable<DesignNode["text"]>): TextStyle {
 export default reactNativeBuilder;
 
 // ═══════════════════════════════════════════════════════════════
-// Minimal PNG builder — returns a valid 1×1 transparent PNG
-// Used to populate assets/ so Expo asset references resolve.
+// PNG builder — generates a solid-color PNG using Node.js zlib
+// expo-splash-screen requires a real image (≥ a few px) to generate
+// the splashscreen_logo Android drawable during `expo prebuild`.
 // ═══════════════════════════════════════════════════════════════
 
-function buildMinimalPng(): Uint8Array {
-  // Pre-built 1×1 transparent PNG (68 bytes), no external library needed.
-  // Generated from: a valid PNG with IHDR (1×1, 8-bit RGBA) + IDAT (single
-  // transparent pixel compressed) + IEND chunks, including correct CRC values.
-  const base64 =
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+function buildSolidPng(
+  width: number,
+  height: number,
+  r: number,
+  g: number,
+  b: number
+): Uint8Array {
+  // ── CRC32 ─────────────────────────────────────────────────────
+  const crcTable = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let j = 0; j < 8; j++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    crcTable[i] = c >>> 0;
+  }
+  function crc32(data: Buffer): number {
+    let crc = 0xffffffff;
+    for (let i = 0; i < data.length; i++)
+      crc = crcTable[(crc ^ data[i]) & 0xff] ^ (crc >>> 8);
+    return (crc ^ 0xffffffff) >>> 0;
+  }
 
-  // Decode base64 → Uint8Array (works in both Node.js and browser/edge runtimes)
-  if (typeof Buffer !== "undefined") {
-    // Node.js runtime (Next.js API routes)
-    const buf = Buffer.from(base64, "base64");
-    return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+  // ── Chunk builder ─────────────────────────────────────────────
+  function makeChunk(type: string, data: Buffer): Buffer {
+    const typeBuf = Buffer.from(type, "ascii");
+    const lenBuf = Buffer.alloc(4);
+    lenBuf.writeUInt32BE(data.length, 0);
+    const crcBuf = Buffer.alloc(4);
+    crcBuf.writeUInt32BE(crc32(Buffer.concat([typeBuf, data])), 0);
+    return Buffer.concat([lenBuf, typeBuf, data, crcBuf]);
   }
-  // Browser / Edge runtime fallback
-  const binaryStr = atob(base64);
-  const bytes = new Uint8Array(binaryStr.length);
-  for (let i = 0; i < binaryStr.length; i++) {
-    bytes[i] = binaryStr.charCodeAt(i);
+
+  // ── IHDR ──────────────────────────────────────────────────────
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // color type: RGB (no alpha)
+  // bytes 10-12: compression=0, filter=0, interlace=0 (already 0)
+
+  // ── Raw pixel data (filter type 0 = None per row) ─────────────
+  const rowSize = 1 + width * 3;
+  const raw = Buffer.alloc(height * rowSize);
+  for (let y = 0; y < height; y++) {
+    raw[y * rowSize] = 0; // filter byte
+    for (let x = 0; x < width; x++) {
+      raw[y * rowSize + 1 + x * 3] = r;
+      raw[y * rowSize + 2 + x * 3] = g;
+      raw[y * rowSize + 3 + x * 3] = b;
+    }
   }
-  return bytes;
+  const compressed = deflateSync(raw);
+
+  // ── Assemble PNG ──────────────────────────────────────────────
+  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const png = Buffer.concat([
+    sig,
+    makeChunk("IHDR", ihdr),
+    makeChunk("IDAT", compressed),
+    makeChunk("IEND", Buffer.alloc(0)),
+  ]);
+
+  return new Uint8Array(png.buffer, png.byteOffset, png.byteLength);
 }
