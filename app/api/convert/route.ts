@@ -178,32 +178,38 @@ export async function POST(request: Request) {
           scheme: slugName,
           version: "1.0.0",
           orientation: "portrait",
-          icon: "./assets/icon.png",
+          icon: "./assets/images/icon.png",
           userInterfaceStyle: "automatic",
           newArchEnabled: true,
-          splash: {
-            image: "./assets/splash-icon.png",
-            resizeMode: "contain",
-            backgroundColor: "#ffffff"
-          },
           ios: { supportsTablet: true },
           android: {
             adaptiveIcon: {
-              foregroundImage: "./assets/adaptive-icon.png",
-              backgroundColor: "#ffffff"
+              foregroundImage: "./assets/images/android-icon-foreground.png",
+              backgroundImage: "./assets/images/android-icon-background.png",
+              monochromeImage: "./assets/images/android-icon-monochrome.png",
+              backgroundColor: "#6366f1"
             },
             edgeToEdgeEnabled: true,
             predictiveBackGestureEnabled: false
           },
           web: {
-            favicon: "./assets/favicon.png",
-            output: "static"
+            output: "static",
+            favicon: "./assets/images/favicon.png"
           },
           plugins: [
             "expo-router",
-            ["expo-splash-screen", { resizeMode: "contain", backgroundColor: "#ffffff" }]
+            [
+              "expo-splash-screen",
+              {
+                image: "./assets/images/splash-icon.png",
+                imageWidth: 200,
+                resizeMode: "contain",
+                backgroundColor: "#ffffff",
+                dark: { backgroundColor: "#000000" }
+              }
+            ]
           ],
-          experiments: { typedRoutes: true }
+          experiments: { typedRoutes: true, reactCompiler: true }
         }
       }, null, 2);
 

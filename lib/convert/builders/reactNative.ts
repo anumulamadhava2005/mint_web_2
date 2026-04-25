@@ -7,6 +7,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { deflateSync } from "zlib";
+import { ICON_PNG_B64, ICON_BG_PNG_B64, ICON_MONO_PNG_B64, b64ToUint8Array } from "../assets/mintIcons";
 
 import type {
   DrawableNode,
@@ -281,16 +282,25 @@ ${interactions
     // MintRenderer renders the UI dynamically from that JSON.
     files.push(...generateSDUIFiles(options, routes));
 
-    // Add placeholder PNG assets required by Expo (icon, splash, adaptive-icon, favicon).
-    // These are proper 512×512 solid-color PNGs so expo-splash-screen can generate
-    // the splashscreen_logo Android drawable correctly during npx expo prebuild.
-    const placeholderPng = buildSolidPng(512, 512, 99, 102, 241); // indigo #6366f1
-    for (const assetName of ["icon.png", "splash-icon.png", "adaptive-icon.png", "favicon.png"]) {
-      files.push({
-        path: `assets/${assetName}`,
-        content: placeholderPng,
-        type: "binary",
-      });
+    // Add Mint-branded PNG assets into assets/images/.
+    // icon + foreground use the main branded icon; background and monochrome
+    // each have their own designed assets. Favicon is a mini version of the icon.
+    const iconPng    = b64ToUint8Array(ICON_PNG_B64);
+    const bgPng      = b64ToUint8Array(ICON_BG_PNG_B64);
+    const monoPng    = b64ToUint8Array(ICON_MONO_PNG_B64);
+    // Favicon: use a small solid-color PNG since 48x48 crop of branded icon isn't available
+    const faviconPng = buildSolidPng(48, 48, 99, 102, 241);
+
+    const imageAssets: Array<{ name: string; png: Uint8Array }> = [
+      { name: "icon.png",                       png: iconPng },
+      { name: "splash-icon.png",                png: iconPng },
+      { name: "android-icon-foreground.png",    png: iconPng },
+      { name: "android-icon-background.png",    png: bgPng },
+      { name: "android-icon-monochrome.png",    png: monoPng },
+      { name: "favicon.png",                    png: faviconPng },
+    ];
+    for (const { name, png } of imageAssets) {
+      files.push({ path: `assets/images/${name}`, content: png, type: "binary" });
     }
 
     // Add image assets
