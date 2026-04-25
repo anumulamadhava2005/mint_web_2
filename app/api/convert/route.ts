@@ -143,17 +143,18 @@ export async function POST(request: Request) {
           web: "expo start --web"
         },
         dependencies: {
-          "expo": "~50.0.0",
-          "expo-status-bar": "~1.11.1",
-          "react": "18.2.0",
-          "react-native": "0.73.6",
-          "expo-router": "~3.4.1",
-          "@react-native-async-storage/async-storage": "1.21.0"
+          "expo": "~54.0.0",
+          "expo-status-bar": "~2.2.0",
+          "expo-system-ui": "~4.0.0",
+          "react": "18.3.1",
+          "react-native": "0.76.9",
+          "expo-router": "~4.0.0",
+          "@react-native-async-storage/async-storage": "1.23.1"
         },
         devDependencies: {
-          "@babel/core": "^7.20.0",
-          "@types/react": "~18.2.45",
-          "typescript": "^5.1.3"
+          "@babel/core": "^7.24.0",
+          "@types/react": "~18.3.12",
+          "typescript": "^5.3.3"
         },
         private: true
       }, null, 2);
@@ -168,10 +169,12 @@ export async function POST(request: Request) {
           slug: slugName,
           scheme: slugName,
           version: "1.0.0",
+          sdkVersion: "54.0.0",
           orientation: "portrait",
           userInterfaceStyle: "light",
           assetBundlePatterns: ["**/*"],
-          ios: { supportsTablet: true }
+          ios: { supportsTablet: true },
+          plugins: ["expo-router", "expo-system-ui"]
         }
       }, null, 2);
 
