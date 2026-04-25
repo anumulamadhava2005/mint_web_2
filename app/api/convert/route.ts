@@ -143,18 +143,25 @@ export async function POST(request: Request) {
           web: "expo start --web"
         },
         dependencies: {
-          "expo": "~54.0.0",
-          "expo-status-bar": "~2.2.0",
-          "expo-system-ui": "~4.0.0",
-          "react": "18.3.1",
-          "react-native": "0.76.9",
-          "expo-router": "~4.0.0",
-          "@react-native-async-storage/async-storage": "1.23.1"
+          "expo": "~54.0.33",
+          "expo-constants": "~18.0.13",
+          "expo-linking": "~8.0.11",
+          "expo-router": "~6.0.23",
+          "expo-splash-screen": "~31.0.13",
+          "expo-status-bar": "~3.0.9",
+          "expo-system-ui": "~6.0.9",
+          "react": "19.1.0",
+          "react-dom": "19.1.0",
+          "react-native": "0.81.5",
+          "react-native-gesture-handler": "~2.28.0",
+          "react-native-reanimated": "~4.1.1",
+          "react-native-safe-area-context": "~5.6.0",
+          "react-native-screens": "~4.16.0",
+          "react-native-web": "~0.21.0"
         },
         devDependencies: {
-          "@babel/core": "^7.24.0",
-          "@types/react": "~18.3.12",
-          "typescript": "^5.3.3"
+          "@types/react": "~19.1.0",
+          "typescript": "~5.9.2"
         },
         private: true
       }, null, 2);
@@ -169,36 +176,35 @@ export async function POST(request: Request) {
           slug: slugName,
           scheme: slugName,
           version: "1.0.0",
-          sdkVersion: "54.0.0",
           orientation: "portrait",
-          userInterfaceStyle: "light",
-          assetBundlePatterns: ["**/*"],
+          userInterfaceStyle: "automatic",
+          newArchEnabled: true,
           ios: { supportsTablet: true },
-          plugins: ["expo-router", "expo-system-ui"]
+          android: {
+            edgeToEdgeEnabled: true,
+            predictiveBackGestureEnabled: false
+          },
+          web: { output: "static" },
+          plugins: [
+            "expo-router",
+            ["expo-splash-screen", { resizeMode: "contain", backgroundColor: "#ffffff" }]
+          ],
+          experiments: { typedRoutes: true }
         }
       }, null, 2);
 
-      const babelConfigStr = `module.exports = function(api) {
-  api.cache(true);
-  return {
-    presets: ['babel-preset-expo'],
-  };
-};`;
-
-      const tsconfigStr = `{
-  "extends": "expo/tsconfig.base",
-  "compilerOptions": {
-    "strict": true,
-    "paths": {
-      "@/*": ["./*"]
-    }
-  }
-}`;
+      const tsconfigStr = JSON.stringify({
+        extends: "expo/tsconfig.base",
+        compilerOptions: {
+          strict: true,
+          paths: { "@/*": ["./*"] }
+        },
+        include: ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]
+      }, null, 2);
 
       finalFiles.push(
         { path: "package.json", content: pkgStr, type: "text" },
         { path: "app.json", content: appJsonStr, type: "text" },
-        { path: "babel.config.js", content: babelConfigStr, type: "text" },
         { path: "tsconfig.json", content: tsconfigStr, type: "text" }
       );
     }
