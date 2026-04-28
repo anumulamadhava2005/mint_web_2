@@ -134,7 +134,7 @@ function WorkflowStep({
           {description}
         </p>
       </div>
-      <div className={`relative ${reverse ? "lg:order-1" : ""}`}>
+      {/* <div className={`relative ${reverse ? "lg:order-1" : ""}`}>
         <div className="absolute -inset-4 rounded-[2rem] bg-gradient-to-br from-white/[0.04] to-transparent blur-xl" />
         <div className="relative rounded-2xl overflow-hidden border border-white/[0.08] shadow-2xl">
           <Image
@@ -145,7 +145,7 @@ function WorkflowStep({
             className="w-full h-auto"
           />
         </div>
-      </div>
+      </div> */}
     </div>
   );
 }
