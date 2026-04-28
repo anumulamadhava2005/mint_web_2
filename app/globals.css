@@ -1,21 +1,33 @@
 @import "tailwindcss";
 
+/* Brand palette aligned with the logo: deep black base, soft off-white foreground,
+   and a subtle mint accent for highlights. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #070707; /* very deep black to match logo */
+  --foreground: #f6f4f0; /* warm off-white for text */
+  --muted: #a8a6a2; /* secondary text */
+  --surface: #0f0f0f; /* cards / surfaces */
+  --accent: #49d6a6; /* subtle mint highlight */
+  --brand-strong: #ffffff;
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Courier New', monospace;
 }
 
-@theme inline {
+/* legacy helper variables */
+:root {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
+/* Keep accessibility for users who prefer light mode, but default to brand dark */
+@media (prefers-color-scheme: light) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #f6f4f0;
+    --foreground: #14120f;
+    --muted: #6f655a;
+    --surface: #ffffff;
+    --accent: #49d6a6;
+    --brand-strong: #14120f;
   }
 }
 
@@ -24,3 +36,8 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Utility classes used by components for brand colors */
+.brand-accent { color: var(--accent); }
+.brand-surface { background: var(--surface); }
+.brand-muted { color: var(--muted); }
