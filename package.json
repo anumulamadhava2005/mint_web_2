@@ -22,6 +22,7 @@
     "codehike": "^1.0.7",
     "date-fns": "^4.1.0",
     "dinero.js": "^1.9.1",
+    "framer-motion": "^12.38.0",
     "immer": "^11.1.4",
     "lucide-react": "^0.564.0",
     "ms": "^2.1.3",
