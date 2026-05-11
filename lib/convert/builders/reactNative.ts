@@ -8,6 +8,7 @@
 
 import { deflateSync } from "zlib";
 import { ICON_PNG_B64, ICON_BG_PNG_B64, ICON_MONO_PNG_B64, b64ToUint8Array } from "../assets/mintIcons";
+import { generateMintRuntimeBundle } from "../../runtime/bundle";
 
 import type {
   DrawableNode,
@@ -282,6 +283,103 @@ ${interactions
     // MintRenderer renders the UI dynamically from that JSON.
     files.push(...generateSDUIFiles(options, routes));
 
+    // ── Mint Runtime Library ──────────────────────────────────
+    // Bundled state engine, expression parser, action dispatcher,
+    // and data binding engine for runtime-powered apps.
+    files.push({
+      path: "lib/mint-runtime.js",
+      content: generateMintRuntimeBundle(),
+      type: "text",
+    });
+
+    // ── React integration hook for Mint Runtime ───────────────
+    files.push({
+      path: "hooks/useMintRuntime.ts",
+      content: `// ═══════════════════════════════════════════════════════════════
+// useMintRuntime — React hook for the Mint runtime engine
+// Provides state, actions, bindings, and expression evaluation
+// ═══════════════════════════════════════════════════════════════
+
+import { useRef, useEffect, useSyncExternalStore, useCallback } from "react";
+import { createMintRuntime, MintState, MintActions, MintBindings, evalExpr, isExpression } from "../lib/mint-runtime";
+
+let _globalRuntime: ReturnType<typeof createMintRuntime> | null = null;
+
+/** Get or create the global Mint runtime instance */
+export function getMintRuntime(schema?: any) {
+  if (!_globalRuntime) {
+    _globalRuntime = createMintRuntime(schema || {});
+  }
+  return _globalRuntime;
+}
+
+/** Hook: subscribe to a state path and re-render on change */
+export function useMintState(path: string) {
+  const runtime = getMintRuntime();
+  const subscribe = useCallback(
+    (cb: () => void) => runtime.state.subscribe(path, cb),
+    [path]
+  );
+  const getSnapshot = useCallback(
+    () => runtime.state.get(path),
+    [path]
+  );
+  const value = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const setValue = useCallback(
+    (newValue: any) => runtime.state.set(path, newValue),
+    [path]
+  );
+  return [value, setValue] as const;
+}
+
+/** Hook: dispatch an action */
+export function useMintAction() {
+  const runtime = getMintRuntime();
+  return useCallback(
+    (actionRef: string | { actionId: string; params?: Record<string, string> }, ctx?: any) =>
+      runtime.actions.dispatch(actionRef, ctx || {}),
+    []
+  );
+}
+
+/** Hook: evaluate an expression reactively */
+export function useMintExpr(expression: string) {
+  const runtime = getMintRuntime();
+  const subscribe = useCallback(
+    (cb: () => void) => {
+      // Subscribe to all state changes (simple approach)
+      return runtime.state.subscribe("", cb);
+    },
+    []
+  );
+  const getSnapshot = useCallback(
+    () => {
+      try { return runtime.evalExpr(expression, runtime.state.getContext()); }
+      catch { return undefined; }
+    },
+    [expression]
+  );
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+/** Hook: resolve component bindings */
+export function useMintBindings(componentId: string, staticProps: Record<string, any> = {}) {
+  const runtime = getMintRuntime();
+  const subscribe = useCallback(
+    (cb: () => void) => runtime.bindings.subscribe(componentId, () => cb()),
+    [componentId]
+  );
+  const getSnapshot = useCallback(
+    () => runtime.bindings.resolve(componentId, staticProps),
+    [componentId]
+  );
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+export { evalExpr, isExpression };
+`,
+      type: "text",
+    });
     // Add Mint-branded PNG assets into assets/images/.
     // icon + foreground use the main branded icon; background and monochrome
     // each have their own designed assets. Favicon is a mini version of the icon.

@@ -12,6 +12,7 @@ import type { UUID, PenpotShape } from "@/lib/penpot/types";
 import { ROOT_FRAME_ID } from "@/lib/penpot/types";
 import { DEVICE_PRESETS, type DevicePreset } from "@/lib/devicePresets";
 import ConvertDialog from "./ConvertDialog";
+import BackendPanel from "./BackendPanel";
 // socket.io-client removed — sync daemon uses HTTP polling now
 
 // ── Props ─────────────────────────────────────────────────────
@@ -385,6 +386,7 @@ export default function PenpotEditor({
         <RightPanel
           optionsMode={optionsMode}
           onModeChange={setOptionsMode}
+          projectId={projectId}
         />
       </div>
 
@@ -882,10 +884,15 @@ const LeftPanel = memo(function LeftPanel() {
   const selected = useWorkspaceStore((s) => s.local.selected);
   const selectShape = useWorkspaceStore((s) => s.selectShape);
   const moveShapes = useWorkspaceStore((s) => s.moveShapes);
+  const toggleLocked = useWorkspaceStore((s) => s.toggleLocked);
+  const toggleHidden = useWorkspaceStore((s) => s.toggleHidden);
+  const renameShape = useWorkspaceStore((s) => s.renameShape);
 
   const [tab, setTab] = useState<"layers" | "pages">("layers");
   const [draggedId, setDraggedId] = useState<UUID | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: UUID; position: "before" | "inside" | "after" } | null>(null);
+  const [layerSearch, setLayerSearch] = useState("");
+  const [editingLayerId, setEditingLayerId] = useState<UUID | null>(null);
 
   const pageObjects = useWorkspaceStore((s) => {
     if (!s.file || !s.currentPageId) return {};
@@ -1044,35 +1051,56 @@ const LeftPanel = memo(function LeftPanel() {
             </button>
           </div>
         ) : (
-          <LayerTree
-            objects={pageObjects}
-            childIds={rootChildren}
-            depth={0}
-            selected={selected}
-            onSelect={selectShape}
-            draggedId={draggedId}
-            dropTarget={dropTarget}
-            onDragStart={setDraggedId}
-            onDragEnd={() => {
-              setDraggedId(null);
-              setDropTarget(null);
-            }}
-            onDragOverLayer={(e, id) => {
-              if (!draggedId) return;
-              e.preventDefault();
-              const el = e.currentTarget;
-              const rect = el.getBoundingClientRect();
-              const y = e.clientY - rect.top;
-              const threshold = Math.max(4, rect.height * 0.25);
-              const position = y < threshold
-                ? "before"
-                : y > rect.height - threshold
-                  ? "after"
-                  : "inside";
-              setDropTarget({ id, position });
-            }}
-            onDropOnLayer={handleDropOnLayer}
-          />
+          <>
+            {/* Layer search */}
+            <div className="px-1 pb-1">
+              <input
+                type="text"
+                placeholder="Search layers…"
+                value={layerSearch}
+                onChange={(e) => setLayerSearch(e.target.value)}
+                className="w-full rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-300 outline-none placeholder:text-zinc-600 focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+            <LayerTree
+              objects={pageObjects}
+              childIds={rootChildren}
+              depth={0}
+              selected={selected}
+              onSelect={selectShape}
+              draggedId={draggedId}
+              dropTarget={dropTarget}
+              onDragStart={setDraggedId}
+              onDragEnd={() => {
+                setDraggedId(null);
+                setDropTarget(null);
+              }}
+              onDragOverLayer={(e, id) => {
+                if (!draggedId) return;
+                e.preventDefault();
+                const el = e.currentTarget;
+                const rect = el.getBoundingClientRect();
+                const y = e.clientY - rect.top;
+                const threshold = Math.max(4, rect.height * 0.25);
+                const position = y < threshold
+                  ? "before"
+                  : y > rect.height - threshold
+                    ? "after"
+                    : "inside";
+                setDropTarget({ id, position });
+              }}
+              onDropOnLayer={handleDropOnLayer}
+              onToggleLocked={(id) => toggleLocked([id])}
+              onToggleHidden={(id) => toggleHidden([id])}
+              editingLayerId={editingLayerId}
+              onStartEdit={setEditingLayerId}
+              onFinishEdit={(id, name) => {
+                renameShape(id, name);
+                setEditingLayerId(null);
+              }}
+              searchFilter={layerSearch}
+            />
+          </>
         )}
       </div>
     </div>
@@ -1092,6 +1120,12 @@ function LayerTree({
   onDragEnd,
   onDragOverLayer,
   onDropOnLayer,
+  onToggleLocked,
+  onToggleHidden,
+  editingLayerId,
+  onStartEdit,
+  onFinishEdit,
+  searchFilter,
 }: {
   objects: Record<UUID, PenpotShape>;
   childIds: UUID[];
@@ -1104,52 +1138,121 @@ function LayerTree({
   onDragEnd: () => void;
   onDragOverLayer: (e: React.DragEvent<HTMLButtonElement>, id: UUID) => void;
   onDropOnLayer: (id: UUID, fallbackPosition?: "before" | "inside" | "after") => void;
+  onToggleLocked: (id: UUID) => void;
+  onToggleHidden: (id: UUID) => void;
+  editingLayerId: UUID | null;
+  onStartEdit: (id: UUID) => void;
+  onFinishEdit: (id: UUID, name: string) => void;
+  searchFilter: string;
 }) {
   return (
     <>
       {[...childIds].reverse().map((id) => {
         const shape = objects[id];
         if (!shape) return null;
+
+        // Search filtering
+        const matchesSearch = !searchFilter || (shape.name || shape.type).toLowerCase().includes(searchFilter.toLowerCase());
+        const hasMatchingChild = searchFilter && shape.shapes?.some((cid) => {
+          const child = objects[cid];
+          return child && (child.name || child.type).toLowerCase().includes(searchFilter.toLowerCase());
+        });
+        if (searchFilter && !matchesSearch && !hasMatchingChild) return null;
+
         const isSelected = selected.has(id);
         const hasChildren = shape.shapes && shape.shapes.length > 0;
         const isDragging = draggedId === id;
         const isDropBefore = dropTarget?.id === id && dropTarget.position === "before";
         const isDropInside = dropTarget?.id === id && dropTarget.position === "inside";
         const isDropAfter = dropTarget?.id === id && dropTarget.position === "after";
+        const isEditing = editingLayerId === id;
 
         return (
           <div key={id}>
-            <button
-              data-layer-row="true"
-              draggable
-              onDragStart={(e) => {
-                e.dataTransfer.effectAllowed = "move";
-                e.dataTransfer.setData("text/plain", id);
-                onDragStart(id);
-              }}
-              onDragEnd={onDragEnd}
-              onDragOver={(e) => onDragOverLayer(e, id)}
-              onDrop={(e) => {
-                e.preventDefault();
-                onDropOnLayer(id);
-              }}
-              onClick={(e) => onSelect(id, e.shiftKey)}
-              className={`flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs ${
+            <div
+              className={`group flex w-full items-center gap-1 rounded px-1 py-0.5 text-left text-xs ${
                 isSelected
                   ? "bg-indigo-600/20 text-indigo-300"
                   : "text-zinc-400 hover:bg-zinc-800"
               } ${isDragging ? "opacity-40" : ""} ${isDropInside ? "bg-indigo-600/25 ring-1 ring-indigo-500/50" : ""} ${isDropBefore ? "border-t border-indigo-500" : ""} ${isDropAfter ? "border-b border-indigo-500" : ""}`}
-              style={{ paddingLeft: `${depth * 12 + 6}px` }}
+              style={{ paddingLeft: `${depth * 12 + 4}px` }}
             >
-              <ShapeIcon type={shape.type} />
-              <span className="truncate">{shape.name || shape.type}</span>
-              {shape.hidden && (
-                <span className="ml-auto text-[10px] text-zinc-600">H</span>
-              )}
-              {shape.locked && (
-                <span className="ml-auto text-[10px] text-zinc-600">L</span>
-              )}
-            </button>
+              <button
+                data-layer-row="true"
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = "move";
+                  e.dataTransfer.setData("text/plain", id);
+                  onDragStart(id);
+                }}
+                onDragEnd={onDragEnd}
+                onDragOver={(e) => onDragOverLayer(e, id)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  onDropOnLayer(id);
+                }}
+                onClick={(e) => onSelect(id, e.shiftKey || e.ctrlKey || e.metaKey)}
+                onDoubleClick={() => onStartEdit(id)}
+                className="flex flex-1 items-center gap-1.5 truncate py-0.5"
+              >
+                <ShapeIcon type={shape.type} />
+                {isEditing ? (
+                  <input
+                    autoFocus
+                    defaultValue={shape.name || shape.type}
+                    onBlur={(e) => onFinishEdit(id, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") onFinishEdit(id, (e.target as HTMLInputElement).value);
+                      if (e.key === "Escape") onFinishEdit(id, shape.name || shape.type);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-full rounded bg-zinc-700 px-1 py-0 text-xs text-zinc-100 outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                ) : (
+                  <span className="truncate">{shape.name || shape.type}</span>
+                )}
+              </button>
+
+              {/* Lock/Unlock + Hide/Show buttons — visible on hover or when active */}
+              <div className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={(e) => { e.stopPropagation(); onToggleHidden(id); }}
+                  className={`rounded p-0.5 transition-colors ${shape.hidden ? "text-amber-400 opacity-100" : "text-zinc-600 hover:text-zinc-300"}`}
+                  title={shape.hidden ? "Show" : "Hide"}
+                  style={shape.hidden ? { opacity: 1 } : undefined}
+                >
+                  {shape.hidden ? (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" />
+                      <line x1="1" y1="1" x2="23" y2="23" />
+                    </svg>
+                  ) : (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onToggleLocked(id); }}
+                  className={`rounded p-0.5 transition-colors ${shape.locked ? "text-red-400 opacity-100" : "text-zinc-600 hover:text-zinc-300"}`}
+                  title={shape.locked ? "Unlock" : "Lock"}
+                  style={shape.locked ? { opacity: 1 } : undefined}
+                >
+                  {shape.locked ? (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                      <path d="M7 11V7a5 5 0 0110 0v4" />
+                    </svg>
+                  ) : (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                      <path d="M7 11V7a5 5 0 019.9-1" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
             {hasChildren && (
               <LayerTree
                 objects={objects}
@@ -1163,6 +1266,12 @@ function LayerTree({
                 onDragEnd={onDragEnd}
                 onDragOverLayer={onDragOverLayer}
                 onDropOnLayer={onDropOnLayer}
+                onToggleLocked={onToggleLocked}
+                onToggleHidden={onToggleHidden}
+                editingLayerId={editingLayerId}
+                onStartEdit={onStartEdit}
+                onFinishEdit={onFinishEdit}
+                searchFilter={searchFilter}
               />
             )}
           </div>
@@ -1198,25 +1307,29 @@ function ShapeIcon({ type }: { type: string }) {
 const RightPanel = memo(function RightPanel({
   optionsMode,
   onModeChange,
+  projectId,
 }: {
   optionsMode: OptionsMode;
   onModeChange: (mode: OptionsMode) => void;
+  projectId: string;
 }) {
   return (
-    <div className="flex w-64 shrink-0 flex-col border-l border-zinc-700 bg-zinc-900">
+    <div className={`flex ${optionsMode === "backend" ? "w-80" : "w-64"} shrink-0 flex-col border-l border-zinc-700 bg-zinc-900 transition-all`}>
       {/* Mode tabs */}
       <div className="flex border-b border-zinc-700">
-        {(["design", "inspect", "prototype"] as const).map((mode) => (
+        {(["design", "inspect", "prototype", "backend"] as const).map((mode) => (
           <button
             key={mode}
             onClick={() => onModeChange(mode)}
             className={`flex-1 py-2 text-xs font-medium capitalize ${
               optionsMode === mode
-                ? "border-b-2 border-indigo-500 text-white"
+                ? mode === "backend"
+                  ? "border-b-2 border-emerald-500 text-emerald-400"
+                  : "border-b-2 border-indigo-500 text-white"
                 : "text-zinc-500 hover:text-zinc-300"
             }`}
           >
-            {mode}
+            {mode === "backend" ? "⚙ Backend" : mode}
           </button>
         ))}
       </div>
@@ -1226,6 +1339,7 @@ const RightPanel = memo(function RightPanel({
         {optionsMode === "design" && <DesignPanel />}
         {optionsMode === "inspect" && <InspectPanel />}
         {optionsMode === "prototype" && <PrototypePanel />}
+        {optionsMode === "backend" && <BackendPanel projectId={projectId} />}
       </div>
     </div>
   );
@@ -1633,6 +1747,115 @@ function DesignPanel() {
             + Add stroke
           </button>
         )}
+      </div>
+
+      {/* ── Runtime Bindings ─────────────────────────────── */}
+      <div>
+        <label className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wider text-emerald-400">
+          <span>⚡</span> Bindings
+        </label>
+        <div className="space-y-1.5 rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-2">
+          {/* Text Binding */}
+          {(shape.type === "text" || shape.type === "rect" || shape.type === "frame") && (
+            <div>
+              <label className="text-[10px] text-zinc-500">Text / Content</label>
+              <input
+                value={shape.runtimeBindings?.textBind || ""}
+                onChange={(e) => updateShape(shape.id, {
+                  runtimeBindings: { ...shape.runtimeBindings, textBind: e.target.value }
+                })}
+                placeholder="$state.variable"
+                className="w-full rounded bg-zinc-900 px-2 py-1 text-xs text-white outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
+              />
+            </div>
+          )}
+
+          {/* Input Binding */}
+          <div>
+            <label className="text-[10px] text-zinc-500">Input Bind (2-way)</label>
+            <input
+              value={shape.runtimeBindings?.inputBind || ""}
+              onChange={(e) => updateShape(shape.id, {
+                runtimeBindings: { ...shape.runtimeBindings, inputBind: e.target.value }
+              })}
+              placeholder="$form.fieldName"
+              className="w-full rounded bg-zinc-900 px-2 py-1 text-xs text-white outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
+            />
+          </div>
+
+          {/* onClick Action */}
+          <div>
+            <label className="text-[10px] text-zinc-500">On Click (action)</label>
+            <input
+              value={shape.runtimeBindings?.onClick || ""}
+              onChange={(e) => updateShape(shape.id, {
+                runtimeBindings: { ...shape.runtimeBindings, onClick: e.target.value }
+              })}
+              placeholder="actionName or $expression"
+              className="w-full rounded bg-zinc-900 px-2 py-1 text-xs text-white outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
+            />
+          </div>
+
+          {/* Visible Bind */}
+          <div>
+            <label className="text-[10px] text-zinc-500">Visible When</label>
+            <input
+              value={shape.runtimeBindings?.visibleBind || ""}
+              onChange={(e) => updateShape(shape.id, {
+                runtimeBindings: { ...shape.runtimeBindings, visibleBind: e.target.value }
+              })}
+              placeholder="$isLoggedIn"
+              className="w-full rounded bg-zinc-900 px-2 py-1 text-xs text-white outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
+            />
+          </div>
+
+          {/* Data Source (for frames/groups acting as lists) */}
+          {(shape.type === "frame" || shape.type === "group") && (
+            <>
+              <div>
+                <label className="text-[10px] text-zinc-500">Data Source (table)</label>
+                <input
+                  value={shape.runtimeBindings?.dataSource || ""}
+                  onChange={(e) => updateShape(shape.id, {
+                    runtimeBindings: { ...shape.runtimeBindings, dataSource: e.target.value }
+                  })}
+                  placeholder="todos"
+                  className="w-full rounded bg-zinc-900 px-2 py-1 text-xs text-white outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-zinc-500">Repeat For / As</label>
+                <div className="flex gap-1">
+                  <input
+                    value={shape.runtimeBindings?.repeatFor || ""}
+                    onChange={(e) => updateShape(shape.id, {
+                      runtimeBindings: { ...shape.runtimeBindings, repeatFor: e.target.value }
+                    })}
+                    placeholder="$todos"
+                    className="flex-1 rounded bg-zinc-900 px-2 py-1 text-xs text-white outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
+                  />
+                  <input
+                    value={shape.runtimeBindings?.repeatAs || ""}
+                    onChange={(e) => updateShape(shape.id, {
+                      runtimeBindings: { ...shape.runtimeBindings, repeatAs: e.target.value }
+                    })}
+                    placeholder="item"
+                    className="w-16 rounded bg-zinc-900 px-2 py-1 text-xs text-white outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
+          {shape.runtimeBindings && Object.values(shape.runtimeBindings).some(Boolean) && (
+            <button
+              onClick={() => updateShape(shape.id, { runtimeBindings: undefined })}
+              className="text-[10px] text-red-400 hover:text-red-300"
+            >
+              Clear all bindings
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

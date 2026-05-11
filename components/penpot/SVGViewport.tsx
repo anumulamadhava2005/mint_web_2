@@ -160,6 +160,18 @@ function SVGViewportInner({ fileId }: ViewportProps) {
     setSelectionRect,
     undo,
     redo,
+    copyShapes,
+    pasteShapes,
+    groupShapes,
+    ungroupShapes,
+    bringToFront,
+    bringForward,
+    sendBackward,
+    sendToBack,
+    nudgeShapes,
+    toggleLocked,
+    toggleHidden,
+    saveFile,
   } = useWorkspaceStore();
 
   // Collaboration
@@ -191,6 +203,9 @@ function SVGViewportInner({ fileId }: ViewportProps) {
 
   // Auto-parenting: frame currently highlighted as drop target during drag
   const [dropTargetId, setDropTargetId] = useState<UUID | null>(null);
+
+  // Context menu
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; worldX: number; worldY: number } | null>(null);
 
   // Snap guides to render
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
@@ -225,51 +240,164 @@ function SVGViewportInner({ fileId }: ViewportProps) {
   // ── Keyboard shortcuts ────────────────────────────────────
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+
+      const mod = e.metaKey || e.ctrlKey;
 
       if (e.key === " ") {
         e.preventDefault();
         setSpaceHeld(true);
       }
+
+      // Delete / Backspace → Delete selected
       if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
         const selected = Array.from(local.selected);
         if (selected.length > 0) deleteShapes(selected);
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) {
+
+      // Ctrl+Z → Undo
+      if (mod && e.key === "z" && !e.shiftKey) {
         e.preventDefault();
         undo();
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === "z" && e.shiftKey) {
+      // Ctrl+Shift+Z → Redo
+      if (mod && e.key === "z" && e.shiftKey) {
         e.preventDefault();
         redo();
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === "d") {
+      // Ctrl+D → Duplicate
+      if (mod && e.key === "d") {
         e.preventDefault();
         const selected = Array.from(local.selected);
         if (selected.length > 0) {
           useWorkspaceStore.getState().duplicateShapes(selected);
         }
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === "a") {
+      // Ctrl+A → Select all
+      if (mod && e.key === "a") {
         e.preventDefault();
         useWorkspaceStore.getState().selectAll();
       }
+      // Ctrl+C → Copy
+      if (mod && e.key === "c" && !e.shiftKey) {
+        e.preventDefault();
+        copyShapes();
+      }
+      // Ctrl+V → Paste
+      if (mod && e.key === "v" && !e.shiftKey) {
+        e.preventDefault();
+        pasteShapes();
+      }
+      // Ctrl+X → Cut (copy + delete)
+      if (mod && e.key === "x") {
+        e.preventDefault();
+        copyShapes();
+        const selected = Array.from(useWorkspaceStore.getState().local.selected);
+        if (selected.length > 0) deleteShapes(selected);
+      }
+      // Ctrl+G → Group
+      if (mod && e.key === "g" && !e.shiftKey) {
+        e.preventDefault();
+        const selected = Array.from(local.selected);
+        if (selected.length >= 2) groupShapes(selected);
+      }
+      // Ctrl+Shift+G → Ungroup
+      if (mod && e.key === "g" && e.shiftKey) {
+        e.preventDefault();
+        const selected = Array.from(local.selected);
+        if (selected.length > 0) ungroupShapes(selected);
+      }
+      // Ctrl+S → Save
+      if (mod && e.key === "s") {
+        e.preventDefault();
+        saveFile();
+      }
+      // Ctrl+] → Bring Forward
+      if (mod && e.key === "]") {
+        e.preventDefault();
+        const selected = Array.from(local.selected);
+        if (e.shiftKey) {
+          bringToFront(selected);
+        } else {
+          bringForward(selected);
+        }
+      }
+      // Ctrl+[ → Send Backward
+      if (mod && e.key === "[") {
+        e.preventDefault();
+        const selected = Array.from(local.selected);
+        if (e.shiftKey) {
+          sendToBack(selected);
+        } else {
+          sendBackward(selected);
+        }
+      }
+      // Ctrl+0 → Zoom to fit
+      if (mod && e.key === "0") {
+        e.preventDefault();
+        const state = useWorkspaceStore.getState();
+        setViewbox({ x: -100, y: -100, width: state.local.vport.width, height: state.local.vport.height });
+        setZoom(1);
+      }
+      // + / = → Zoom in (with or without Ctrl)
+      if (e.key === "+" || e.key === "=" || (mod && (e.key === "+" || e.key === "="))) {
+        e.preventDefault();
+        const state = useWorkspaceStore.getState();
+        const currentZoom = state.local.vport.width / state.local.vbox.width;
+        const newZoom = Math.min(64, currentZoom * 1.2);
+        const cx = state.local.vbox.x + state.local.vbox.width / 2;
+        const cy = state.local.vbox.y + state.local.vbox.height / 2;
+        const newW = state.local.vport.width / newZoom;
+        const newH = state.local.vport.height / newZoom;
+        setViewbox({ x: cx - newW / 2, y: cy - newH / 2, width: newW, height: newH });
+        setZoom(newZoom);
+      }
+      // - → Zoom out (with or without Ctrl)
+      if (e.key === "-" || (mod && e.key === "-")) {
+        e.preventDefault();
+        const state = useWorkspaceStore.getState();
+        const currentZoom = state.local.vport.width / state.local.vbox.width;
+        const newZoom = Math.max(0.1, currentZoom / 1.2);
+        const cx = state.local.vbox.x + state.local.vbox.width / 2;
+        const cy = state.local.vbox.y + state.local.vbox.height / 2;
+        const newW = state.local.vport.width / newZoom;
+        const newH = state.local.vport.height / newZoom;
+        setViewbox({ x: cx - newW / 2, y: cy - newH / 2, width: newW, height: newH });
+        setZoom(newZoom);
+      }
+
+      // Escape
       if (e.key === "Escape") {
         deselectAll();
         setDrawing(null);
+        setContextMenu(null);
       }
 
-      // Tool shortcuts
-      if (e.key === "v" || e.key === "V") setDrawing(null); // Select tool
-      if (e.key === "r" || e.key === "R") setDrawing("rect");
-      if (e.key === "o" || e.key === "O") setDrawing("circle");
-      if (e.key === "t" || e.key === "T") setDrawing("text");
-      if (e.key === "f" || e.key === "F") setDrawing("frame");
-      if (e.key === "p" || e.key === "P") setDrawing("path");
+      // Tool shortcuts (only when no modifier key)
+      if (!mod && !e.shiftKey) {
+        if (e.key === "v" || e.key === "V") setDrawing(null);
+        if (e.key === "r" || e.key === "R") setDrawing("rect");
+        if (e.key === "o" || e.key === "O") setDrawing("circle");
+        if (e.key === "t" || e.key === "T") setDrawing("text");
+        if (e.key === "f" || e.key === "F") setDrawing("frame");
+        if (e.key === "p" || e.key === "P") setDrawing("path");
+      }
+
+      // Arrow keys → Nudge shapes
+      if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        const selected = Array.from(local.selected);
+        if (selected.length > 0) {
+          e.preventDefault();
+          const step = e.shiftKey ? 10 : 1;
+          const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
+          const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
+          nudgeShapes(selected, dx, dy);
+        }
+      }
 
       // Toggle snapping (Ctrl+Shift+')
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "'") {
+      if (mod && e.shiftKey && e.key === "'") {
         e.preventDefault();
         useWorkspaceStore.getState().toggleSnapToObjects();
       }
@@ -285,7 +413,7 @@ function SVGViewportInner({ fileId }: ViewportProps) {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [local.selected, deleteShapes, undo, redo, deselectAll, setDrawing]);
+  }, [local.selected, deleteShapes, undo, redo, deselectAll, setDrawing, copyShapes, pasteShapes, groupShapes, ungroupShapes, saveFile, bringForward, bringToFront, sendBackward, sendToBack, nudgeShapes, setViewbox, setZoom]);
 
   // ── Hit testing ───────────────────────────────────────────
   const hitTestShapes = useCallback(
@@ -336,7 +464,7 @@ function SVGViewportInner({ fileId }: ViewportProps) {
 
   // ── Wheel handler (zoom + pan) ────────────────────────────
   const handleWheel = useCallback(
-    (e: React.WheelEvent) => {
+    (e: WheelEvent) => {
       e.preventDefault();
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
@@ -366,6 +494,14 @@ function SVGViewportInner({ fileId }: ViewportProps) {
     [local.vbox, local.vport, setViewbox, setZoom, sendViewportChange]
   );
 
+  // Attach wheel handler with { passive: false } to prevent browser zoom
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, [handleWheel]);
+
   // ── Mouse Down ────────────────────────────────────────────
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -376,6 +512,9 @@ function SVGViewportInner({ fileId }: ViewportProps) {
         setPanning(true);
         return;
       }
+
+      // Close context menu on any click
+      if (contextMenu) setContextMenu(null);
 
       const worldP = toWorld(e);
 
@@ -464,6 +603,7 @@ function SVGViewportInner({ fileId }: ViewportProps) {
       setTransform,
       sendSelectionChange,
       pageObjects,
+      contextMenu,
     ]
   );
 
@@ -804,6 +944,19 @@ function SVGViewportInner({ fileId }: ViewportProps) {
       ref={containerRef}
       className="relative h-full w-full overflow-hidden bg-zinc-800"
       style={{ cursor: spaceHeld || isPanning ? "grab" : local.drawing ? "crosshair" : "default" }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const screenP = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        const worldP = screenToWorld(screenP, local.vbox, local.vport);
+        // Hit test and select if clicking on a shape
+        const hit = hitTestShapes(worldP);
+        if (hit && !local.selected.has(hit.id)) {
+          selectShape(hit.id);
+        }
+        setContextMenu({ x: e.clientX, y: e.clientY, worldX: worldP.x, worldY: worldP.y });
+      }}
     >
       {/* ── Layer 1: Shape rendering SVG (pointer-events: none on shapes) ── */}
       <svg
@@ -838,7 +991,6 @@ function SVGViewportInner({ fileId }: ViewportProps) {
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onWheel={handleWheel}
       >
         {/* Frame titles */}
         {frameTitles.map((shape) => (
@@ -921,6 +1073,108 @@ function SVGViewportInner({ fileId }: ViewportProps) {
 
       {/* ── Rulers (HTML overlay) ── */}
       {showRulers && <Rulers vbox={local.vbox} vport={local.vport} zoom={zoom} />}
+
+      {/* ── Context Menu ── */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          hasSelection={local.selected.size > 0}
+          selectionCount={local.selected.size}
+          onClose={() => setContextMenu(null)}
+          onCopy={() => { copyShapes(); setContextMenu(null); }}
+          onPaste={() => { pasteShapes(); setContextMenu(null); }}
+          onCut={() => { copyShapes(); const s = Array.from(local.selected); if (s.length) deleteShapes(s); setContextMenu(null); }}
+          onDuplicate={() => { const s = Array.from(local.selected); if (s.length) useWorkspaceStore.getState().duplicateShapes(s); setContextMenu(null); }}
+          onDelete={() => { const s = Array.from(local.selected); if (s.length) deleteShapes(s); setContextMenu(null); }}
+          onGroup={() => { const s = Array.from(local.selected); if (s.length >= 2) groupShapes(s); setContextMenu(null); }}
+          onUngroup={() => { const s = Array.from(local.selected); if (s.length) ungroupShapes(s); setContextMenu(null); }}
+          onBringToFront={() => { bringToFront(Array.from(local.selected)); setContextMenu(null); }}
+          onBringForward={() => { bringForward(Array.from(local.selected)); setContextMenu(null); }}
+          onSendBackward={() => { sendBackward(Array.from(local.selected)); setContextMenu(null); }}
+          onSendToBack={() => { sendToBack(Array.from(local.selected)); setContextMenu(null); }}
+          onLock={() => { toggleLocked(Array.from(local.selected)); setContextMenu(null); }}
+          onHide={() => { toggleHidden(Array.from(local.selected)); setContextMenu(null); }}
+          onSelectAll={() => { useWorkspaceStore.getState().selectAll(); setContextMenu(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Context Menu Component ────────────────────────────────────
+function ContextMenu({
+  x, y, hasSelection, selectionCount, onClose,
+  onCopy, onPaste, onCut, onDuplicate, onDelete,
+  onGroup, onUngroup, onBringToFront, onBringForward,
+  onSendBackward, onSendToBack, onLock, onHide, onSelectAll,
+}: {
+  x: number; y: number; hasSelection: boolean; selectionCount: number;
+  onClose: () => void;
+  onCopy: () => void; onPaste: () => void; onCut: () => void;
+  onDuplicate: () => void; onDelete: () => void;
+  onGroup: () => void; onUngroup: () => void;
+  onBringToFront: () => void; onBringForward: () => void;
+  onSendBackward: () => void; onSendToBack: () => void;
+  onLock: () => void; onHide: () => void; onSelectAll: () => void;
+}) {
+  const menuRef = React.useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  React.useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+
+  // Adjust position to stay in viewport
+  const adjustedX = Math.min(x, window.innerWidth - 220);
+  const adjustedY = Math.min(y, window.innerHeight - 400);
+
+  const MenuItem = ({ label, shortcut, onClick, disabled }: { label: string; shortcut?: string; onClick: () => void; disabled?: boolean }) => (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-xs transition-colors ${
+        disabled ? "text-zinc-600 cursor-default" : "text-zinc-300 hover:bg-zinc-700 hover:text-white"
+      }`}
+    >
+      <span>{label}</span>
+      {shortcut && <span className="ml-4 text-[10px] text-zinc-500">{shortcut}</span>}
+    </button>
+  );
+
+  const Divider = () => <div className="my-1 h-px bg-zinc-700" />;
+
+  return (
+    <div
+      ref={menuRef}
+      className="fixed z-[200] min-w-[200px] rounded-lg border border-zinc-700 bg-zinc-800 py-1 shadow-2xl backdrop-blur-sm"
+      style={{ left: adjustedX, top: adjustedY }}
+    >
+      <MenuItem label="Cut" shortcut="⌘X" onClick={onCut} disabled={!hasSelection} />
+      <MenuItem label="Copy" shortcut="⌘C" onClick={onCopy} disabled={!hasSelection} />
+      <MenuItem label="Paste" shortcut="⌘V" onClick={onPaste} />
+      <MenuItem label="Duplicate" shortcut="⌘D" onClick={onDuplicate} disabled={!hasSelection} />
+      <Divider />
+      <MenuItem label="Delete" shortcut="⌫" onClick={onDelete} disabled={!hasSelection} />
+      <Divider />
+      <MenuItem label="Group" shortcut="⌘G" onClick={onGroup} disabled={selectionCount < 2} />
+      <MenuItem label="Ungroup" shortcut="⌘⇧G" onClick={onUngroup} disabled={!hasSelection} />
+      <Divider />
+      <MenuItem label="Bring to Front" shortcut="⌘⇧]" onClick={onBringToFront} disabled={!hasSelection} />
+      <MenuItem label="Bring Forward" shortcut="⌘]" onClick={onBringForward} disabled={!hasSelection} />
+      <MenuItem label="Send Backward" shortcut="⌘[" onClick={onSendBackward} disabled={!hasSelection} />
+      <MenuItem label="Send to Back" shortcut="⌘⇧[" onClick={onSendToBack} disabled={!hasSelection} />
+      <Divider />
+      <MenuItem label="Lock / Unlock" onClick={onLock} disabled={!hasSelection} />
+      <MenuItem label="Show / Hide" onClick={onHide} disabled={!hasSelection} />
+      <Divider />
+      <MenuItem label="Select All" shortcut="⌘A" onClick={onSelectAll} />
     </div>
   );
 }

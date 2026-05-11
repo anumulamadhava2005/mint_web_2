@@ -54,7 +54,7 @@ export interface PresenceInfo {
 }
 
 // ── Options Mode ──────────────────────────────────────────────
-export type OptionsMode = "design" | "inspect" | "prototype";
+export type OptionsMode = "design" | "inspect" | "prototype" | "backend";
 
 // ── Undo/Redo entry ───────────────────────────────────────────
 interface UndoEntry {
@@ -126,11 +126,33 @@ export interface WorkspaceState {
   deleteShapes: (ids: UUID[]) => void;
   moveShapes: (ids: UUID[], parentId: UUID, index?: number) => void;
   duplicateShapes: (ids: UUID[]) => void;
+  groupShapes: (ids: UUID[]) => void;
+  ungroupShapes: (ids: UUID[]) => void;
 
   // Selection
   selectShape: (id: UUID, multi?: boolean) => void;
   deselectAll: () => void;
   selectAll: () => void;
+
+  // Layer ordering
+  bringToFront: (ids: UUID[]) => void;
+  bringForward: (ids: UUID[]) => void;
+  sendBackward: (ids: UUID[]) => void;
+  sendToBack: (ids: UUID[]) => void;
+
+  // Lock / Hide
+  toggleLocked: (ids: UUID[]) => void;
+  toggleHidden: (ids: UUID[]) => void;
+
+  // Clipboard
+  copyShapes: () => void;
+  pasteShapes: () => void;
+
+  // Nudge
+  nudgeShapes: (ids: UUID[], dx: number, dy: number) => void;
+
+  // Rename
+  renameShape: (id: UUID, name: string) => void;
 
   // Local state
   setZoom: (zoom: number) => void;
@@ -375,10 +397,18 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       if (!currentPageId || !file) return null;
 
       const shape = createDefaultShape(type, props);
+
+      // Auto-number: count existing shapes of same type and append number
+      const pageObjects = file.pagesIndex[currentPageId]?.objects || {};
+      const sameTypeCount = Object.values(pageObjects).filter(
+        (s) => s.type === type && s.id !== ROOT_FRAME_ID
+      ).length;
+      shape.name = `${shape.name} ${sameTypeCount + 1}`;
+
       const targetParentId = props?.parentId || ROOT_FRAME_ID;
       shape.parentId = targetParentId;
 
-      const parentShape = file.pagesIndex[currentPageId]?.objects[targetParentId];
+      const parentShape = pageObjects[targetParentId];
       shape.frameId = parentShape?.type === "frame" ? targetParentId : (parentShape?.frameId || ROOT_FRAME_ID);
 
       // If parent is a layout frame, set default layout child props
@@ -672,6 +702,98 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       });
     },
 
+    groupShapes: (ids) => {
+      const { currentPageId, file } = get();
+      if (!currentPageId || !file || ids.length < 2) return;
+      const objects = file.pagesIndex[currentPageId]?.objects || {};
+
+      // Compute bounding box of all selected shapes
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const id of ids) {
+        const s = objects[id];
+        if (!s) continue;
+        if (s.x < minX) minX = s.x;
+        if (s.y < minY) minY = s.y;
+        if (s.x + s.width > maxX) maxX = s.x + s.width;
+        if (s.y + s.height > maxY) maxY = s.y + s.height;
+      }
+
+      // Determine common parent
+      const firstShape = objects[ids[0]];
+      const commonParent = firstShape?.parentId || ROOT_FRAME_ID;
+
+      // Create group shape
+      const groupId = crypto.randomUUID();
+      const groupShape: PenpotShape = {
+        id: groupId,
+        name: "Group",
+        type: "group",
+        x: minX, y: minY,
+        width: maxX - minX, height: maxY - minY,
+        rotation: 0,
+        parentId: commonParent,
+        frameId: firstShape?.frameId || ROOT_FRAME_ID,
+        shapes: [],
+        fills: [], strokes: [],
+        opacity: 1,
+      };
+
+      // Add group, then reparent children
+      const addChange: FileChange = {
+        type: "add-obj",
+        pageId: currentPageId,
+        id: groupId,
+        parentId: commonParent,
+        frameId: groupShape.frameId,
+        obj: groupShape,
+      };
+      const moveChange: FileChange = {
+        type: "mov-objects",
+        pageId: currentPageId,
+        parentId: groupId,
+        shapes: ids,
+      };
+      applyAndRecord(set, get, [addChange, moveChange]);
+      set((state) => {
+        state.local.selected = new Set([groupId]) as any;
+      });
+    },
+
+    ungroupShapes: (ids) => {
+      const { currentPageId, file } = get();
+      if (!currentPageId || !file) return;
+      const objects = file.pagesIndex[currentPageId]?.objects || {};
+
+      const changes: FileChange[] = [];
+      const newSelectedIds: UUID[] = [];
+
+      for (const id of ids) {
+        const shape = objects[id];
+        if (!shape || (shape.type !== "group" && shape.type !== "frame")) continue;
+        if (!shape.shapes || shape.shapes.length === 0) continue;
+
+        const parentId = shape.parentId || ROOT_FRAME_ID;
+        // Move children to parent
+        changes.push({
+          type: "mov-objects",
+          pageId: currentPageId,
+          parentId,
+          shapes: [...shape.shapes],
+        });
+        newSelectedIds.push(...shape.shapes);
+
+        // Delete the group
+        changes.push({ type: "del-obj", pageId: currentPageId, id });
+      }
+
+      if (changes.length > 0) {
+        applyAndRecord(set, get, changes);
+        set((state) => {
+          state.local.selected = new Set(newSelectedIds) as any;
+        });
+      }
+    },
+
     // ── Selection ───────────────────────────────────────────
     selectShape: (id, multi = false) => {
       set((state) => {
@@ -700,6 +822,208 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       set((state) => {
         state.local.selected = new Set(root?.shapes || []) as any;
       });
+    },
+
+    // ── Layer Ordering ──────────────────────────────────────
+    bringToFront: (ids) => {
+      const { currentPageId } = get();
+      if (!currentPageId || ids.length === 0) return;
+      const objects = get().currentPageObjects();
+      // For each selected shape, move it to end of parent's children
+      const changes: FileChange[] = [];
+      for (const id of ids) {
+        const shape = objects[id];
+        if (!shape) continue;
+        const parentId = shape.parentId || ROOT_FRAME_ID;
+        const parent = objects[parentId];
+        if (!parent?.shapes) continue;
+        const lastIndex = parent.shapes.length - 1;
+        changes.push({
+          type: "mov-objects",
+          pageId: currentPageId,
+          parentId,
+          shapes: [id],
+          index: lastIndex,
+        });
+      }
+      if (changes.length > 0) applyAndRecord(set, get, changes);
+    },
+
+    bringForward: (ids) => {
+      const { currentPageId } = get();
+      if (!currentPageId || ids.length === 0) return;
+      const objects = get().currentPageObjects();
+      const changes: FileChange[] = [];
+      for (const id of ids) {
+        const shape = objects[id];
+        if (!shape) continue;
+        const parentId = shape.parentId || ROOT_FRAME_ID;
+        const parent = objects[parentId];
+        if (!parent?.shapes) continue;
+        const idx = parent.shapes.indexOf(id);
+        if (idx < parent.shapes.length - 1) {
+          changes.push({
+            type: "mov-objects",
+            pageId: currentPageId,
+            parentId,
+            shapes: [id],
+            index: idx + 1,
+          });
+        }
+      }
+      if (changes.length > 0) applyAndRecord(set, get, changes);
+    },
+
+    sendBackward: (ids) => {
+      const { currentPageId } = get();
+      if (!currentPageId || ids.length === 0) return;
+      const objects = get().currentPageObjects();
+      const changes: FileChange[] = [];
+      for (const id of ids) {
+        const shape = objects[id];
+        if (!shape) continue;
+        const parentId = shape.parentId || ROOT_FRAME_ID;
+        const parent = objects[parentId];
+        if (!parent?.shapes) continue;
+        const idx = parent.shapes.indexOf(id);
+        if (idx > 0) {
+          changes.push({
+            type: "mov-objects",
+            pageId: currentPageId,
+            parentId,
+            shapes: [id],
+            index: idx - 1,
+          });
+        }
+      }
+      if (changes.length > 0) applyAndRecord(set, get, changes);
+    },
+
+    sendToBack: (ids) => {
+      const { currentPageId } = get();
+      if (!currentPageId || ids.length === 0) return;
+      const objects = get().currentPageObjects();
+      const changes: FileChange[] = [];
+      for (const id of ids) {
+        const shape = objects[id];
+        if (!shape) continue;
+        const parentId = shape.parentId || ROOT_FRAME_ID;
+        changes.push({
+          type: "mov-objects",
+          pageId: currentPageId,
+          parentId,
+          shapes: [id],
+          index: 0,
+        });
+      }
+      if (changes.length > 0) applyAndRecord(set, get, changes);
+    },
+
+    // ── Lock / Hide ─────────────────────────────────────────
+    toggleLocked: (ids) => {
+      const { currentPageId } = get();
+      if (!currentPageId) return;
+      const objects = get().currentPageObjects();
+      const changes: FileChange[] = ids.map((id) => {
+        const shape = objects[id];
+        return {
+          type: "mod-obj" as const,
+          pageId: currentPageId,
+          id,
+          operations: [{ type: "set" as const, attr: "locked", val: !shape?.locked }],
+        };
+      });
+      applyAndRecord(set, get, changes);
+    },
+
+    toggleHidden: (ids) => {
+      const { currentPageId } = get();
+      if (!currentPageId) return;
+      const objects = get().currentPageObjects();
+      const changes: FileChange[] = ids.map((id) => {
+        const shape = objects[id];
+        return {
+          type: "mod-obj" as const,
+          pageId: currentPageId,
+          id,
+          operations: [{ type: "set" as const, attr: "hidden", val: !shape?.hidden }],
+        };
+      });
+      applyAndRecord(set, get, changes);
+    },
+
+    // ── Clipboard ────────────────────────────────────────────
+    copyShapes: () => {
+      const objects = get().currentPageObjects();
+      const selected = Array.from(get().local.selected);
+      if (selected.length === 0) return;
+      const shapesToCopy = selected.map((id) => objects[id]).filter(Boolean);
+      _clipboard = shapesToCopy.map((s) => structuredClone(s));
+    },
+
+    pasteShapes: () => {
+      if (_clipboard.length === 0) return;
+      const { currentPageId, file } = get();
+      if (!currentPageId || !file) return;
+
+      const changes: FileChange[] = [];
+      const newIds: UUID[] = [];
+
+      for (const original of _clipboard) {
+        const newId = crypto.randomUUID();
+        newIds.push(newId);
+        changes.push({
+          type: "add-obj",
+          pageId: currentPageId,
+          id: newId,
+          parentId: original.parentId || ROOT_FRAME_ID,
+          frameId: original.frameId,
+          obj: {
+            ...structuredClone(original),
+            id: newId,
+            name: original.name + " copy",
+            x: original.x + 20,
+            y: original.y + 20,
+          },
+        });
+      }
+      applyAndRecord(set, get, changes);
+      set((state) => {
+        state.local.selected = new Set(newIds) as any;
+      });
+    },
+
+    // ── Nudge ────────────────────────────────────────────────
+    nudgeShapes: (ids, dx, dy) => {
+      const { currentPageId } = get();
+      if (!currentPageId) return;
+      const objects = get().currentPageObjects();
+      const changes: FileChange[] = ids.map((id) => {
+        const shape = objects[id];
+        return {
+          type: "mod-obj" as const,
+          pageId: currentPageId,
+          id,
+          operations: [
+            { type: "set" as const, attr: "x", val: (shape?.x ?? 0) + dx },
+            { type: "set" as const, attr: "y", val: (shape?.y ?? 0) + dy },
+          ],
+        };
+      });
+      applyAndRecord(set, get, changes);
+    },
+
+    // ── Rename ───────────────────────────────────────────────
+    renameShape: (id, name) => {
+      const { currentPageId } = get();
+      if (!currentPageId) return;
+      const change: FileChange = {
+        type: "mod-obj",
+        pageId: currentPageId,
+        id,
+        operations: [{ type: "set", attr: "name", val: name }],
+      };
+      applyAndRecord(set, get, [change]);
     },
 
     // ── Local State ─────────────────────────────────────────
@@ -852,6 +1176,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     setProfile: (profile) => set((s) => { s.profile = profile as any; }),
   }))
 );
+
+// ── Clipboard storage (module-level) ──────────────────────────
+let _clipboard: PenpotShape[] = [];
 
 // ── Change broadcaster (set by collaboration hook) ────────────
 let _changeBroadcaster: ((changes: FileChange[], revn: number) => void) | null = null;

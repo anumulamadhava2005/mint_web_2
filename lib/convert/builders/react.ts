@@ -13,6 +13,7 @@ import type {
   Interaction,
   FrameworkBuilder,
 } from "../types";
+import { generateMintRuntimeBundle } from "../../runtime/bundle";
 import { renderJSX } from "../core/render";
 import { generateImagesDocument, collectImages } from "../core/images";
 import {
@@ -426,6 +427,53 @@ ${interactions
         type: "text",
       });
     }
+
+    // ── Mint Runtime Library ──────────────────────────────────
+    files.push({
+      path: "src/lib/mint-runtime.js",
+      content: generateMintRuntimeBundle(),
+      type: "text",
+    });
+
+    // ── React integration hook ────────────────────────────────
+    files.push({
+      path: `src/hooks/useMintRuntime.${useTs ? "ts" : "js"}`,
+      content: `import { useSyncExternalStore, useCallback } from "react";
+import { createMintRuntime, evalExpr, isExpression } from "../lib/mint-runtime";
+
+let _runtime = null;
+export function getMintRuntime(schema) {
+  if (!_runtime) _runtime = createMintRuntime(schema || {});
+  return _runtime;
+}
+
+export function useMintState(path) {
+  const rt = getMintRuntime();
+  const subscribe = useCallback((cb) => rt.state.subscribe(path, cb), [path]);
+  const getSnapshot = useCallback(() => rt.state.get(path), [path]);
+  const value = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const setValue = useCallback((v) => rt.state.set(path, v), [path]);
+  return [value, setValue];
+}
+
+export function useMintAction() {
+  const rt = getMintRuntime();
+  return useCallback((ref, ctx) => rt.actions.dispatch(ref, ctx || {}), []);
+}
+
+export function useMintExpr(expression) {
+  const rt = getMintRuntime();
+  const subscribe = useCallback((cb) => rt.state.subscribe("", cb), []);
+  const getSnapshot = useCallback(() => {
+    try { return rt.evalExpr(expression, rt.state.getContext()); } catch { return undefined; }
+  }, [expression]);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+export { evalExpr, isExpression };
+`,
+      type: "text",
+    });
 
     // Add image assets
     for (const [localPath, blob] of manifest.blobs) {

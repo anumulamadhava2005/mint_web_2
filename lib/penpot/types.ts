@@ -316,6 +316,20 @@ export interface PenpotShape {
   componentId?: UUID;
   componentRoot?: boolean;
   mainInstance?: boolean;
+
+  // Runtime bindings (connects UI to backend)
+  runtimeBindings?: {
+    textBind?: string;       // e.g. "$user.name" — binds text content to state
+    visibleBind?: string;    // e.g. "$isLoggedIn" — conditional visibility
+    dataSource?: string;     // e.g. "todos" — table name for list rendering
+    dataQuery?: Record<string, any>; // query options (where, orderBy, etc.)
+    onClick?: string;        // action ID or expression
+    onSubmit?: string;       // action ID for form submission
+    inputBind?: string;      // two-way bind for input fields: "$form.email"
+    repeatFor?: string;      // "$items" — repeat this shape for each item
+    repeatAs?: string;       // "item" — variable name for each iteration
+    style?: Record<string, string>; // dynamic style bindings
+  };
 }
 
 // ── Page ──────────────────────────────────────────────────────
