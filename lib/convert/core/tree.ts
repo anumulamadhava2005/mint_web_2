@@ -70,6 +70,7 @@ export function buildDrawableTree(
       scroll,
       transform: node.rotation ? { rotation: node.rotation } : undefined,
       interactions: nodeInteractions?.length ? nodeInteractions : undefined,
+      bindings: (node.pluginData?.runtimeBindings as DrawableNode["bindings"]) || undefined,
       originalNode: node,
     };
 

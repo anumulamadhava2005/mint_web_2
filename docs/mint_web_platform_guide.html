@@ -1,0 +1,282 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans)}
+.wrap{padding:0 0 2rem}
+.nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:24px;padding-bottom:16px;border-bottom:0.5px solid var(--color-border-tertiary)}
+.nav button{font-size:12px;padding:5px 12px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);cursor:pointer;transition:all .15s}
+.nav button.active,.nav button:hover{background:var(--color-background-secondary);color:var(--color-text-primary)}
+.nav button.active{border-color:var(--color-border-primary);color:var(--color-text-primary);font-weight:500}
+.section{display:none}.section.show{display:block}
+h2{font-size:18px;font-weight:500;margin-bottom:6px;color:var(--color-text-primary)}
+.sub{font-size:13px;color:var(--color-text-secondary);margin-bottom:20px;line-height:1.5}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px}
+.card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:14px 16px}
+.card .icon{font-size:20px;color:var(--color-text-info);margin-bottom:10px}
+.card h3{font-size:13px;font-weight:500;margin-bottom:5px}
+.card p{font-size:12px;color:var(--color-text-secondary);line-height:1.55}
+.steps{counter-reset:s;display:flex;flex-direction:column;gap:0}
+.step{display:flex;gap:14px;padding:14px 0;border-bottom:0.5px solid var(--color-border-tertiary)}
+.step:last-child{border-bottom:none}
+.step-num{counter-increment:s;min-width:24px;height:24px;border-radius:50%;background:var(--color-background-info);color:var(--color-text-info);font-size:12px;font-weight:500;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.step-num::before{content:counter(s)}
+.step-body h4{font-size:13px;font-weight:500;margin-bottom:4px}
+.step-body p{font-size:12px;color:var(--color-text-secondary);line-height:1.55}
+.step-body code{font-family:var(--font-mono);font-size:11px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:4px;padding:1px 5px}
+.block{background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:12px 14px;margin:10px 0;font-family:var(--font-mono);font-size:11px;line-height:1.7;color:var(--color-text-primary);white-space:pre-wrap;overflow-x:auto}
+.tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:var(--border-radius-md);margin-right:4px;font-weight:500}
+.tag-blue{background:var(--color-background-info);color:var(--color-text-info)}
+.tag-green{background:var(--color-background-success);color:var(--color-text-success)}
+.tag-amber{background:var(--color-background-warning);color:var(--color-text-warning)}
+.tag-red{background:var(--color-background-danger);color:var(--color-text-danger)}
+.tip{border-left:2px solid var(--color-border-info);padding:10px 14px;background:var(--color-background-info);border-radius:0 var(--border-radius-md) var(--border-radius-md) 0;margin:12px 0;font-size:12px;line-height:1.6;color:var(--color-text-primary)}
+.tip strong{font-weight:500}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
+.action-card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:14px 16px;margin-bottom:12px}
+.action-card .head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.action-card .head .tag{margin:0}
+.action-card h4{font-size:13px;font-weight:500;margin:0}
+.action-card p{font-size:12px;color:var(--color-text-secondary);margin-bottom:8px;line-height:1.55}
+.prop-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:0.5px solid var(--color-border-tertiary);font-size:12px}
+.prop-row:last-child{border:none}
+.prop-key{color:var(--color-text-secondary)}
+.prop-val{font-family:var(--font-mono);font-size:11px;color:var(--color-text-primary)}
+.flow-node{background:var(--color-background-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:8px 12px;font-size:12px;font-weight:500;display:inline-flex;align-items:center;gap:6px}
+.flow-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0}
+.arrow{color:var(--color-text-tertiary);font-size:14px}
+@media(max-width:480px){.row2{grid-template-columns:1fr}.nav button{font-size:11px;padding:4px 9px}}
+</style>
+<div class="wrap">
+  <div class="nav">
+    <button class="active" onclick="show('overview',this)"><i class="ti ti-layout-dashboard" aria-hidden="true"></i> Overview</button>
+    <button onclick="show('design',this)"><i class="ti ti-vector-bezier" aria-hidden="true"></i> Design</button>
+    <button onclick="show('runtime',this)"><i class="ti ti-cpu" aria-hidden="true"></i> Runtime</button>
+    <button onclick="show('flows',this)"><i class="ti ti-git-branch" aria-hidden="true"></i> Flows</button>
+    <button onclick="show('database',this)"><i class="ti ti-database" aria-hidden="true"></i> Database</button>
+    <button onclick="show('export',this)"><i class="ti ti-package-export" aria-hidden="true"></i> Export & Sync</button>
+    <button onclick="show('tips',this)"><i class="ti ti-bulb" aria-hidden="true"></i> Pro tips</button>
+  </div>
+
+  <!-- OVERVIEW -->
+  <div id="s-overview" class="section show">
+    <h2>What is Mint Web?</h2>
+    <p class="sub">A design-to-code platform — draw your UI visually, then Mint generates production-ready full-stack code with a real database and API baked in.</p>
+    <div class="cards">
+      <div class="card"><div class="icon"><i class="ti ti-artboard" aria-hidden="true"></i></div><h3>Visual Canvas</h3><p>Design your UI with a powerful editor. Every element maps directly to real code.</p></div>
+      <div class="card"><div class="icon"><i class="ti ti-cpu" aria-hidden="true"></i></div><h3>Mint Runtime</h3><p>Lightweight engine managing state, actions, and data bindings between UI and backend.</p></div>
+      <div class="card"><div class="icon"><i class="ti ti-server" aria-hidden="true"></i></div><h3>Auto Backend</h3><p>PostgreSQL database and CRUD API endpoints generated instantly for your tables.</p></div>
+      <div class="card"><div class="icon"><i class="ti ti-git-branch" aria-hidden="true"></i></div><h3>Workflows</h3><p>Build complex business logic using a node-based visual flowchart editor — no code needed.</p></div>
+      <div class="card"><div class="icon"><i class="ti ti-refresh" aria-hidden="true"></i></div><h3>Live Sync</h3><p>Push canvas changes to your running app instantly — no rebuild, no redeploy.</p></div>
+      <div class="card"><div class="icon"><i class="ti ti-code" aria-hidden="true"></i></div><h3>Multi-Framework</h3><p>Export to React, Next.js, Vue, Svelte and more. You own the code.</p></div>
+    </div>
+    <div class="tip"><strong>Mental model:</strong> Think of Mint as three layers — the Canvas (what the user sees), the Runtime (the logic layer), and the Backend (data). All three stay in sync automatically.</div>
+  </div>
+
+  <!-- DESIGN -->
+  <div id="s-design" class="section">
+    <h2>Design phase</h2>
+    <p class="sub">Everything starts on the canvas. Each Frame becomes a route in your app. Properties set in the sidebar map 1-to-1 with CSS/layout rules.</p>
+    <div class="steps">
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Create a project</h4><p>Dashboard → <code>New Project</code> → choose a template or blank canvas → set project name → pick target framework (e.g. Next.js).</p></div></div>
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Add frames (screens)</h4><p>Press <code>F</code> and draw a frame. Each frame = one route in your app. Name them clearly: <code>Home</code>, <code>Login</code>, <code>Dashboard</code>. Frames can be nested to create reusable layout components.</p></div></div>
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Style with the right sidebar</h4><p>Select any element to access its design properties:</p></div></div>
+    </div>
+    <div class="row2" style="margin-top:8px">
+      <div class="card"><h3 style="margin-bottom:10px">Layout</h3>
+        <div class="prop-row"><span class="prop-key">Direction</span><span class="prop-val">row / column</span></div>
+        <div class="prop-row"><span class="prop-key">Align</span><span class="prop-val">flex-start … center</span></div>
+        <div class="prop-row"><span class="prop-key">Justify</span><span class="prop-val">space-between …</span></div>
+        <div class="prop-row"><span class="prop-key">Gap</span><span class="prop-val">px or %</span></div>
+        <div class="prop-row"><span class="prop-key">Mode</span><span class="prop-val">Flexbox / Grid</span></div>
+      </div>
+      <div class="card"><h3 style="margin-bottom:10px">Visuals & type</h3>
+        <div class="prop-row"><span class="prop-key">Background</span><span class="prop-val">solid / gradient</span></div>
+        <div class="prop-row"><span class="prop-key">Border radius</span><span class="prop-val">px</span></div>
+        <div class="prop-row"><span class="prop-key">Shadow / Blur</span><span class="prop-val">effects panel</span></div>
+        <div class="prop-row"><span class="prop-key">Font family</span><span class="prop-val">any Google font</span></div>
+        <div class="prop-row"><span class="prop-key">Weight / Size</span><span class="prop-val">full control</span></div>
+      </div>
+    </div>
+    <div class="tip"><strong>Key insight:</strong> Frames are routes, not just boxes. The frame name becomes the URL path. Nesting a frame inside another frame means that inner route renders inside the outer layout — like nested routes in Next.js.</div>
+  </div>
+
+  <!-- RUNTIME -->
+  <div id="s-runtime" class="section">
+    <h2>Mint Runtime — state, bindings & actions</h2>
+    <p class="sub">The Runtime is the brain of your app. It holds data in State, connects that data to UI elements via Bindings, and runs logic via Actions triggered by events.</p>
+
+    <h3 style="font-size:14px;font-weight:500;margin-bottom:10px">State management</h3>
+    <div class="row2">
+      <div class="card"><h3 style="margin-bottom:8px"><span class="tag tag-blue">Global</span></h3><p>Accessible from any screen. Use for data that persists across routes — e.g. <code>currentUser</code>, auth tokens. Enable <strong>Persist</strong> to write to <code>localStorage</code> automatically.</p></div>
+      <div class="card"><h3 style="margin-bottom:8px"><span class="tag tag-green">Local</span></h3><p>Scoped to a single frame/component. Use for UI-only state like <code>isLoading</code>, <code>modalOpen</code>, form field values. Destroyed when the frame unmounts.</p></div>
+    </div>
+
+    <h3 style="font-size:14px;font-weight:500;margin:16px 0 10px">Data bindings</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Select a component</h4><p>Click any element (e.g. a Text box or a Button label).</p></div></div>
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Open Bindings panel</h4><p>Click the link icon next to the property you want to connect (e.g. "Content", "Color", "Visible").</p></div></div>
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Enter an expression</h4><p>Use <code>$global.userName</code> for global state or <code>$local.count</code> for local state. Full expressions work: <code>$local.itemCount &gt; 0 ? 'Items' : 'Empty'</code></p></div></div>
+    </div>
+
+    <h3 style="font-size:14px;font-weight:500;margin:16px 0 10px">Actions — the four types</h3>
+
+    <div class="action-card">
+      <div class="head"><span class="tag tag-blue">setState</span><h4>Update state data</h4></div>
+      <p>Writes a value to a specific path in your state tree. <code>$args.0</code> means "the first argument passed when this action was called".</p>
+      <div class="block">{
+  "path": "todos",
+  "value": "$args.0",
+  "also": "SET $lastUpdated = now()"
+}</div>
+      <div class="tip" style="margin-top:8px"><strong>also</strong> lets you update a second state variable in the same action — useful for timestamps or counters.</div>
+    </div>
+
+    <div class="action-card">
+      <div class="head"><span class="tag tag-green">fetch</span><h4>HTTP requests & DB queries</h4></div>
+      <p>Calls an API endpoint. <code>storePath</code> automatically saves the response into that state key, so you don't need a separate <code>setState</code> afterwards.</p>
+      <div class="block">{
+  "url": "/api/todos",
+  "method": "POST",
+  "headers": { "Content-Type": "application/json" },
+  "body": { "title": "$args.0", "status": "pending" },
+  "storePath": "todos",
+  "onSuccess": "CALL loadTodos; TOAST 'Saved!'"
+}</div>
+      <div class="tip" style="margin-top:8px"><strong>onSuccess</strong> chains multiple actions with semicolons. <code>TOAST</code> shows a notification; <code>CALL</code> runs another named action.</div>
+    </div>
+
+    <div class="action-card">
+      <div class="head"><span class="tag tag-amber">navigate</span><h4>Change screens</h4></div>
+      <p>Pushes a new route. Pass dynamic <code>params</code> to send data to the destination screen — access them there via <code>$route.params.userId</code>.</p>
+      <div class="block">{
+  "route": "/dashboard",
+  "params": { "userId": "$global.user.id" }
+}</div>
+    </div>
+
+    <div class="action-card">
+      <div class="head"><span class="tag tag-red">condition</span><h4>Branching logic</h4></div>
+      <p>Evaluates an expression and runs a different action list depending on the result. Each entry in <code>then</code> / <code>else</code> is a command string.</p>
+      <div class="block">{
+  "expression": "$global.isLoggedIn",
+  "then": ["CALL goToDashboard"],
+  "else": ["OPEN_MODAL 'LoginModal'"]
+}</div>
+    </div>
+  </div>
+
+  <!-- FLOWS -->
+  <div id="s-flows" class="section">
+    <h2>Workflows (Flows)</h2>
+    <p class="sub">When action JSON strings get complex, switch to Flows — a visual node-based editor that lets you design multi-step logic as a flowchart.</p>
+
+    <div class="steps">
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Open the Workflows tab</h4><p>Click the <code>Workflows</code> tab in the left sidebar of the editor.</p></div></div>
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Add a workflow</h4><p>Click <code>Add Workflow</code>, give it a name. This workflow can then be called from any action using <code>CALL myWorkflowName</code>.</p></div></div>
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Add nodes</h4><p>Three categories of nodes are available:</p>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+          <span class="tag tag-blue">Logic: Condition, Loop, Delay</span>
+          <span class="tag tag-green">Backend: API Call, DB Query</span>
+          <span class="tag tag-amber">UI: Navigate, Show Modal</span>
+        </div>
+      </div></div>
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Connect with edges</h4><p>Draw arrows between nodes to set the execution order. Click any arrow to add a conditional expression on it, e.g. <code>{{$_node_1_output.success}}</code> — the path only executes if the condition is truthy.</p></div></div>
+    </div>
+
+    <div class="tip"><strong>When to use Flows vs Actions:</strong> Use action JSON for simple, single-step logic. Switch to Flows when you need branching, loops, or chaining more than 3 steps — the visual graph is much easier to debug.</div>
+
+    <div style="margin-top:16px">
+      <p style="font-size:13px;font-weight:500;margin-bottom:10px">Example flow: user login</p>
+      <div class="flow-row">
+        <div class="flow-node"><i class="ti ti-login" aria-hidden="true"></i> Form submit</div>
+        <span class="arrow">→</span>
+        <div class="flow-node"><i class="ti ti-server" aria-hidden="true"></i> API Call: POST /auth</div>
+        <span class="arrow">→</span>
+        <div class="flow-node"><i class="ti ti-git-branch" aria-hidden="true"></i> Condition: success?</div>
+      </div>
+      <div class="flow-row" style="margin-left:32px">
+        <span class="tag tag-green">true →</span>
+        <div class="flow-node"><i class="ti ti-arrow-right" aria-hidden="true"></i> Navigate /dashboard</div>
+      </div>
+      <div class="flow-row" style="margin-left:32px">
+        <span class="tag tag-red">false →</span>
+        <div class="flow-node"><i class="ti ti-alert-triangle" aria-hidden="true"></i> Show Modal: Error</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DATABASE -->
+  <div id="s-database" class="section">
+    <h2>Database & backend</h2>
+    <p class="sub">Mint provisions a real PostgreSQL database for your project automatically. You define tables in a UI, Mint generates the CRUD API routes. No backend code needed.</p>
+
+    <div class="steps">
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Enable the database</h4><p>Go to the <code>Database</code> tab → click <code>Enable Database</code>. Mint provisions a PostgreSQL instance scoped to your project.</p></div></div>
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Create a table</h4><p>Click <code>New Table</code>. Define each column with a name, type, and optional constraints.</p>
+        <div style="margin-top:8px">
+          <div class="prop-row"><span class="prop-key">UUID</span><span class="prop-val">id — primary key, auto-generated</span></div>
+          <div class="prop-row"><span class="prop-key">Text</span><span class="prop-val">title, description, email…</span></div>
+          <div class="prop-row"><span class="prop-key">Boolean</span><span class="prop-val">completed, isActive…</span></div>
+          <div class="prop-row"><span class="prop-key">Timestamp</span><span class="prop-val">createdAt, updatedAt…</span></div>
+        </div>
+      </div></div>
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Set relations</h4><p>Click the <code>Relations</code> tab on any table. Define <code>one-to-many</code> (e.g. a user has many todos) or <code>many-to-many</code> (e.g. posts ↔ tags). Mint generates the join table and foreign keys for you.</p></div></div>
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Set Row Level Security (RLS)</h4><p>Under <code>Policies</code>, add rules to control who can read or write each row. Example policy for "user can only see their own rows":</p>
+        <div class="block">auth.uid() = user_id</div>
+        <p style="font-size:12px;color:var(--color-text-secondary);margin-top:6px">Mint applies this as a PostgreSQL RLS policy automatically — no SQL migration files needed.</p>
+      </div></div>
+    </div>
+
+    <div class="tip"><strong>Accessing data:</strong> Once your table exists, call it from a <code>fetch</code> action using <code>/api/todos</code> (Mint maps table names to route paths). Use the <code>storePath</code> field to auto-save the result into state. For raw SQL queries, use a <code>DB Query</code> node in a Workflow — just write the table name as defined; namespacing is handled for you.</div>
+  </div>
+
+  <!-- EXPORT -->
+  <div id="s-export" class="section">
+    <h2>Export, convert & live sync</h2>
+    <p class="sub">When your design is ready, Mint compiles it into real source code. You can download it, push it to GitHub, or pull it with the CLI — and keep the canvas and running app in sync.</p>
+
+    <h3 style="font-size:14px;font-weight:500;margin-bottom:10px">How conversion works</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Click Export</h4><p>The <code>Export</code> button is in the top header. Mint "flattens" your canvas design tree into optimized component code.</p></div></div>
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>What gets generated</h4><p>Mint outputs: a <code>MintProvider</code> wrapper component (handles the runtime), all your UI components with correct props, backend API routes for each table, and a config file.</p></div></div>
+    </div>
+
+    <h3 style="font-size:14px;font-weight:500;margin:16px 0 10px">How to extract your code</h3>
+    <div class="row2">
+      <div class="card"><i class="ti ti-file-zip" style="font-size:20px;color:var(--color-text-info);margin-bottom:8px" aria-hidden="true"></i><h3>Download ZIP</h3><p>Get the full source code as a ZIP. Unzip and run — it's a complete project in your chosen framework.</p></div>
+      <div class="card"><i class="ti ti-brand-github" style="font-size:20px;color:var(--color-text-info);margin-bottom:8px" aria-hidden="true"></i><h3>Push to GitHub</h3><p>Connect your GitHub repo in settings. Mint pushes changes directly on each export.</p></div>
+    </div>
+    <div class="card" style="margin-bottom:12px"><i class="ti ti-terminal" style="font-size:20px;color:var(--color-text-info);margin-bottom:8px" aria-hidden="true"></i><h3 style="margin-bottom:6px">CLI — npx mint-cli pull</h3><p style="font-size:12px;color:var(--color-text-secondary)">Run in an existing project to pull the latest canvas state as code. Useful for teams where designers work in Mint and developers own the repo.</p><div class="block">npx mint-cli pull</div></div>
+
+    <h3 style="font-size:14px;font-weight:500;margin:16px 0 10px">Live Sync — update without rebuilding</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Make a canvas change</h4><p>Change anything — a button color, a font size, a layout. These are "design-layer" changes Mint can push without recompiling logic.</p></div></div>
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Click "Commit Changes"</h4><p>In the editor header. Mint publishes a new version manifest.</p></div></div>
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Sync Daemon picks it up</h4><p>Your running app (with the Sync Daemon enabled) polls <code>/api/sync</code> and detects the new version. It hot-patches the UI — no page reload.</p></div></div>
+    </div>
+    <div class="tip"><strong>How Sync Daemon works under the hood:</strong> The Daemon is a lightweight service worker embedded by <code>MintProvider</code>. It polls <code>/api/sync</code> every few seconds. When the version hash changes, it fetches the updated component definitions and re-renders only the affected parts of the tree — similar to React Fast Refresh but driven from the cloud canvas.</div>
+  </div>
+
+  <!-- TIPS -->
+  <div id="s-tips" class="section">
+    <h2>Pro tips for building in Mint</h2>
+    <p class="sub">Things that will save you time once you know them.</p>
+    <div class="steps">
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Use <code>$</code> everywhere in expressions</h4><p>Any binding or action field accepts a <code>$</code> expression. <code>$global.user.name</code>, <code>$local.count + 1</code>, <code>$route.params.id</code> — all work. Ternary expressions like <code>$local.error ? 'red' : 'inherit'</code> are valid for color bindings.</p></div></div>
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Don't prefix table names in raw SQL</h4><p>The Runtime handles namespacing. If your table is named <code>todos</code>, write <code>SELECT * FROM todos</code> — not a prefixed internal name. Mint resolves it for you.</p></div></div>
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Use the browser console for debugging</h4><p>The Mint Runtime logs every action execution and state change to the browser console. Open DevTools → Console and watch state mutations in real time as you interact with your app.</p></div></div>
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Persist global state for auth</h4><p>For anything auth-related — user object, token, role — enable the <code>Persist</code> flag on your global state. It writes to <code>localStorage</code> automatically, so your user stays logged in on refresh.</p></div></div>
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Chain actions with semicolons in onSuccess</h4><p>The <code>onSuccess</code> field in a <code>fetch</code> action runs a sequence. Use semicolons to chain: <code>CALL loadTodos; TOAST 'Done!'; CALL resetForm</code> — they run in order, left to right.</p></div></div>
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Use Flows for anything with branching</h4><p>If your logic has an if/else or needs to loop, build it as a Flow instead of nesting <code>condition</code> actions. Flows are visual, debuggable, and much easier for teammates to understand.</p></div></div>
+      <div class="step"><div class="step-num"></div><div class="step-body"><h4>Name frames after your routes</h4><p>The frame name becomes the URL. <code>UserProfile</code> → <code>/user-profile</code>. Be intentional with naming from the start — renaming frames later can break navigation actions that hardcode the route string.</p></div></div>
+    </div>
+  </div>
+</div>
+<script>
+function show(id, btn) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('show'));
+  document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('s-'+id).classList.add('show');
+  btn.classList.add('active');
+}
+</script>

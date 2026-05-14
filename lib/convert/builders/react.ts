@@ -33,6 +33,8 @@ import {
   generatePageTransitionCSS,
   buildTransitionMap,
 } from "../core/transitions";
+import { generateMintRuntimeProvider } from "../core/mintRuntime";
+import { hasMintBindings } from "../core/render";
 
 export const reactBuilder: FrameworkBuilder = {
   name: "react",
@@ -60,6 +62,9 @@ export const reactBuilder: FrameworkBuilder = {
     const hasNavigateInteractions = interactions.some(
       (i) => i.action === "NAVIGATE" && i.targetId
     );
+
+    // ── Check if any node has runtime bindings ──────────────
+    const hasRuntimeBindings = hasMintBindings(nodes) || !!options.runtimeSchema;
 
     // package.json
     files.push({
@@ -298,6 +303,15 @@ html, body, #root {
       type: "text",
     });
 
+    // ── src/lib/mint-runtime.tsx (only if bindings exist) ─────
+    if (hasRuntimeBindings) {
+      files.push({
+        path: `src/lib/mint-runtime.${ext}`,
+        content: generateMintRuntimeProvider(options),
+        type: "text",
+      });
+    }
+
     // ── Generate overlay components ───────────────────────────
     if (hasOverlays) {
       files.push({
@@ -350,21 +364,27 @@ html, body, #root {
     const wrapOpen = hasOverlays ? `      <OverlayProvider>\n` : "";
     const wrapClose = hasOverlays ? `      </OverlayProvider>\n` : "";
 
+    const mintImport = hasRuntimeBindings
+      ? `import { MintProvider } from "./lib/mint-runtime";\n`
+      : "";
+    const mintOpen = hasRuntimeBindings ? `      <MintProvider>\n` : "";
+    const mintClose = hasRuntimeBindings ? `      </MintProvider>\n` : "";
+
     files.push({
       path: `src/App.${ext}`,
       content: `import { Routes, Route, Link } from "react-router-dom";
 ${routeImports}
-${overlayImport}
+${overlayImport}${mintImport}
 export default function App() {
   return (
     <>
-${wrapOpen}${routes.length > 1 ? `      <nav className="page-nav">
+${mintOpen}${wrapOpen}${routes.length > 1 ? `      <nav className="page-nav">
 ${navLinks}
       </nav>
 ` : ""}      <Routes>
 ${routeElements}
       </Routes>
-${wrapClose}    </>
+${wrapClose}${mintClose}    </>
   );
 }
 `,
@@ -375,7 +395,7 @@ ${wrapClose}    </>
     for (const route of routes) {
       files.push({
         path: `src/pages/${route.fileName}.${ext}`,
-        content: generateReactPageComponent(route, routedInteractions, manifest, useTs, hasOverlays),
+        content: generateReactPageComponent(route, routedInteractions, manifest, useTs, hasOverlays, hasRuntimeBindings),
         type: "text",
       });
     }
@@ -497,7 +517,8 @@ function generateReactPageComponent(
   routedInteractions: Interaction[],
   manifest: ImageManifest,
   useTs: boolean,
-  hasOverlays: boolean
+  hasOverlays: boolean,
+  hasRuntimeBindings: boolean = false
 ): string {
   const { frame } = route;
 
@@ -515,7 +536,7 @@ function generateReactPageComponent(
       ix.action === "CLOSE_OVERLAY" ||
       ix.action === "SWAP_OVERLAY"
   );
-  const needsHooks = pageHasNav || pageHasOverlay;
+  const needsHooks = pageHasNav || pageHasOverlay || hasRuntimeBindings;
 
   const childrenJSX = frame.children?.length
     ? renderJSX(frame.children, {
@@ -551,6 +572,7 @@ function generateReactPageComponent(
     if (pageHasNav) imports.push(`import { useNavigate } from "react-router-dom";`);
     if (pageHasOverlay && hasOverlays) imports.push(`import { useOverlay } from "../components/OverlayProvider";`);
     imports.push(`import { useCallback } from "react";`);
+    if (hasRuntimeBindings) imports.push(`import { useMint } from "../lib/mint-runtime";`);
 
     const hooks: string[] = [];
     if (pageHasNav) {
@@ -559,6 +581,9 @@ function generateReactPageComponent(
     }
     if (pageHasOverlay && hasOverlays) {
       hooks.push(`  const { openOverlay, closeOverlay, swapOverlay } = useOverlay();`);
+    }
+    if (hasRuntimeBindings) {
+      hooks.push(`  const { state, setState, actions, db } = useMint();`);
     }
 
     return `${imports.join("\n")}

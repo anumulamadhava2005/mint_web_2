@@ -345,8 +345,24 @@ export interface DrawableNode {
   interactions?: Interaction[];
   // Transform
   transform?: Transform;
+  // Runtime bindings (connects UI to backend state/actions/DB)
+  bindings?: RuntimeBindings;
   // Original node reference
   originalNode?: DesignNode;
+}
+
+// ── Runtime Bindings ──────────────────────────────────────────
+export interface RuntimeBindings {
+  textBind?: string;       // e.g. "$currentUser" — binds text to state
+  visibleBind?: string;    // e.g. "$isLoggedIn" — conditional visibility
+  dataSource?: string;     // e.g. "todos" — table name for data fetching
+  dataQuery?: Record<string, any>;
+  onClick?: string;        // action name, e.g. "addTodo"
+  onSubmit?: string;       // action name for form submission
+  inputBind?: string;      // two-way bind for input: "$form.email"
+  repeatFor?: string;      // "$todos" — repeat for each item
+  repeatAs?: string;       // "todo" — variable name for iteration
+  onMount?: string;        // action name to call on component mount
 }
 
 // ── Scroll / Overflow ─────────────────────────────────────────
@@ -479,6 +495,13 @@ export interface ConversionOptions {
   fileKey?: string;
   projectId?: string;
   userId?: string;
+  // Runtime schema (state, actions, database, workflows)
+  runtimeSchema?: {
+    globalState?: Array<{ id: string; name: string; type: string; defaultValue: any }>;
+    globalActions?: Array<{ id: string; name: string; type: string; config: any }>;
+    database?: { provider: string; connectionUrl?: string; tables?: any[] };
+    workflows?: any[];
+  };
 }
 
 export interface ConversionResult {

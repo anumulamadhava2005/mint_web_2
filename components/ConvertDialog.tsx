@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useWorkspaceStore } from "@/lib/penpot/store";
+import { useRuntimeStore } from "@/lib/runtime/runtime-store";
 import { suggestFramework, type FrameworkSuggestion } from "@/lib/convert/suggest";
 import type { TargetFramework } from "@/lib/convert/types";
 import type { PenpotShape } from "@/lib/penpot/types";
@@ -299,6 +300,11 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
         }
       }
 
+      // Runtime bindings → pluginData so the tree builder picks them up
+      if (shape.runtimeBindings && Object.values(shape.runtimeBindings).some(Boolean)) {
+        node.pluginData = { runtimeBindings: shape.runtimeBindings };
+      }
+
       return node;
     }
 
@@ -453,6 +459,7 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
           fileKey: file.id,
           projectId: file.projectId,
           userId: profile?.id,
+          runtimeSchema: useRuntimeStore.getState().schema,
         },
       };
 

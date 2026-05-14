@@ -36,6 +36,8 @@ import {
   buildTransitionMap,
   transitionClassName,
 } from "../core/transitions";
+import { generateMintRuntimeProvider } from "../core/mintRuntime";
+import { hasMintBindings } from "../core/render";
 
 export const nextBuilder: FrameworkBuilder = {
   name: "nextjs",
@@ -65,6 +67,9 @@ export const nextBuilder: FrameworkBuilder = {
       (i) => i.action === "NAVIGATE" && i.targetId
     );
     const transitionMap = buildTransitionMap(interactions);
+
+    // ── Check if any node has runtime bindings ──────────────
+    const hasRuntimeBindings = hasMintBindings(nodes) || !!options.runtimeSchema;
 
     // ── package.json ──────────────────────────────────────────
     files.push({
@@ -159,6 +164,15 @@ module.exports = nextConfig;
       type: "text",
     });
 
+    // ── lib/mint-runtime.tsx (only if bindings exist) ─────────
+    if (hasRuntimeBindings) {
+      files.push({
+        path: "lib/mint-runtime.tsx",
+        content: generateMintRuntimeProvider(options),
+        type: "text",
+      });
+    }
+
     // ── .env.local (live sync) ────────────────────────────────
     if (enableLiveSync) {
       files.push({
@@ -182,10 +196,16 @@ NEXT_PUBLIC_FILE_KEY=${options.fileKey}
     const overlayProviderOpen = hasOverlays ? `        <OverlayProvider>\n` : "";
     const overlayProviderClose = hasOverlays ? `        </OverlayProvider>\n` : "";
 
+    const mintProviderImport = hasRuntimeBindings
+      ? `import { MintProvider } from "../lib/mint-runtime";\n`
+      : "";
+    const mintProviderOpen = hasRuntimeBindings ? `        <MintProvider>\n` : "";
+    const mintProviderClose = hasRuntimeBindings ? `        </MintProvider>\n` : "";
+
     files.push({
       path: "app/layout.tsx",
       content: `import type { Metadata } from "next";
-${overlayProviderImport}import "./globals.css";
+${mintProviderImport}${overlayProviderImport}import "./globals.css";
 
 export const metadata: Metadata = {
   title: "${options.fileName || "Design Export"}",
@@ -200,11 +220,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-${overlayProviderOpen}${routes.length > 1 ? `        <nav className="page-nav">
+${mintProviderOpen}${overlayProviderOpen}${routes.length > 1 ? `        <nav className="page-nav">
 ${navLinks}
         </nav>
 ` : ""}        {children}
-${overlayProviderClose}      </body>
+${overlayProviderClose}${mintProviderClose}      </body>
     </html>
   );
 }
@@ -343,7 +363,7 @@ ${generatePageTransitionCSS()}
 
       files.push({
         path: pagePath,
-        content: generateFramePage(route, routedInteractions, manifest, hasNavigateInteractions, hasOverlays),
+        content: generateFramePage(route, routedInteractions, manifest, hasNavigateInteractions, hasOverlays, hasRuntimeBindings),
         type: "text",
       });
     }
@@ -415,7 +435,8 @@ function generateFramePage(
   routedInteractions: Interaction[],
   manifest: ImageManifest,
   hasNavigation: boolean,
-  hasOverlays: boolean
+  hasOverlays: boolean,
+  hasRuntimeBindings: boolean = false
 ): string {
   const { frame } = route;
 
@@ -433,7 +454,7 @@ function generateFramePage(
       ix.action === "CLOSE_OVERLAY" ||
       ix.action === "SWAP_OVERLAY"
   );
-  const needsClient = pageHasNav || pageHasOverlay;
+  const needsClient = pageHasNav || pageHasOverlay || hasRuntimeBindings;
 
   const childrenJSX = frame.children?.length
     ? renderJSX(frame.children, {
@@ -473,7 +494,11 @@ function generateFramePage(
     imports.push(`import { useOverlay } from "../../components/OverlayProvider";`);
   }
   if (needsClient) {
-    imports.push(`import { useCallback } from "react";`);
+    const hasUseEffect = !!frame.bindings?.onMount;
+    imports.push(`import { useCallback${hasUseEffect ? ", useEffect" : ""} } from "react";`);
+  }
+  if (hasRuntimeBindings) {
+    imports.push(`import { useMint } from "${route.isHome ? '../' : '../../'}lib/mint-runtime";`);
   }
 
   if (needsClient) {
@@ -484,6 +509,12 @@ function generateFramePage(
     }
     if (pageHasOverlay && hasOverlays) {
       hookLines.push(`  const { openOverlay, closeOverlay, swapOverlay } = useOverlay();`);
+    }
+    if (hasRuntimeBindings) {
+      hookLines.push(`  const { state, setState, actions, db } = useMint();`);
+    }
+    if (frame.bindings?.onMount) {
+      hookLines.push(`\n  useEffect(() => {\n    if (actions.${frame.bindings.onMount}) {\n      actions.${frame.bindings.onMount}();\n    }\n  }, [actions]);`);
     }
 
     return `"use client";

@@ -1,0 +1,439 @@
+// ═══════════════════════════════════════════════════════════════
+// Mint Runtime Generator
+// Generates a React context provider that bundles:
+//   • Global state (useState for each variable)
+//   • Actions (setState, fetch, navigate, etc.)
+//   • Database proxy (query helper via mint-db bridge)
+// ═══════════════════════════════════════════════════════════════
+
+import type { ConversionOptions } from "../types";
+
+interface StateVar {
+  id: string;
+  name: string;
+  type: string;
+  defaultValue: any;
+}
+
+interface ActionDef {
+  id: string;
+  name: string;
+  type: string;
+  config: any;
+}
+
+/**
+ * Generates the MintRuntime provider + useMint hook as a React file.
+ */
+export function generateMintRuntimeProvider(
+  options: ConversionOptions
+): string {
+  const schema = options.runtimeSchema;
+  const states: StateVar[] = schema?.globalState ?? [];
+  const actions: ActionDef[] = schema?.globalActions ?? [];
+  const projectId = options.projectId ?? "UNKNOWN_PROJECT";
+  const sanitizedId = projectId.replace(/[^a-zA-Z0-9_]/g, "");
+  const tablePrefix = "mint_proj_" + sanitizedId + "_";
+  const bridgeUrl = "https://api.mintit.pro/api/mint-db";
+
+  // Build initial state object
+  const initialState: Record<string, any> = {};
+  for (const s of states) {
+    initialState[s.name] = s.defaultValue ?? getDefaultForType(s.type);
+  }
+
+  // Collect action names that are "fetch" type for loadTodosRef-style chaining
+  const fetchActionNames = actions.filter((a) => a.type === "fetch").map((a) => a.name);
+
+  // Build action function bodies
+  const actionFns = actions
+    .map((a) => buildActionFunction(a, fetchActionNames))
+    .join("\n\n");
+
+  // Build action refs for chaining (allows CALL from onSuccess)
+  const actionRefs = fetchActionNames
+    .map((n) => "  const " + n + "Ref = useRef<() => void>(() => {});\n  " + n + "Ref.current = " + n + ";")
+    .join("\n");
+
+  // ─── Build the output file ──────────────────────────────
+  const lines: string[] = [];
+  const L = (s: string) => lines.push(s);
+
+  L('"use client";');
+  L("// ═══════════════════════════════════════════════════════════════");
+  L("// MintRuntime — Auto-generated state & actions provider");
+  L("// Project: " + projectId);
+  L("// ═══════════════════════════════════════════════════════════════");
+  L('import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";');
+  L("");
+  L("// ── Types ─────────────────────────────────────────────────────");
+  L("interface MintState { [key: string]: any; }");
+  L("interface MintActions { [key: string]: (...args: any[]) => void | Promise<void>; }");
+  L("interface MintContextValue {");
+  L("  state: MintState;");
+  L('  setState: (key: string, value: any) => void;');
+  L("  actions: MintActions;");
+  L("  db: { query: (sql: string, params?: any[]) => Promise<any>; };");
+  L("}");
+  L("");
+  L("const MintContext = createContext<MintContextValue | null>(null);");
+  L("");
+  L("// ── Constants ─────────────────────────────────────────────────");
+  L('const DB_BRIDGE = "' + bridgeUrl + '";');
+  L('const TABLE_PREFIX = "' + tablePrefix + '";');
+  L("");
+  L("// ── Table name prefixer ───────────────────────────────────────");
+  L("function nsSQL(sql: string): string {");
+  L("  let result = sql;");
+  L("  result = result.replace(");
+  L('    /\\b(FROM|JOIN|UPDATE|INTO|TABLE|EXISTS|ON)\\s+"([a-zA-Z][a-zA-Z0-9_]*)"/gi,');
+  L("    (match: string, keyword: string, name: string) => {");
+  L('      if (name.startsWith("pg_") || name.startsWith("mint_")) return match;');
+  L("      return keyword + ' \"' + TABLE_PREFIX + name + '\"';");
+  L("    }");
+  L("  );");
+  L("  return result;");
+  L("}");
+  L("");
+  L("// ── DB query helper ───────────────────────────────────────────");
+  L("async function dbQuery(sql: string, params: any[] = []): Promise<any> {");
+  L("  const res = await fetch(DB_BRIDGE, {");
+  L('    method: "POST",');
+  L('    headers: { "Content-Type": "application/json" },');
+  L("    body: JSON.stringify({ text: nsSQL(sql), params }),");
+  L("  });");
+  L("  if (!res.ok) {");
+  L('    const errText = await res.text().catch(() => "");');
+  L('    throw new Error("DB query failed (" + res.status + "): " + errText);');
+  L("  }");
+  L("  return res.json();");
+  L("}");
+  L("");
+  L("// ── Initial State ─────────────────────────────────────────────");
+  L("const INITIAL_STATE: MintState = " + JSON.stringify(initialState, null, 2) + ";");
+  L("");
+  L("// ── Provider ──────────────────────────────────────────────────");
+  L("export function MintProvider({ children }: { children: React.ReactNode }) {");
+  L("  const [state, _setState] = useState<MintState>({ ...INITIAL_STATE });");
+  L("  const stateRef = useRef(state);");
+  L("  stateRef.current = state;");
+  L("");
+  L('  const setState = useCallback((key: string, value: any) => {');
+  L("    _setState((prev) => {");
+  L('      if (key.includes(".")) {');
+  L('        const parts = key.split(".");');
+  L("        const newState = { ...prev };");
+  L("        let obj: any = newState;");
+  L("        for (let i = 0; i < parts.length - 1; i++) {");
+  L("          obj[parts[i]] = { ...(obj[parts[i]] || {}) };");
+  L("          obj = obj[parts[i]];");
+  L("        }");
+  L("        obj[parts[parts.length - 1]] = value;");
+  L("        return newState;");
+  L("      }");
+  L("      return { ...prev, [key]: value };");
+  L("    });");
+  L("  }, []);");
+  L("");
+  L("  // ── Database proxy ────────────────────────────────────────");
+  L("  const db = useCallback(() => ({ query: dbQuery }), []);");
+  L("");
+  L("  // ── Actions ───────────────────────────────────────────────");
+  L(actionFns);
+  L("");
+  if (actionRefs) {
+    L("  // ── Action refs (for chaining) ─────────────────────────");
+    L(actionRefs);
+    L("");
+  }
+
+  // ── Initial data loaders (useEffect for fetch actions named "load*") ──
+  const loadActions = fetchActionNames.filter((n) => /^load/i.test(n));
+  if (loadActions.length > 0) {
+    L("  // ── Initial data loading ──────────────────────────────");
+    L("  useEffect(() => {");
+    for (const n of loadActions) {
+      L("    " + n + "Ref.current();");
+    }
+    L("  }, []);");
+    L("");
+  }
+
+  L("  const actions: MintActions = {");
+  L("    " + actions.map((a) => a.name).join(",\n    ") + ",");
+  L("  };");
+  L("");
+  L("  const value: MintContextValue = { state, setState, actions, db: db() };");
+  L("");
+  L("  return <MintContext.Provider value={value}>{children}</MintContext.Provider>;");
+  L("}");
+  L("");
+  L("// ── Hook ──────────────────────────────────────────────────────");
+  L("export function useMint(): MintContextValue {");
+  L("  const ctx = useContext(MintContext);");
+  L('  if (!ctx) throw new Error("useMint must be used within <MintProvider>");');
+  L("  return ctx;");
+  L("}");
+  L("");
+  L("// ── Utility ───────────────────────────────────────────────────");
+  L("function getNestedValue(obj: any, path: string): any {");
+  L('  if (!path) return obj;');
+  L('  return path.split(".").reduce((o, k) => o?.[k], obj);');
+  L("}");
+  L("");
+  L("function resolveActionParam(pStr: string, state: any, args: any[]): any {");
+  L('  if (pStr.startsWith("$args.")) {');
+  L('    const idx = parseInt(pStr.split(".")[1], 10) || 0;');
+  L('    return args[idx];');
+  L('  }');
+  L('  const fullPath = pStr.slice(1);');
+  L('  const stateVal = getNestedValue(state, fullPath);');
+  L('  if (stateVal !== undefined) return stateVal;');
+  L('  ');
+  L('  if (args.length > 0 && args[0] && typeof args[0] === "object") {');
+  L('    const parts = fullPath.split(".");');
+  L('    if (parts.length > 1) {');
+  L('      return getNestedValue(args[0], parts.slice(1).join("."));');
+  L('    } else {');
+  L('      return args[0]; // If they just asked for $todo and passed todo');
+  L('    }');
+  L('  }');
+  L('  return undefined;');
+  L("}");
+  L("");
+
+  return lines.join("\n");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Action code generator — uses dbQuery() helper
+// ═══════════════════════════════════════════════════════════════
+
+function buildActionFunction(
+  action: ActionDef,
+  fetchActionNames: string[]
+): string {
+  const { name, type, config } = action;
+  const cfg = config || {};
+
+  switch (type) {
+    case "fetch": {
+      const sql = cfg.body?.sql ?? "";
+      const rawParams: any[] = cfg.body?.params ?? [];
+      const onSuccess = cfg.onSuccess ?? "";
+      const onError = cfg.onError ?? "";
+
+      // Build param resolution lines
+      const paramLines = rawParams.map((p: any) => {
+        if (typeof p === "string" && p.startsWith("$")) {
+          return '      resolveActionParam("' + p + '", stateRef.current, args)';
+        }
+        return "      " + JSON.stringify(p);
+      });
+
+      const lines: string[] = [];
+      lines.push("  const " + name + " = useCallback(async (...args: any[]) => {");
+      lines.push("    try {");
+
+      if (paramLines.length > 0) {
+        lines.push("      const params = [");
+        lines.push(paramLines.join(",\n"));
+        lines.push("      ];");
+      } else {
+        lines.push("      const params: any[] = [];");
+      }
+
+      lines.push('      const result = await dbQuery(' + JSON.stringify(sql) + ', params);');
+      const successCode = generateOnSuccess(onSuccess, fetchActionNames);
+      if (successCode) lines.push(successCode);
+      lines.push("    } catch (err) {");
+      lines.push('      console.error("Action ' + name + ' failed:", err);');
+      const errorCode = generateOnError(onError);
+      if (errorCode) lines.push(errorCode);
+      lines.push("    }");
+      lines.push("  }, [setState]);");
+
+      return lines.join("\n");
+    }
+
+    case "setState": {
+      const path = cfg.path ?? "";
+      const value = cfg.value !== undefined ? JSON.stringify(cfg.value) : "undefined";
+      const also = cfg.also ?? "";
+
+      const lines: string[] = [];
+      lines.push("  const " + name + " = useCallback((...args: any[]) => {");
+      lines.push('    setState("' + path + '", ' + value + ");");
+      // If this sets currentScreen, also navigate to the corresponding route
+      if (/current.?screen/i.test(String(path)) && cfg.value !== undefined) {
+        const route = screenNameToRoute(String(cfg.value));
+        lines.push('    window.location.href = "' + route + '";');
+      }
+      const alsoCode = generateAlsoStatements(also, fetchActionNames);
+      if (alsoCode) lines.push(alsoCode);
+      lines.push("  }, [setState]);");
+      return lines.join("\n");
+    }
+
+    case "navigate": {
+      const target = cfg.target ?? "/";
+      return [
+        "  const " + name + " = useCallback((...args: any[]) => {",
+        '    window.location.href = "' + target + '";',
+        "  }, []);",
+      ].join("\n");
+    }
+
+    default: {
+      return [
+        "  const " + name + " = useCallback(() => {",
+        '    console.log("Action: ' + name + '", ' + JSON.stringify(cfg) + ");",
+        "  }, []);",
+      ].join("\n");
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// onSuccess / onError / also statement parsers
+// ═══════════════════════════════════════════════════════════════
+
+function generateOnSuccess(
+  onSuccess: string,
+  fetchActionNames: string[]
+): string {
+  if (!onSuccess) return "";
+  const statements = onSuccess.split(";").map((s) => s.trim()).filter(Boolean);
+  return statements
+    .map((stmt) => {
+      // SET $varName = expression
+      const setMatch = stmt.match(/^SET\s+\$(\S+)\s*=\s*(.+)$/i);
+      if (setMatch) {
+        const [, key, expr] = setMatch;
+        const val = expr
+          .trim()
+          .replace(/\$result/g, "result")
+          .replace(/\$(\w[\w.]*)/g, "stateRef.current.$1");
+        let code = '      setState("' + key + '", ' + val + ");";
+        // If setting currentScreen, also navigate
+        if (/current.?screen/i.test(key)) {
+          const screenVal = expr.trim().replace(/['"`]/g, "");
+          if (!/stateRef|result/.test(screenVal)) {
+            const route = screenNameToRoute(screenVal);
+            code += '\n      window.location.href = "' + route + '";';
+          }
+        }
+        return code;
+      }
+      // CALL actionName — chain to another action via ref
+      const callMatch = stmt.match(/^CALL\s+(\w+)/i);
+      if (callMatch) {
+        const callee = callMatch[1];
+        if (fetchActionNames.includes(callee)) {
+          return "      " + callee + "Ref.current();";
+        }
+        return "      " + callee + "();";
+      }
+      // Handle "TODO: chain call X" or "chain call X" patterns
+      const todoCallMatch = stmt.match(/^(?:TODO:?\s*)?chain\s+call\s+(\w+)/i);
+      if (todoCallMatch) {
+        const callee = todoCallMatch[1];
+        if (fetchActionNames.includes(callee)) {
+          return "      " + callee + "Ref.current();";
+        }
+        return "      " + callee + "();";
+      }
+      return "      // " + stmt;
+    })
+    .join("\n");
+}
+
+function generateOnError(onError: string): string {
+  if (!onError) return "";
+  const statements = onError.split(";").map((s) => s.trim()).filter(Boolean);
+  return statements
+    .map((stmt) => {
+      const setMatch = stmt.match(/^SET\s+\$(\S+)\s*=\s*(.+)$/i);
+      if (setMatch) {
+        const [, key, expr] = setMatch;
+        const val = expr.trim().replace(/'/g, '"');
+        return '      setState("' + key + '", ' + val + ");";
+      }
+      return "      // " + stmt;
+    })
+    .join("\n");
+}
+
+function generateAlsoStatements(
+  also: string,
+  fetchActionNames: string[]
+): string {
+  if (!also) return "";
+  const statements = also.split(";").map((s) => s.trim()).filter(Boolean);
+  return statements
+    .map((stmt) => {
+      const setMatch = stmt.match(/^SET\s+\$(\S+)\s*=\s*(.+)$/i);
+      if (setMatch) {
+        const [, key, expr] = setMatch;
+        const val = expr.trim().replace(/'/g, '"');
+        let code = '    setState("' + key + '", ' + val + ");";
+        // If setting currentScreen, also navigate
+        if (/current.?screen/i.test(key)) {
+          const screenVal = expr.trim().replace(/['"`]/g, "");
+          if (!/stateRef|result/.test(screenVal)) {
+            const route = screenNameToRoute(screenVal);
+            code += '\n    window.location.href = "' + route + '";';
+          }
+        }
+        return code;
+      }
+      const callMatch = stmt.match(/^CALL\s+(\w+)/i);
+      if (callMatch) {
+        const callee = callMatch[1];
+        if (fetchActionNames.includes(callee)) {
+          return "    " + callee + "Ref.current();";
+        }
+        return "    " + callee + "();";
+      }
+      // Handle "TODO: chain call X" or "chain call X" patterns
+      const todoCallMatch = stmt.match(/^(?:TODO:?\s*)?chain\s+call\s+(\w+)/i);
+      if (todoCallMatch) {
+        const callee = todoCallMatch[1];
+        if (fetchActionNames.includes(callee)) {
+          return "    " + callee + "Ref.current();";
+        }
+        return "    " + callee + "();";
+      }
+      return "    // " + stmt;
+    })
+    .join("\n");
+}
+
+function getDefaultForType(type: string): any {
+  switch (type) {
+    case "string":
+      return "";
+    case "number":
+      return 0;
+    case "boolean":
+      return false;
+    case "array":
+      return [];
+    case "object":
+      return {};
+    default:
+      return null;
+  }
+}
+
+/**
+ * Maps a screen name (from currentScreen state) to a URL route.
+ * The first/home/login screen maps to "/", others to "/slug".
+ */
+function screenNameToRoute(name: string): string {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (["login", "loginscreen", "home", "homescreen", "main"].includes(slug)) {
+    return "/";
+  }
+  return "/" + slug;
+}

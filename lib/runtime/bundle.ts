@@ -734,7 +734,7 @@ export function createMintRuntime(schema) {
 
 export class MintDB {
   constructor(config) {
-    this._baseUrl = config.connectionUrl || "https://api.mintit.pro/api/db";
+    this._baseUrl = config.connectionUrl || "https://api.mintit.pro/api/mint-db";
     this._apiKey = config.apiKey || "";
     this._tables = {};
     if (config.tables) {
@@ -743,13 +743,13 @@ export class MintDB {
   }
 
   async query(sql, params = []) {
-    const res = await fetch(this._baseUrl + "/query", {
+    const res = await fetch(this._baseUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...(this._apiKey ? { Authorization: "Bearer " + this._apiKey } : {}),
       },
-      body: JSON.stringify({ sql, params }),
+      body: JSON.stringify({ text: sql, params }),
     });
     if (!res.ok) throw new Error("DB query failed: " + res.status);
     return res.json();

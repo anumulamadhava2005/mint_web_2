@@ -362,7 +362,7 @@ export function cssFromText(text: TextStyle): CSSProperties {
   if (text.fontFamily) {
     // Strip any existing quotes around the font name to avoid double-quoting
     const clean = text.fontFamily.replace(/["']/g, "").trim();
-    style.fontFamily = `"${clean}", system-ui, sans-serif`;
+    style.fontFamily = `${clean}, system-ui, sans-serif`;
   }
   if (text.fontSize) {
     style.fontSize = text.fontSize;

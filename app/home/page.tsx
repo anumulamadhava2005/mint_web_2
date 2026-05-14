@@ -196,6 +196,12 @@ export default function HomePage() {
 
         {/* Center: Nav links (desktop) */}
         <div className="hidden md:flex items-center gap-8">
+          <Link
+            href="/docs"
+            className="text-[13px] font-medium text-[#a8a6a2] hover:text-[#f6f4f0] transition-colors"
+          >
+            Docs
+          </Link>
           {["Products", "Solutions", "Community", "Pricing"].map((item) => (
             <Link
               key={item}

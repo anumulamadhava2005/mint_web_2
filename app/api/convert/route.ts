@@ -63,6 +63,12 @@ const ConversionRequestSchema = z.object({
       fileKey: z.string().optional(),
       projectId: z.string().optional(),
       userId: z.string().optional(),
+      runtimeSchema: z.object({
+        globalState: z.array(z.any()).optional(),
+        globalActions: z.array(z.any()).optional(),
+        database: z.any().optional(),
+        workflows: z.array(z.any()).optional(),
+      }).optional(),
     })
     .optional(),
 });

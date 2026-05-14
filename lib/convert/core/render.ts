@@ -6,6 +6,27 @@ import type { DrawableNode, ImageManifest, ConversionOptions, Interaction } from
 import { cssFromDrawable, cssToReactStyle, type CSSProperties } from "./styles";
 import { detectHoverInteraction } from "./transitions";
 
+/** Check if any node in the tree has runtime bindings */
+export function hasMintBindings(nodes: DrawableNode[]): boolean {
+  for (const node of nodes) {
+    if (node.bindings && Object.values(node.bindings).some(Boolean)) return true;
+    if (node.children && hasMintBindings(node.children)) return true;
+  }
+  return false;
+}
+
+/**
+ * Convert a state path like "form.username" to safe optional-chaining:
+ *   "form.username" → "state.form?.username"
+ *   "todos"         → "state.todos"
+ */
+function safeStateExpr(key: string): string {
+  const parts = key.split('.');
+  if (parts.length === 1) return `state.${key}`;
+  // state.part1?.part2?.part3
+  return `state.${parts[0]}` + parts.slice(1).map(p => `?.${p}`).join('');
+}
+
 // ═══════════════════════════════════════════════════════════════
 // JSX Renderer (React / Next.js)
 // ═══════════════════════════════════════════════════════════════
@@ -16,16 +37,12 @@ export interface RenderOptions {
   includeDataAttributes?: boolean;
   componentPrefix?: string;
   manifest?: ImageManifest;
-  /** Interactions array for wiring up event handlers */
   interactions?: Interaction[];
-  /** Function name used for navigate actions (e.g., "setActiveFrame") */
   navigateHandler?: string;
-  /** Function name used for opening overlays (e.g., "openOverlay") */
   overlayHandler?: string;
-  /** Function name used for closing the topmost overlay */
   closeOverlayHandler?: string;
-  /** Function name used for replacing the topmost overlay */
   swapOverlayHandler?: string;
+  loopVarName?: string;
 }
 
 /**
@@ -52,7 +69,7 @@ function renderJSXNode(
   options: RenderOptions
 ): string {
   const spaces = " ".repeat(indent);
-  const { includeDataAttributes = true, manifest, interactions, navigateHandler, overlayHandler, closeOverlayHandler, swapOverlayHandler } = options;
+  const { includeDataAttributes = true, manifest, interactions, navigateHandler, overlayHandler, closeOverlayHandler, swapOverlayHandler, loopVarName } = options;
 
   const style = cssFromDrawable(node);
   const styleStr = cssToReactStyle(style, indent);
@@ -135,9 +152,50 @@ function renderJSXNode(
     }
   }
 
+  // ── Runtime binding handlers (override prototype interactions) ──
+  if (node.bindings) {
+    const b = node.bindings;
+    if (b.onClick && !eventHandler.includes('onClick')) {
+      const clickArg = loopVarName ? loopVarName : '';
+      eventHandler += ` onClick={() => actions.${b.onClick}(${clickArg})}`;
+      if (!style.cursor) style.cursor = "pointer";
+    }
+  }
+
+  // ── Runtime bindings: conditional visibility ──
+  const b = node.bindings;
+  const wrapVisible = b?.visibleBind;
+  const wrapRepeat = b?.repeatFor;
+
+  // ── Input binding: render as <input> ──
+  if (b?.inputBind) {
+    const stateKey = b.inputBind.replace(/^\$/, '');
+    // Ensure input has visible text styling
+    if (!style.color) style.color = "#e2e8f0";
+    if (!style.paddingLeft && !style.padding) style.paddingLeft = 12;
+    if (!style.fontSize) style.fontSize = 16;
+    style.border = "none";
+    style.outline = "none";
+    const styleStr = cssToReactStyle(style, indent);
+    const accessor = safeStateExpr(stateKey);
+    const inputJSX = `${spaces}<input style={${styleStr}}${dataAttrs} value={${accessor} ?? ""} onChange={(e) => setState("${stateKey}", e.target.value)} placeholder="${node.name.replace(/_/g, ' ')}" />`;
+    if (wrapVisible) {
+      const visKey = wrapVisible.replace(/^\$/, '').replace(/\s*==.*/, '');
+      const visAccessor = safeStateExpr(visKey);
+      return `${spaces}{${visAccessor} && (\n${inputJSX}\n${spaces})}`;
+    }
+    return inputJSX;
+  }
+
   // Handle different node types
   if (node.type === "TEXT") {
-    return renderTextNode(node, style, indent, includeDataAttributes, eventHandler);
+    let textJSX = renderTextNode(node, style, indent, includeDataAttributes, eventHandler);
+    if (wrapVisible) {
+      const visKey = wrapVisible.replace(/^\$/, '').replace(/\s*==.*/, '');
+      const visAccessor = safeStateExpr(visKey);
+      textJSX = `${spaces}{${visAccessor} && (\n${textJSX}\n${spaces})}`;
+    }
+    return textJSX;
   }
 
   if (node.type === "IMAGE" || node.fill?.type === "IMAGE") {
@@ -168,14 +226,39 @@ function renderJSXNode(
       ? node.children.filter((c) => !c.scroll?.fixedWhenScrolling)
       : node.children;
 
+    const childOptions = { ...options };
+    if (wrapRepeat && b?.repeatAs) {
+      childOptions.loopVarName = b.repeatAs;
+    }
+
     const childContent = scrollableChildren
-      .map((child) => renderJSXNode(child, indent + (isScrollContainer ? 4 : 2), options))
+      .map((child) => renderJSXNode(child, indent + (isScrollContainer ? 4 : 2), childOptions))
       .join("\n");
+
+    let finalChildContent = childContent;
+    if (wrapRepeat && b?.repeatAs && scrollableChildren.length > 0) {
+      const minY = Math.floor(Math.min(...scrollableChildren.map(c => c.y)));
+      const maxY = Math.ceil(Math.max(...scrollableChildren.map(c => c.y + c.h)));
+      const itemHeight = Math.max(0, maxY - minY);
+      const gap = 12; // 12px default gap for stacked list items
+      
+      const listKey = wrapRepeat.replace(/^\$/, '');
+      const listAccessor = safeStateExpr(listKey);
+      const itemVar = b.repeatAs;
+      finalChildContent = `${spaces}  {/* Preserve original top padding */}\n${spaces}  <div style={{ height: ${minY}, flexShrink: 0 }} />
+${spaces}  {(${listAccessor} || []).map((${itemVar}: any, _idx: number) => (
+${spaces}    <div key={_idx} style={{ position: "relative", width: "100%", height: ${itemHeight + gap}, flexShrink: 0 }}>
+${spaces}      <div style={{ position: "absolute", top: -${minY}, left: 0, width: "100%", height: "100%" }}>
+${childContent}
+${spaces}      </div>
+${spaces}    </div>
+${spaces}  ))}`;
+    }
+
+    let containerJSX: string;
 
     // For scroll containers, wrap children in a content div with the actual
     // content dimensions so the parent's overflow CSS creates a scrollable area.
-    // Without this wrapper, absolutely-positioned children don't expand the
-    // parent's scrollable region.
     if (isScrollContainer) {
       const contentW = Math.ceil(Math.max(...scrollableChildren.map((c) => c.x + c.w)));
       const contentH = Math.ceil(Math.max(...scrollableChildren.map((c) => c.y + c.h)));
@@ -184,8 +267,8 @@ function renderJSXNode(
       const innerHeight = scrollY ? contentH : Math.round(node.h);
       const innerStyleStr = cssToReactStyle({
         position: "relative",
-        width: innerWidth,
-        height: innerHeight,
+        width: scrollX ? "max-content" : "100%",
+        height: scrollY ? "max-content" : "100%",
         minWidth: scrollX ? innerWidth : undefined,
         minHeight: scrollY ? innerHeight : undefined,
       }, indent + 2);
@@ -194,27 +277,42 @@ function renderJSXNode(
         ? "\n" + fixedChildren.map((child) => renderJSXNode(child, indent + 2, options)).join("\n")
         : "";
 
-      // Add data-scroll attribute so CSS scrollbar-hiding rules apply
       let scrollAttr = "";
       if (scrollX && scrollY) scrollAttr = ` data-scroll-both`;
       else if (scrollX) scrollAttr = ` data-scroll-x`;
       else if (scrollY) scrollAttr = ` data-scroll-y`;
 
-      return `${spaces}<div style={${finalStyleStr}}${dataAttrs}${eventHandler}${scrollAttr}>
+      containerJSX = `${spaces}<div style={${finalStyleStr}}${dataAttrs}${eventHandler}${scrollAttr}>
 ${spaces}  <div style={${innerStyleStr}}>
-${childContent}
+${finalChildContent}
 ${spaces}  </div>${fixedContent}
+${spaces}</div>`;
+    } else {
+      containerJSX = `${spaces}<div style={${finalStyleStr}}${dataAttrs}${eventHandler}>
+${finalChildContent}
 ${spaces}</div>`;
     }
 
-    return `${spaces}<div style={${finalStyleStr}}${dataAttrs}${eventHandler}>
-${childContent}
-${spaces}</div>`;
+    if (wrapVisible) {
+      const visKey = wrapVisible.replace(/^\$/, '').replace(/\s*==.*/, '');
+      const visAccessor = safeStateExpr(visKey);
+      return `${spaces}{${visAccessor} && (\n${containerJSX}\n${spaces})}`;
+    }
+    return containerJSX;
   }
 
   // Simple shape
-  return `${spaces}<div style={${finalStyleStr}}${dataAttrs}${eventHandler} />`;
+  let simpleJSX = `${spaces}<div style={${finalStyleStr}}${dataAttrs}${eventHandler} />`;
+  if (wrapVisible) {
+    const visKey = wrapVisible.replace(/^\$/, '').replace(/\s*==.*/, '');
+    const visAccessor = safeStateExpr(visKey);
+    simpleJSX = `${spaces}{${visAccessor} && (\n${simpleJSX}\n${spaces})}`;
+  }
+  return simpleJSX;
 }
+
+
+
 
 function renderTextNode(
   node: DrawableNode,
@@ -229,6 +327,13 @@ function renderTextNode(
     ? ` data-name="${node.name}" data-id="${node.id}"`
     : "";
   const text = node.text?.characters ?? "";
+
+  // If text is bound to state, emit dynamic expression
+  if (node.bindings?.textBind) {
+    const stateKey = node.bindings.textBind.replace(/^\$/, '');
+    const accessor = safeStateExpr(stateKey);
+    return `${spaces}<div style={${styleStr}}${dataAttrs}${eventHandler}>{${accessor} ?? ${JSON.stringify(text)}}</div>`;
+  }
 
   return `${spaces}<div style={${styleStr}}${dataAttrs}${eventHandler}>{${JSON.stringify(text)}}</div>`;
 }

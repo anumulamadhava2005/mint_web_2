@@ -60,125 +60,122 @@ export default function  ProjectsContent({ search = "" }: Props) {
   });
 
   return (
-    <>
-      <div className="mb-5 flex items-end justify-between gap-4">
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Header - Fixed */}
+      <div className="flex-none flex items-end justify-between gap-4 px-6 sm:px-10 pt-6 sm:pt-8 pb-6 border-b border-white/[0.04] bg-white/[0.01]">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.28em] brand-muted">Recent work</p>
+          <h1 className="text-2xl font-bold tracking-tight text-white mb-1">Recent Work</h1>
+          <p className="text-sm text-white/40">Manage and create your design projects.</p>
         </div>
         <button
           onClick={() => setDialogOpen(true)}
-          className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-medium text-black transition-transform hover:scale-[1.01]"
+          className="group inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] active:scale-95 border border-emerald-400/20"
         >
           New Project
-          <ArrowRight size={14} />
+          <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
         </button>
       </div>
 
-      <Card className="p-0 bg-black shadow-none">
-        <div className="rounded-[24px] border border-black/10 bg-black p-5">
-          <div className="mb-5 flex items-center justify-between">
-            <div className="text-xs uppercase tracking-[0.22em] brand-muted">Workspace</div>
-            <div className="text-xs brand-muted">{filteredProjects.length} items</div>
+      {/* Scrollable Content */}
+      <div className="flex-1 overflow-y-auto px-6 sm:px-10 py-6 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10 relative scroll-smooth">
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <svg className="h-8 w-8 animate-spin text-emerald-500" viewBox="0 0 24 24">
+              <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+              <path className="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
           </div>
-
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <svg className="h-6 w-6 animate-spin text-white/40" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
+        ) : filteredProjects.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-[32px] border border-dashed border-white/[0.05] bg-white/[0.01] py-24 text-center mt-4">
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/[0.03] text-white/20">
+              <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
             </div>
-          ) : filteredProjects.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-[24px] border border-dashed border-white/10 bg-black/20 py-14 text-center">
-              <div className="mb-3 text-3xl text-white/50">◌</div>
-              <p className="text-sm font-medium text-[var(--foreground)]">No matching projects.</p>
-              <p className="mt-1 text-sm brand-muted">Try another search or create a new project.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {filteredProjects.map((p) => {
-                const ownerName = p.owner_email?.split("@")[0] ?? "User";
-                const initial = ownerName.charAt(0).toUpperCase();
+            <p className="text-base font-medium text-white/80">No projects found</p>
+            <p className="mt-1.5 text-sm text-white/40 max-w-sm">
+              {search ? "We couldn't find any projects matching your search." : "Get started by creating your first design project."}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 pb-8">
+            {filteredProjects.map((p) => {
+              const ownerName = p.owner_email?.split("@")[0] ?? "User";
+              const initial = ownerName.charAt(0).toUpperCase();
 
-                return (
-                  <div
-                    key={p.id}
-                    onClick={() => router.push(`/projects/${p.id}`)}
-                    className="group cursor-pointer overflow-hidden rounded-[24px] border border-white/10 bg-[var(--surface)] transition-all hover:-translate-y-0.5 hover:border-white/20 hover:shadow-[0_20px_50px_-30px_rgba(0,0,0,0.8)]"
-                  >
-                    <div className="relative aspect-[4/3] w-full overflow-hidden bg-white/5">
-                      {p.thumbnail_url ? (
-                        <img
-                          src={p.thumbnail_url}
-                          alt={p.name}
-                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,rgba(255,255,255,0.05),transparent)]">
-                          <span className="text-4xl font-semibold text-white/20">{initial}</span>
-                        </div>
-                      )}
+              return (
+                <div
+                  key={p.id}
+                  onClick={() => router.push(`/projects/${p.id}`)}
+                  className="group relative cursor-pointer overflow-hidden rounded-[24px] border border-white/[0.04] bg-white/[0.02] transition-all duration-300 hover:-translate-y-1.5 hover:bg-white/[0.04] hover:border-white/10 hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.5)]"
+                >
+                  {/* Thumbnail */}
+                  <div className="relative aspect-video w-full overflow-hidden bg-black/40">
+                    {p.thumbnail_url ? (
+                      <img
+                        src={p.thumbnail_url}
+                        alt={p.name}
+                        className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0.05),transparent)]">
+                        <span className="text-5xl font-semibold text-white/10 group-hover:scale-110 transition-transform duration-500 ease-out">{initial}</span>
+                      </div>
+                    )}
+                    {/* Gradient Overlay for contrast */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-60" />
+                    
+                    {/* Floating Date Badge */}
+                    <div className="absolute top-3 right-3 rounded-lg bg-black/40 backdrop-blur-md px-2.5 py-1 text-[10px] font-medium text-white/80 border border-white/10">
+                      {new Date(p.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                    </div>
+                  </div>
+
+                  {/* Card Content */}
+                  <div className="p-5">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <h3 className="truncate text-base font-semibold text-white/90 group-hover:text-emerald-400 transition-colors">{p.name}</h3>
+                      <span className="shrink-0 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-emerald-400">
+                        open
+                      </span>
                     </div>
 
-                    <div className="space-y-4 p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-2xl bg-white text-[11px] font-semibold text-black">
-                            {initial}
-                          </div>
+                    {p.description ? (
+                      <p className="line-clamp-2 text-xs leading-relaxed text-white/40 mb-4 h-8">{p.description}</p>
+                    ) : (
+                      <p className="text-xs text-white/20 mb-4 h-8 italic">No description provided.</p>
+                    )}
 
-                          <div className="min-w-0">
-                            <h3 className="truncate text-sm font-semibold text-[var(--foreground)]">{p.name}</h3>
-                            <p className="truncate text-xs brand-muted">by {ownerName}</p>
-                          </div>
+                    <div className="flex items-center justify-between pt-4 border-t border-white/[0.04]">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-gray-700 to-gray-900 text-[9px] font-bold text-white shadow-inner">
+                          {initial}
                         </div>
-
-                        <span className="rounded-full border border-white/10 bg-[var(--surface)] px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] brand-muted">
-                          open
-                        </span>
+                        <p className="truncate text-xs text-white/50">{ownerName}</p>
                       </div>
 
-                      <div className="flex items-center gap-4 text-xs brand-muted">
-                        <span className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-3 text-[11px] text-white/40">
+                        <span className="flex items-center gap-1 hover:text-rose-400 transition-colors">
                           <Heart size={12} />
                           {formatCount(p.likes)}
                         </span>
-                        <span className="flex items-center gap-1.5">
+                        <span className="flex items-center gap-1 hover:text-blue-400 transition-colors">
                           <Eye size={12} />
                           {formatCount(p.views)}
                         </span>
                       </div>
-
-                      {p.description && (
-                        <p className="line-clamp-2 text-sm leading-6 brand-muted">{p.description}</p>
-                      )}
-
-                      <div className="flex items-center justify-between pt-1 text-xs brand-muted">
-                        <span>
-                          {new Date(p.created_at).toLocaleDateString(undefined, {
-                            month: "short",
-                            day: "numeric",
-                          })}
-                        </span>
-                        <span className="inline-flex items-center gap-1 font-medium text-[var(--foreground)] transition-colors group-hover:text-[var(--accent)]">
-                          View
-                          <ArrowRight size={12} />
-                        </span>
-                      </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </Card>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       <NewProjectDialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
         onCreated={handleCreated}
       />
-    </>
+    </div>
   );
 }
