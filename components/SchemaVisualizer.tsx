@@ -146,17 +146,17 @@ function TableCard({
       {/* Background */}
       <rect
         width={TABLE_W} height={TABLE_HEADER_H + displayRows.length * ROW_H + 8}
-        rx={6} fill="#1c1c1c" stroke="#2a2a2a" strokeWidth={1}
+        rx={6} fill="#0f0f0f" stroke="rgba(255,255,255,0.06)" strokeWidth={1}
       />
       {/* Header */}
-      <rect width={TABLE_W} height={TABLE_HEADER_H} rx={6} fill="#232323" />
-      <rect y={TABLE_HEADER_H - 6} width={TABLE_W} height={6} fill="#232323" />
-      <line x1={0} y1={TABLE_HEADER_H} x2={TABLE_W} y2={TABLE_HEADER_H} stroke="#2a2a2a" />
+      <rect width={TABLE_W} height={TABLE_HEADER_H} rx={6} fill="rgba(255,255,255,0.04)" />
+      <rect y={TABLE_HEADER_H - 6} width={TABLE_W} height={6} fill="rgba(255,255,255,0.04)" />
+      <line x1={0} y1={TABLE_HEADER_H} x2={TABLE_W} y2={TABLE_HEADER_H} stroke="rgba(255,255,255,0.06)" />
 
       {/* Drag handle + Table icon + name */}
       <foreignObject x={8} y={8} width={TABLE_W - 16} height={20}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#ededed", fontSize: 13, fontWeight: 600, fontFamily: "Inter, system-ui, sans-serif" }}>
-          <GripVertical size={12} style={{ color: "#555", flexShrink: 0 }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#f6f4f0", fontSize: 13, fontWeight: 600, fontFamily: "Inter, system-ui, sans-serif" }}>
+          <GripVertical size={12} style={{ color: "#666360", flexShrink: 0 }} />
           <span style={{ color: "#34d399", fontSize: 11 }}>⊞</span>
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{table.name}</span>
         </div>
@@ -172,10 +172,10 @@ function TableCard({
             <foreignObject x={10} y={y + 4} width={TABLE_W - 20} height={ROW_H - 4}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", lineHeight: "20px" }}>
                 <FieldIcon field={row as FieldDef} isFK={row.isFK} />
-                <span style={{ color: "#ccc", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <span style={{ color: "#d7d6d2", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {row.name}
                 </span>
-                <span style={{ color: "#555", fontSize: 10, flexShrink: 0 }}>{row.type}</span>
+                <span style={{ color: "#666360", fontSize: 10, flexShrink: 0 }}>{row.type}</span>
               </div>
             </foreignObject>
           </g>
@@ -385,14 +385,14 @@ export default function SchemaVisualizer({ tables }: Props) {
   }
 
   return (
-    <div className="relative w-full h-full rounded-lg border border-[#2a2a2a] bg-[#171717] overflow-hidden" style={{ minHeight: 400 }}>
+    <div className="relative w-full h-full rounded-lg border border-white/[0.06] bg-[#0a0a0a] overflow-hidden" style={{ minHeight: 400 }}>
       {/* Legend */}
-      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-5 px-4 py-2 rounded-md bg-[#1c1c1c]/95 border border-[#2a2a2a] backdrop-blur-sm text-[10px] text-[#888]">
+      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-5 px-4 py-2 rounded-md bg-[#0f0f0f]/95 border border-white/[0.06] backdrop-blur-sm text-[10px] text-[#a8a6a2]">
         <span className="flex items-center gap-1.5"><Key size={10} className="text-amber-400" /> Primary key</span>
         <span className="flex items-center gap-1.5"><Hash size={10} className="text-sky-400" /> Identity</span>
         <span className="flex items-center gap-1.5"><CircleDot size={10} className="text-emerald-400" /> Unique</span>
-        <span className="flex items-center gap-1.5"><Diamond size={10} className="text-[#555]" /> Nullable</span>
-        <span className="flex items-center gap-1.5"><Diamond size={10} className="text-[#ccc]" /> Non-Nullable</span>
+        <span className="flex items-center gap-1.5"><Diamond size={10} className="text-[#666360]" /> Nullable</span>
+        <span className="flex items-center gap-1.5"><Diamond size={10} className="text-[#d7d6d2]" /> Non-Nullable</span>
       </div>
 
       <svg
@@ -410,7 +410,7 @@ export default function SchemaVisualizer({ tables }: Props) {
         {/* Grid pattern */}
         <defs>
           <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#222" strokeWidth="0.5" />
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth="0.5" />
           </pattern>
         </defs>
         <rect

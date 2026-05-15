@@ -334,17 +334,17 @@ export default function PenpotEditor({
 
   if (loading) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-zinc-900">
+      <div className="flex h-full w-full items-center justify-center bg-[#0a0a0a]">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
-          <p className="text-sm text-zinc-400">Loading workspace...</p>
+          <p className="text-sm text-[#a8a6a2]">Loading workspace...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-zinc-900">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-[#0a0a0a]">
       {/* ── Top Header Bar ── */}
       <Header
         projectName={projectName}
@@ -410,17 +410,17 @@ export default function PenpotEditor({
       {commitOrphanDialog && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          <div className="relative w-full max-w-md rounded-2xl border border-white/10 bg-zinc-900 shadow-2xl">
+          <div className="relative w-full max-w-md rounded-2xl border border-white/10 bg-[#0a0a0a] shadow-2xl">
             <div className="flex items-center justify-between border-b border-white/5 px-5 py-4">
               <div>
-                <h2 className="text-base font-semibold text-white">Unreachable Screens</h2>
-                <p className="mt-0.5 text-xs text-zinc-400">
+                <h2 className="text-base font-semibold text-[#f6f4f0]">Unreachable Screens</h2>
+                <p className="mt-0.5 text-xs text-[#a8a6a2]">
                   These screens have no navigation pointing to them
                 </p>
               </div>
               <button
                 onClick={() => setCommitOrphanDialog(null)}
-                className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
+                className="rounded-lg p-1.5 text-[#a8a6a2] transition-colors hover:bg-[#0f0f0f] hover:text-[#f6f4f0]"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M18 6 6 18M6 6l12 12" />
@@ -456,11 +456,11 @@ export default function PenpotEditor({
                       }`}
                     >
                       <div className="flex items-center gap-2.5">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-zinc-500">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-[#666360]">
                           <rect x="2" y="2" width="20" height="20" rx="2" />
                           <path d="M2 8h20M8 2v20" />
                         </svg>
-                        <span className="text-sm text-zinc-200">{frame.name}</span>
+                        <span className="text-sm text-[#f6f4f0]">{frame.name}</span>
                       </div>
                       <button
                         onClick={() => {
@@ -473,7 +473,7 @@ export default function PenpotEditor({
                         }}
                         className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-colors ${
                           isExcluded
-                            ? "bg-zinc-700 text-zinc-400 hover:bg-zinc-600"
+                            ? "bg-white/[0.08] text-[#a8a6a2] hover:bg-zinc-600"
                             : "bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30"
                         }`}
                       >
@@ -487,7 +487,7 @@ export default function PenpotEditor({
             <div className="flex items-center justify-end gap-2 border-t border-white/5 px-5 py-4">
               <button
                 onClick={() => setCommitOrphanDialog(null)}
-                className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:text-white"
+                className="rounded-lg px-3 py-1.5 text-xs font-medium text-[#a8a6a2] transition-colors hover:text-[#f6f4f0]"
               >
                 Cancel
               </button>
@@ -505,8 +505,8 @@ export default function PenpotEditor({
                 disabled={committing}
                 className={`flex items-center gap-2 rounded-lg px-4 py-1.5 text-xs font-medium transition-all ${
                   committing
-                    ? "cursor-not-allowed bg-zinc-700 text-zinc-500"
-                    : "bg-violet-600 text-white hover:bg-violet-500"
+                    ? "cursor-not-allowed bg-white/[0.08] text-[#666360]"
+                    : "bg-violet-600 text-[#f6f4f0] hover:bg-violet-500"
                 }`}
               >
                 {committing ? (
@@ -601,28 +601,28 @@ const Header = memo(function Header({
   };
 
   return (
-    <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-700 bg-zinc-900 px-3">
+    <header className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.08] bg-[#0a0a0a] px-3">
       {/* Left: Back + file info */}
       <div className="flex items-center gap-3">
         <button
           onClick={onBack}
-          className="flex items-center gap-1.5 rounded px-2 py-1 text-sm text-zinc-400 hover:bg-zinc-800 hover:text-white"
+          className="flex items-center gap-1.5 rounded px-2 py-1 text-sm text-[#a8a6a2] hover:bg-[#0f0f0f] hover:text-[#f6f4f0]"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M19 12H5m7-7-7 7 7 7" />
           </svg>
           Back
         </button>
-        <div className="h-4 w-px bg-zinc-700" />
-        <span className="text-xs text-zinc-500">{projectName}</span>
-        <span className="text-xs text-zinc-500">/</span>
-        <span className="text-sm font-medium text-zinc-200">{fileName}</span>
+        <div className="h-4 w-px bg-white/[0.08]" />
+        <span className="text-xs text-[#666360]">{projectName}</span>
+        <span className="text-xs text-[#666360]">/</span>
+        <span className="text-sm font-medium text-[#f6f4f0]">{fileName}</span>
         {readOnly ? (
-          <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs font-medium text-zinc-400 border border-white/5">View Only</span>
+          <span className="rounded-full bg-[#0f0f0f] px-2 py-0.5 text-xs font-medium text-[#a8a6a2] border border-white/5">View Only</span>
         ) : saving ? (
           <span className="text-xs text-amber-400">Saving...</span>
         ) : lastSaved ? (
-          <span className="text-xs text-zinc-500">Saved</span>
+          <span className="text-xs text-[#666360]">Saved</span>
         ) : null}
       </div>
 
@@ -631,7 +631,7 @@ const Header = memo(function Header({
         <div className="flex items-center gap-1">
         <button
           onClick={onUndo}
-          className="rounded p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white"
+          className="rounded p-1.5 text-[#a8a6a2] hover:bg-[#0f0f0f] hover:text-[#f6f4f0]"
           title="Undo (Ctrl+Z)"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -641,7 +641,7 @@ const Header = memo(function Header({
         </button>
         <button
           onClick={onRedo}
-          className="rounded p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white"
+          className="rounded p-1.5 text-[#a8a6a2] hover:bg-[#0f0f0f] hover:text-[#f6f4f0]"
           title="Redo (Ctrl+Shift+Z)"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -658,14 +658,14 @@ const Header = memo(function Header({
           <span
             className={`h-2 w-2 rounded-full ${connected ? "bg-green-400" : "bg-zinc-600"}`}
           />
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-[#666360]">
             {connected ? "Connected" : "Offline"}
           </span>
         </div>
         {!readOnly && (
           <button
             onClick={onSave}
-            className="rounded px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-white"
+            className="rounded px-2 py-1 text-xs text-[#a8a6a2] hover:bg-[#0f0f0f] hover:text-[#f6f4f0]"
           >
             Save
           </button>
@@ -680,10 +680,10 @@ const Header = memo(function Header({
           </svg>
           Convert
         </button>
-        <div className="h-4 w-px bg-zinc-700 mx-1" />
+        <div className="h-4 w-px bg-white/[0.08] mx-1" />
         <button
           onClick={copyLink}
-          className="rounded p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
+          className="rounded p-1.5 text-[#a8a6a2] hover:bg-[#0f0f0f] hover:text-[#f6f4f0] transition-colors"
           title="Copy Link to Share"
         >
           <Share size={14} />
@@ -691,7 +691,7 @@ const Header = memo(function Header({
         {!readOnly && (
           <button
             onClick={() => window.location.href = `/projects/${window.location.pathname.split("/").pop()}/settings`}
-            className="rounded p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors mr-1"
+            className="rounded p-1.5 text-[#a8a6a2] hover:bg-[#0f0f0f] hover:text-[#f6f4f0] transition-colors mr-1"
             title="Project Settings"
           >
             <Settings size={14} />
@@ -736,7 +736,7 @@ const Header = memo(function Header({
         </div>
         <button
           onClick={onPlay}
-          className="flex items-center gap-1.5 rounded bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-500"
+          className="flex items-center gap-1.5 rounded bg-indigo-600 px-3 py-1 text-xs font-medium text-[#f6f4f0] hover:bg-indigo-500"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
             <path d="M8 5v14l11-7z" />
@@ -834,7 +834,7 @@ const Toolbar = memo(function Toolbar({
   onToggleGrid: () => void;
 }) {
   return (
-    <div className="flex h-10 shrink-0 items-center justify-between border-b border-zinc-700 bg-zinc-900 px-2">
+    <div className="flex h-10 shrink-0 items-center justify-between border-b border-white/[0.08] bg-[#0a0a0a] px-2">
       <div className="flex items-center gap-0.5">
         {TOOLS.map((tool) => (
           <button
@@ -842,8 +842,8 @@ const Toolbar = memo(function Toolbar({
             onClick={() => onToolChange(tool.id)}
             className={`relative rounded p-1.5 transition-colors ${
               currentTool === tool.id
-                ? "bg-indigo-600 text-white"
-                : "text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                ? "bg-indigo-600 text-[#f6f4f0]"
+                : "text-[#a8a6a2] hover:bg-[#0f0f0f] hover:text-[#f6f4f0]"
             }`}
             title={`${tool.label} (${tool.shortcut})`}
           >
@@ -856,7 +856,7 @@ const Toolbar = memo(function Toolbar({
         <button
           onClick={onToggleRulers}
           className={`rounded px-2 py-1 text-xs ${
-            showRulers ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-zinc-300"
+            showRulers ? "bg-white/[0.08] text-[#f6f4f0]" : "text-[#666360] hover:text-[#d7d6d2]"
           }`}
         >
           Rulers
@@ -864,7 +864,7 @@ const Toolbar = memo(function Toolbar({
         <button
           onClick={onToggleGrid}
           className={`rounded px-2 py-1 text-xs ${
-            showGrid ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-zinc-300"
+            showGrid ? "bg-white/[0.08] text-[#f6f4f0]" : "text-[#666360] hover:text-[#d7d6d2]"
           }`}
         >
           Grid
@@ -900,19 +900,19 @@ const ZoomControl = memo(function ZoomControl() {
   };
 
   return (
-    <div className="flex items-center gap-1 rounded bg-zinc-800 px-1">
+    <div className="flex items-center gap-1 rounded bg-[#0f0f0f] px-1">
       <button
         onClick={() => changeZoom(Math.max(0.1, (vport.width / vbox.width) / 1.2))}
-        className="px-1 py-0.5 text-xs text-zinc-400 hover:text-white"
+        className="px-1 py-0.5 text-xs text-[#a8a6a2] hover:text-[#f6f4f0]"
       >
         -
       </button>
-      <span className="min-w-[40px] text-center text-xs text-zinc-300">
+      <span className="min-w-[40px] text-center text-xs text-[#d7d6d2]">
         {Math.round((vport.width / vbox.width) * 100)}%
       </span>
       <button
         onClick={() => changeZoom(Math.min(64, (vport.width / vbox.width) * 1.2))}
-        className="px-1 py-0.5 text-xs text-zinc-400 hover:text-white"
+        className="px-1 py-0.5 text-xs text-[#a8a6a2] hover:text-[#f6f4f0]"
       >
         +
       </button>
@@ -1036,13 +1036,13 @@ const LeftPanel = memo(function LeftPanel() {
   if (!file) return null;
 
   return (
-    <div className="flex w-56 shrink-0 flex-col border-r border-zinc-700 bg-zinc-900">
+    <div className="flex w-56 shrink-0 flex-col border-r border-white/[0.08] bg-[#0a0a0a]">
       {/* Tab switcher */}
-      <div className="flex border-b border-zinc-700">
+      <div className="flex border-b border-white/[0.08]">
         <button
           onClick={() => setTab("layers")}
           className={`flex-1 py-2 text-xs font-medium ${
-            tab === "layers" ? "border-b-2 border-indigo-500 text-white" : "text-zinc-500"
+            tab === "layers" ? "border-b-2 border-indigo-500 text-[#f6f4f0]" : "text-[#666360]"
           }`}
         >
           Layers
@@ -1050,7 +1050,7 @@ const LeftPanel = memo(function LeftPanel() {
         <button
           onClick={() => setTab("pages")}
           className={`flex-1 py-2 text-xs font-medium ${
-            tab === "pages" ? "border-b-2 border-indigo-500 text-white" : "text-zinc-500"
+            tab === "pages" ? "border-b-2 border-indigo-500 text-[#f6f4f0]" : "text-[#666360]"
           }`}
         >
           Pages
@@ -1083,7 +1083,7 @@ const LeftPanel = memo(function LeftPanel() {
                   className={`w-full rounded px-2 py-1.5 text-left text-xs ${
                     pid === currentPageId
                       ? "bg-indigo-600/20 text-indigo-300"
-                      : "text-zinc-400 hover:bg-zinc-800"
+                      : "text-[#a8a6a2] hover:bg-[#0f0f0f]"
                   }`}
                 >
                   {page?.name || "Untitled Page"}
@@ -1092,7 +1092,7 @@ const LeftPanel = memo(function LeftPanel() {
             })}
             <button
               onClick={() => addPage()}
-              className="mt-1 w-full rounded border border-dashed border-zinc-700 py-1.5 text-xs text-zinc-500 hover:border-zinc-500 hover:text-zinc-300"
+              className="mt-1 w-full rounded border border-dashed border-white/[0.08] py-1.5 text-xs text-[#666360] hover:border-zinc-500 hover:text-[#d7d6d2]"
             >
               + Add Page
             </button>
@@ -1106,7 +1106,7 @@ const LeftPanel = memo(function LeftPanel() {
                 placeholder="Search layers…"
                 value={layerSearch}
                 onChange={(e) => setLayerSearch(e.target.value)}
-                className="w-full rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-300 outline-none placeholder:text-zinc-600 focus:ring-1 focus:ring-indigo-500"
+                className="w-full rounded bg-[#0f0f0f] px-2 py-1 text-xs text-[#d7d6d2] outline-none placeholder:text-zinc-600 focus:ring-1 focus:ring-indigo-500"
               />
             </div>
             <LayerTree
@@ -1220,7 +1220,7 @@ function LayerTree({
               className={`group flex w-full items-center gap-1 rounded px-1 py-0.5 text-left text-xs ${
                 isSelected
                   ? "bg-indigo-600/20 text-indigo-300"
-                  : "text-zinc-400 hover:bg-zinc-800"
+                  : "text-[#a8a6a2] hover:bg-[#0f0f0f]"
               } ${isDragging ? "opacity-40" : ""} ${isDropInside ? "bg-indigo-600/25 ring-1 ring-indigo-500/50" : ""} ${isDropBefore ? "border-t border-indigo-500" : ""} ${isDropAfter ? "border-b border-indigo-500" : ""}`}
               style={{ paddingLeft: `${depth * 12 + 4}px` }}
             >
@@ -1253,7 +1253,7 @@ function LayerTree({
                       if (e.key === "Escape") onFinishEdit(id, shape.name || shape.type);
                     }}
                     onClick={(e) => e.stopPropagation()}
-                    className="w-full rounded bg-zinc-700 px-1 py-0 text-xs text-zinc-100 outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full rounded bg-white/[0.08] px-1 py-0 text-xs text-zinc-100 outline-none focus:ring-1 focus:ring-indigo-500"
                   />
                 ) : (
                   <span className="truncate">{shape.name || shape.type}</span>
@@ -1264,7 +1264,7 @@ function LayerTree({
               <div className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button
                   onClick={(e) => { e.stopPropagation(); onToggleHidden(id); }}
-                  className={`rounded p-0.5 transition-colors ${shape.hidden ? "text-amber-400 opacity-100" : "text-zinc-600 hover:text-zinc-300"}`}
+                  className={`rounded p-0.5 transition-colors ${shape.hidden ? "text-amber-400 opacity-100" : "text-zinc-600 hover:text-[#d7d6d2]"}`}
                   title={shape.hidden ? "Show" : "Hide"}
                   style={shape.hidden ? { opacity: 1 } : undefined}
                 >
@@ -1282,7 +1282,7 @@ function LayerTree({
                 </button>
                 <button
                   onClick={(e) => { e.stopPropagation(); onToggleLocked(id); }}
-                  className={`rounded p-0.5 transition-colors ${shape.locked ? "text-red-400 opacity-100" : "text-zinc-600 hover:text-zinc-300"}`}
+                  className={`rounded p-0.5 transition-colors ${shape.locked ? "text-red-400 opacity-100" : "text-zinc-600 hover:text-[#d7d6d2]"}`}
                   title={shape.locked ? "Unlock" : "Lock"}
                   style={shape.locked ? { opacity: 1 } : undefined}
                 >
@@ -1329,7 +1329,7 @@ function LayerTree({
 }
 
 function ShapeIcon({ type }: { type: string }) {
-  const cls = "h-3 w-3 shrink-0 text-zinc-500";
+  const cls = "h-3 w-3 shrink-0 text-[#666360]";
   switch (type) {
     case "rect":
       return <svg className={cls} viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>;
@@ -1361,9 +1361,9 @@ const RightPanel = memo(function RightPanel({
   projectId: string;
 }) {
   return (
-    <div className={`flex ${optionsMode === "backend" ? "w-80" : "w-64"} shrink-0 flex-col border-l border-zinc-700 bg-zinc-900 transition-all`}>
+    <div className={`flex ${optionsMode === "backend" ? "w-80" : "w-64"} shrink-0 flex-col border-l border-white/[0.08] bg-[#0a0a0a] transition-all`}>
       {/* Mode tabs */}
-      <div className="flex border-b border-zinc-700">
+      <div className="flex border-b border-white/[0.08]">
         {(["design", "inspect", "prototype", "backend"] as const).map((mode) => (
           <button
             key={mode}
@@ -1372,8 +1372,8 @@ const RightPanel = memo(function RightPanel({
               optionsMode === mode
                 ? mode === "backend"
                   ? "border-b-2 border-emerald-500 text-emerald-400"
-                  : "border-b-2 border-indigo-500 text-white"
-                : "text-zinc-500 hover:text-zinc-300"
+                  : "border-b-2 border-indigo-500 text-[#f6f4f0]"
+                : "text-[#666360] hover:text-[#d7d6d2]"
             }`}
           >
             {mode === "backend" ? "⚙ Backend" : mode}
@@ -1419,7 +1419,7 @@ function DesignPanel() {
 
   if (selectedShapes.length === 0) {
     return (
-      <div className="p-3 text-xs text-zinc-500">
+      <div className="p-3 text-xs text-[#666360]">
         Select a shape to edit its properties.
       </div>
     );
@@ -1427,7 +1427,7 @@ function DesignPanel() {
 
   if (selectedShapes.length > 1) {
     return (
-      <div className="p-3 text-xs text-zinc-500">
+      <div className="p-3 text-xs text-[#666360]">
         {selectedShapes.length} shapes selected
       </div>
     );
@@ -1461,11 +1461,11 @@ function DesignPanel() {
     <div className="space-y-3 p-3">
       {/* Name */}
       <div>
-        <label className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">Name</label>
+        <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#666360]">Name</label>
         <input
           value={shape.name}
           onChange={(e) => updateShape(shape.id, { name: e.target.value })}
-          className="w-full rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-200 outline-none focus:ring-1 focus:ring-indigo-500"
+          className="w-full rounded bg-[#0f0f0f] px-2 py-1 text-xs text-[#f6f4f0] outline-none focus:ring-1 focus:ring-indigo-500"
         />
       </div>
 
@@ -1480,7 +1480,7 @@ function DesignPanel() {
 
       {/* Position (relative to parent frame) */}
       <div>
-        <label className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wider text-zinc-500">
+        <label className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wider text-[#666360]">
           Position
           {parent && (
             <span className="normal-case tracking-normal text-zinc-600">
@@ -1496,7 +1496,7 @@ function DesignPanel() {
 
       {/* Size */}
       <div>
-        <label className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">Size</label>
+        <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#666360]">Size</label>
         <div className="grid grid-cols-2 gap-1.5">
           <PropertyInput label="W" value={shape.width} onChange={(v) => updateShape(shape.id, { width: v })} />
           <PropertyInput label="H" value={shape.height} onChange={(v) => updateShape(shape.id, { height: v })} />
@@ -1505,13 +1505,13 @@ function DesignPanel() {
 
       {/* Rotation */}
       <div>
-        <label className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">Rotation</label>
+        <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#666360]">Rotation</label>
         <PropertyInput label="°" value={shape.rotation ?? 0} onChange={(v) => updateShape(shape.id, { rotation: v })} />
       </div>
 
       {/* Opacity */}
       <div>
-        <label className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">Opacity</label>
+        <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#666360]">Opacity</label>
         <div className="flex items-center gap-2">
           <input
             type="range"
@@ -1522,14 +1522,14 @@ function DesignPanel() {
             onChange={(e) => updateShape(shape.id, { opacity: parseFloat(e.target.value) })}
             className="flex-1"
           />
-          <span className="text-xs text-zinc-400">{Math.round((shape.opacity ?? 1) * 100)}%</span>
+          <span className="text-xs text-[#a8a6a2]">{Math.round((shape.opacity ?? 1) * 100)}%</span>
         </div>
       </div>
 
       {/* Corner radius (for rects) */}
       {(shape.type === "rect" || shape.type === "frame") && (
         <div>
-          <label className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">Corner Radius</label>
+          <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#666360]">Corner Radius</label>
           <PropertyInput label="R" value={shape.rx ?? 0} onChange={(v) => updateShape(shape.id, { rx: v, ry: v })} />
         </div>
       )}
@@ -1593,13 +1593,13 @@ function DesignPanel() {
 
         return (
           <div>
-            <label className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">Typography</label>
+            <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#666360]">Typography</label>
             <div className="space-y-2">
               {/* Font Family */}
               <select
                 value={currentFontFamily}
                 onChange={(e) => updateAllRuns({ fontFamily: e.target.value })}
-                className="w-full rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                className="w-full rounded bg-[#0f0f0f] px-2 py-1 text-xs text-[#f6f4f0] outline-none focus:ring-1 focus:ring-indigo-500"
               >
                 {["Inter", "Roboto", "Arial", "Helvetica", "Georgia", "Times New Roman", "Courier New", "Verdana", "system-ui", "sans-serif", "serif", "monospace"].map(f => (
                   <option key={f} value={f}>{f}</option>
@@ -1611,7 +1611,7 @@ function DesignPanel() {
                 <select
                   value={currentFontWeight}
                   onChange={(e) => updateAllRuns({ fontWeight: Number(e.target.value) })}
-                  className="flex-1 rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="flex-1 rounded bg-[#0f0f0f] px-2 py-1 text-xs text-[#f6f4f0] outline-none focus:ring-1 focus:ring-indigo-500"
                 >
                   {[{v:100,l:"Thin"},{v:200,l:"ExtraLight"},{v:300,l:"Light"},{v:400,l:"Regular"},{v:500,l:"Medium"},{v:600,l:"SemiBold"},{v:700,l:"Bold"},{v:800,l:"ExtraBold"},{v:900,l:"Black"}].map(w => (
                     <option key={w.v} value={w.v}>{w.l}</option>
@@ -1619,7 +1619,7 @@ function DesignPanel() {
                 </select>
                 <button
                   onClick={() => updateAllRuns({ fontStyle: currentFontStyle === "italic" ? "normal" : "italic" })}
-                  className={`rounded px-2 py-1 text-xs transition-colors ${currentFontStyle === "italic" ? "bg-indigo-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-white"}`}
+                  className={`rounded px-2 py-1 text-xs transition-colors ${currentFontStyle === "italic" ? "bg-indigo-600 text-[#f6f4f0]" : "bg-[#0f0f0f] text-[#a8a6a2] hover:text-[#f6f4f0]"}`}
                   title="Italic"
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -1639,13 +1639,13 @@ function DesignPanel() {
 
               {/* Text Alignment */}
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">Alignment</label>
+                <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#666360]">Alignment</label>
                 <div className="flex gap-0.5">
                   {(["left", "center", "right", "justify"] as const).map(align => (
                     <button
                       key={align}
                       onClick={() => updateAllParagraphs({ textAlign: align })}
-                      className={`flex-1 rounded px-1 py-1 transition-colors ${currentTextAlign === align ? "bg-indigo-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-white"}`}
+                      className={`flex-1 rounded px-1 py-1 transition-colors ${currentTextAlign === align ? "bg-indigo-600 text-[#f6f4f0]" : "bg-[#0f0f0f] text-[#a8a6a2] hover:text-[#f6f4f0]"}`}
                       title={align}
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mx-auto">
@@ -1661,13 +1661,13 @@ function DesignPanel() {
 
               {/* Text Decoration */}
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">Decoration</label>
+                <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#666360]">Decoration</label>
                 <div className="flex gap-0.5">
                   {(["none", "underline", "line-through"] as const).map(deco => (
                     <button
                       key={deco}
                       onClick={() => updateAllRuns({ textDecoration: deco })}
-                      className={`flex-1 rounded px-1 py-1 text-[10px] transition-colors ${currentTextDecoration === deco ? "bg-indigo-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-white"}`}
+                      className={`flex-1 rounded px-1 py-1 text-[10px] transition-colors ${currentTextDecoration === deco ? "bg-indigo-600 text-[#f6f4f0]" : "bg-[#0f0f0f] text-[#a8a6a2] hover:text-[#f6f4f0]"}`}
                       title={deco}
                     >
                       {deco === "none" ? "—" : deco === "underline" ? "U̲" : "S̶"}
@@ -1678,7 +1678,7 @@ function DesignPanel() {
 
               {/* Grow Type (Resize Mode) */}
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">Resize</label>
+                <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#666360]">Resize</label>
                 <div className="flex gap-0.5">
                   {([
                     { val: "auto-width" as const, label: "Auto W" },
@@ -1688,7 +1688,7 @@ function DesignPanel() {
                     <button
                       key={g.val}
                       onClick={() => updateShape(shape.id, { growType: g.val })}
-                      className={`flex-1 rounded px-1 py-1 text-[10px] transition-colors ${currentGrowType === g.val ? "bg-indigo-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-white"}`}
+                      className={`flex-1 rounded px-1 py-1 text-[10px] transition-colors ${currentGrowType === g.val ? "bg-indigo-600 text-[#f6f4f0]" : "bg-[#0f0f0f] text-[#a8a6a2] hover:text-[#f6f4f0]"}`}
                       title={g.label}
                     >
                       {g.label}
@@ -1699,7 +1699,7 @@ function DesignPanel() {
 
               {/* Text Content Editor */}
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">Content</label>
+                <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#666360]">Content</label>
                 <textarea
                   value={plainText}
                   onChange={(e) => {
@@ -1724,7 +1724,7 @@ function DesignPanel() {
                     };
                     updateShape(shape.id, { content: newContent });
                   }}
-                  className="w-full rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-200 outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+                  className="w-full rounded bg-[#0f0f0f] px-2 py-1 text-xs text-[#f6f4f0] outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
                   rows={3}
                   placeholder="Enter text..."
                 />
@@ -1736,7 +1736,7 @@ function DesignPanel() {
 
       {/* Fill */}
       <div>
-        <label className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">Fill</label>
+        <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#666360]">Fill</label>
         {shape.fills && shape.fills.length > 0 ? (
           shape.fills.map((fill, i) => (
             <div key={i} className="flex items-center gap-2">
@@ -1748,9 +1748,9 @@ function DesignPanel() {
                   fills[i] = { ...fills[i], fillColor: e.target.value };
                   updateShape(shape.id, { fills });
                 }}
-                className="h-6 w-6 cursor-pointer rounded border border-zinc-700 bg-transparent"
+                className="h-6 w-6 cursor-pointer rounded border border-white/[0.08] bg-transparent"
               />
-              <span className="text-xs text-zinc-400">{fill.fillColor || "none"}</span>
+              <span className="text-xs text-[#a8a6a2]">{fill.fillColor || "none"}</span>
             </div>
           ))
         ) : (
@@ -1758,7 +1758,7 @@ function DesignPanel() {
             onClick={() => {
               updateShape(shape.id, { fills: [{ fillColor: "#B1B2B5", fillOpacity: 1 }] });
             }}
-            className="text-xs text-zinc-500 hover:text-indigo-400"
+            className="text-xs text-[#666360] hover:text-indigo-400"
           >
             + Add fill
           </button>
@@ -1767,7 +1767,7 @@ function DesignPanel() {
 
       {/* Stroke */}
       <div>
-        <label className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">Stroke</label>
+        <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#666360]">Stroke</label>
         {shape.strokes && shape.strokes.length > 0 ? (
           shape.strokes.map((stroke, i) => (
             <div key={i} className="flex items-center gap-2">
@@ -1779,9 +1779,9 @@ function DesignPanel() {
                   strokes[i] = { ...strokes[i], strokeColor: e.target.value };
                   updateShape(shape.id, { strokes });
                 }}
-                className="h-6 w-6 cursor-pointer rounded border border-zinc-700 bg-transparent"
+                className="h-6 w-6 cursor-pointer rounded border border-white/[0.08] bg-transparent"
               />
-              <span className="text-xs text-zinc-400">{stroke.strokeColor}</span>
+              <span className="text-xs text-[#a8a6a2]">{stroke.strokeColor}</span>
             </div>
           ))
         ) : (
@@ -1789,7 +1789,7 @@ function DesignPanel() {
             onClick={() => {
               updateShape(shape.id, { strokes: [{ strokeColor: "#000000", strokeWidth: 1, strokeAlignment: "center" }] });
             }}
-            className="text-xs text-zinc-500 hover:text-indigo-400"
+            className="text-xs text-[#666360] hover:text-indigo-400"
           >
             + Add stroke
           </button>
@@ -1801,58 +1801,58 @@ function DesignPanel() {
         <label className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wider text-emerald-400">
           <span>⚡</span> Bindings
         </label>
-        <div className="space-y-1.5 rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-2">
+        <div className="space-y-1.5 rounded-lg border border-white/[0.08]/50 bg-[#0f0f0f]/30 p-2">
           {/* Text Binding */}
           {(shape.type === "text" || shape.type === "rect" || shape.type === "frame") && (
             <div>
-              <label className="text-[10px] text-zinc-500">Text / Content</label>
+              <label className="text-[10px] text-[#666360]">Text / Content</label>
               <input
                 value={shape.runtimeBindings?.textBind || ""}
                 onChange={(e) => updateShape(shape.id, {
                   runtimeBindings: { ...shape.runtimeBindings, textBind: e.target.value }
                 })}
                 placeholder="$state.variable"
-                className="w-full rounded bg-zinc-900 px-2 py-1 text-xs text-white outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
+                className="w-full rounded bg-[#0a0a0a] px-2 py-1 text-xs text-[#f6f4f0] outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
               />
             </div>
           )}
 
           {/* Input Binding */}
           <div>
-            <label className="text-[10px] text-zinc-500">Input Bind (2-way)</label>
+            <label className="text-[10px] text-[#666360]">Input Bind (2-way)</label>
             <input
               value={shape.runtimeBindings?.inputBind || ""}
               onChange={(e) => updateShape(shape.id, {
                 runtimeBindings: { ...shape.runtimeBindings, inputBind: e.target.value }
               })}
               placeholder="$form.fieldName"
-              className="w-full rounded bg-zinc-900 px-2 py-1 text-xs text-white outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
+              className="w-full rounded bg-[#0a0a0a] px-2 py-1 text-xs text-[#f6f4f0] outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
             />
           </div>
 
           {/* onClick Action */}
           <div>
-            <label className="text-[10px] text-zinc-500">On Click (action)</label>
+            <label className="text-[10px] text-[#666360]">On Click (action)</label>
             <input
               value={shape.runtimeBindings?.onClick || ""}
               onChange={(e) => updateShape(shape.id, {
                 runtimeBindings: { ...shape.runtimeBindings, onClick: e.target.value }
               })}
               placeholder="actionName or $expression"
-              className="w-full rounded bg-zinc-900 px-2 py-1 text-xs text-white outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
+              className="w-full rounded bg-[#0a0a0a] px-2 py-1 text-xs text-[#f6f4f0] outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
             />
           </div>
 
           {/* Visible Bind */}
           <div>
-            <label className="text-[10px] text-zinc-500">Visible When</label>
+            <label className="text-[10px] text-[#666360]">Visible When</label>
             <input
               value={shape.runtimeBindings?.visibleBind || ""}
               onChange={(e) => updateShape(shape.id, {
                 runtimeBindings: { ...shape.runtimeBindings, visibleBind: e.target.value }
               })}
               placeholder="$isLoggedIn"
-              className="w-full rounded bg-zinc-900 px-2 py-1 text-xs text-white outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
+              className="w-full rounded bg-[#0a0a0a] px-2 py-1 text-xs text-[#f6f4f0] outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
             />
           </div>
 
@@ -1860,18 +1860,18 @@ function DesignPanel() {
           {(shape.type === "frame" || shape.type === "group") && (
             <>
               <div>
-                <label className="text-[10px] text-zinc-500">Data Source (table)</label>
+                <label className="text-[10px] text-[#666360]">Data Source (table)</label>
                 <input
                   value={shape.runtimeBindings?.dataSource || ""}
                   onChange={(e) => updateShape(shape.id, {
                     runtimeBindings: { ...shape.runtimeBindings, dataSource: e.target.value }
                   })}
                   placeholder="todos"
-                  className="w-full rounded bg-zinc-900 px-2 py-1 text-xs text-white outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
+                  className="w-full rounded bg-[#0a0a0a] px-2 py-1 text-xs text-[#f6f4f0] outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
                 />
               </div>
               <div>
-                <label className="text-[10px] text-zinc-500">Repeat For / As</label>
+                <label className="text-[10px] text-[#666360]">Repeat For / As</label>
                 <div className="flex gap-1">
                   <input
                     value={shape.runtimeBindings?.repeatFor || ""}
@@ -1879,7 +1879,7 @@ function DesignPanel() {
                       runtimeBindings: { ...shape.runtimeBindings, repeatFor: e.target.value }
                     })}
                     placeholder="$todos"
-                    className="flex-1 rounded bg-zinc-900 px-2 py-1 text-xs text-white outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
+                    className="flex-1 rounded bg-[#0a0a0a] px-2 py-1 text-xs text-[#f6f4f0] outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
                   />
                   <input
                     value={shape.runtimeBindings?.repeatAs || ""}
@@ -1887,7 +1887,7 @@ function DesignPanel() {
                       runtimeBindings: { ...shape.runtimeBindings, repeatAs: e.target.value }
                     })}
                     placeholder="item"
-                    className="w-16 rounded bg-zinc-900 px-2 py-1 text-xs text-white outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
+                    className="w-16 rounded bg-[#0a0a0a] px-2 py-1 text-xs text-[#f6f4f0] outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
                   />
                 </div>
               </div>
@@ -1918,7 +1918,7 @@ function InspectPanel() {
 
   if (selectedShapes.length === 0) {
     return (
-      <div className="p-3 text-xs text-zinc-500">
+      <div className="p-3 text-xs text-[#666360]">
         Select a shape to inspect its properties.
       </div>
     );
@@ -1936,8 +1936,8 @@ function InspectPanel() {
 
   return (
     <div className="space-y-2 p-3">
-      <div className="rounded bg-zinc-800 p-2 font-mono text-[11px] text-zinc-300">
-        <div className="text-zinc-500">/* {shape.type} — {shape.name} */</div>
+      <div className="rounded bg-[#0f0f0f] p-2 font-mono text-[11px] text-[#d7d6d2]">
+        <div className="text-[#666360]">/* {shape.type} — {shape.name} */</div>
         {parent && <div className="text-zinc-600">/* relative to {parent.name || "parent"} */</div>}
         <div>position: ({Math.round(localX)}, {Math.round(localY)});</div>
         <div>size: {Math.round(shape.width)} x {Math.round(shape.height)};</div>
@@ -1991,17 +1991,17 @@ function PrototypePanel() {
   if (selectedShapes.length === 0) {
     return (
       <div className="space-y-3 p-3">
-        <p className="text-xs text-zinc-500">Select a shape to add interactions.</p>
+        <p className="text-xs text-[#666360]">Select a shape to add interactions.</p>
 
         {/* Flow starting points */}
         <div>
-          <label className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">Flows</label>
+          <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#666360]">Flows</label>
           {currentFlows.length === 0 ? (
             <p className="text-xs text-zinc-600">No flows defined</p>
           ) : (
             currentFlows.map((flow) => (
-              <div key={flow.id} className="flex items-center justify-between rounded bg-zinc-800 px-2 py-1">
-                <span className="text-xs text-zinc-300">{flow.name}</span>
+              <div key={flow.id} className="flex items-center justify-between rounded bg-[#0f0f0f] px-2 py-1">
+                <span className="text-xs text-[#d7d6d2]">{flow.name}</span>
               </div>
             ))
           )}
@@ -2015,13 +2015,13 @@ function PrototypePanel() {
 
   return (
     <div className="space-y-3 p-3">
-      <div className="text-xs font-medium text-zinc-300">{shape.name}</div>
+      <div className="text-xs font-medium text-[#d7d6d2]">{shape.name}</div>
 
       {/* Existing interactions */}
       {interactions.map((inter) => (
-        <div key={inter.id} className="rounded bg-zinc-800 p-2">
+        <div key={inter.id} className="rounded bg-[#0f0f0f] p-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-zinc-300">
+            <span className="text-xs text-[#d7d6d2]">
               {EVENT_LABELS[inter.eventType] || inter.eventType} → {ACTION_LABELS[inter.actionType] || inter.actionType}
             </span>
             <button
@@ -2032,7 +2032,7 @@ function PrototypePanel() {
             </button>
           </div>
           {inter.destination && (
-            <span className="text-[10px] text-zinc-500">
+            <span className="text-[10px] text-[#666360]">
               → {pageObjects[inter.destination]?.name || inter.destination}
             </span>
           )}
@@ -2077,7 +2077,7 @@ function PrototypePanel() {
               startingFrame: shape.id,
             })
           }
-          className="w-full rounded border border-dashed border-zinc-700 py-1.5 text-xs text-zinc-500 hover:border-indigo-500 hover:text-indigo-400"
+          className="w-full rounded border border-dashed border-white/[0.08] py-1.5 text-xs text-[#666360] hover:border-indigo-500 hover:text-indigo-400"
         >
           Set as Flow Starting Point
         </button>
@@ -2212,10 +2212,10 @@ function AddInteractionForm({
   };
 
   return (
-    <div className="space-y-1.5 rounded border border-zinc-700 p-2">
+    <div className="space-y-1.5 rounded border border-white/[0.08] p-2">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center justify-between text-[10px] uppercase tracking-wider text-zinc-500"
+        className="flex w-full items-center justify-between text-[10px] uppercase tracking-wider text-[#666360]"
       >
         <span>Add Interaction</span>
         <span>{expanded ? "▾" : "▸"}</span>
@@ -2228,7 +2228,7 @@ function AddInteractionForm({
           <select
             value={eventType}
             onChange={(e) => setEventType(e.target.value)}
-            className="w-full rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-200"
+            className="w-full rounded bg-[#0f0f0f] px-2 py-1 text-xs text-[#f6f4f0]"
           >
             <option value="click">On Click</option>
             <option value="mouse-enter">On Hover</option>
@@ -2243,22 +2243,22 @@ function AddInteractionForm({
           {/* Delay input */}
           {eventType === "after-delay" && (
             <div className="flex items-center gap-1">
-              <span className="text-[10px] text-zinc-500">Delay</span>
+              <span className="text-[10px] text-[#666360]">Delay</span>
               <input
                 type="number"
                 min={0}
                 value={delay}
                 onChange={(e) => setDelay(parseInt(e.target.value) || 0)}
-                className="w-20 rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-200 outline-none"
+                className="w-20 rounded bg-[#0f0f0f] px-2 py-0.5 text-xs text-[#f6f4f0] outline-none"
               />
-              <span className="text-[10px] text-zinc-500">ms</span>
+              <span className="text-[10px] text-[#666360]">ms</span>
             </div>
           )}
 
           {/* Key input */}
           {eventType === "key-down" && (
             <div className="flex items-center gap-1">
-              <span className="text-[10px] text-zinc-500">Key</span>
+              <span className="text-[10px] text-[#666360]">Key</span>
               <input
                 placeholder="Press a key..."
                 value={key}
@@ -2267,7 +2267,7 @@ function AddInteractionForm({
                   setKey(e.key);
                 }}
                 readOnly
-                className="w-full rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-200 outline-none focus:ring-1 focus:ring-indigo-500"
+                className="w-full rounded bg-[#0f0f0f] px-2 py-0.5 text-xs text-[#f6f4f0] outline-none focus:ring-1 focus:ring-indigo-500"
               />
             </div>
           )}
@@ -2277,7 +2277,7 @@ function AddInteractionForm({
           <select
             value={actionType}
             onChange={(e) => setActionType(e.target.value)}
-            className="w-full rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-200"
+            className="w-full rounded bg-[#0f0f0f] px-2 py-1 text-xs text-[#f6f4f0]"
           >
             <option value="navigate">Navigate To</option>
             <option value="open-overlay">Open Overlay</option>
@@ -2296,7 +2296,7 @@ function AddInteractionForm({
               <select
                 value={destination}
                 onChange={(e) => setDestination(e.target.value)}
-                className="w-full rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-200"
+                className="w-full rounded bg-[#0f0f0f] px-2 py-1 text-xs text-[#f6f4f0]"
               >
                 <option value="">Select frame...</option>
                 {frames.map((f) => (
@@ -2313,7 +2313,7 @@ function AddInteractionForm({
               placeholder="https://..."
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              className="w-full rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-200 outline-none"
+              className="w-full rounded bg-[#0f0f0f] px-2 py-1 text-xs text-[#f6f4f0] outline-none"
             />
           )}
 
@@ -2324,7 +2324,7 @@ function AddInteractionForm({
               <select
                 value={scrollTargetId}
                 onChange={(e) => setScrollTargetId(e.target.value)}
-                className="w-full rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-200"
+                className="w-full rounded bg-[#0f0f0f] px-2 py-1 text-xs text-[#f6f4f0]"
               >
                 <option value="">Select element...</option>
                 {allShapes.map((s) => (
@@ -2336,12 +2336,12 @@ function AddInteractionForm({
 
           {/* Overlay options */}
           {IS_OVERLAY_ACTION.has(actionType) && (
-            <div className="space-y-1 rounded bg-zinc-900 p-1.5">
+            <div className="space-y-1 rounded bg-[#0a0a0a] p-1.5">
               <label className="text-[9px] uppercase tracking-widest text-zinc-600">Overlay Options</label>
               <select
                 value={overlayPosType}
                 onChange={(e) => setOverlayPosType(e.target.value)}
-                className="w-full rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-200"
+                className="w-full rounded bg-[#0f0f0f] px-2 py-0.5 text-xs text-[#f6f4f0]"
               >
                 <option value="center">Center</option>
                 <option value="top-left">Top Left</option>
@@ -2352,7 +2352,7 @@ function AddInteractionForm({
                 <option value="bottom-right">Bottom Right</option>
                 <option value="manual">Manual</option>
               </select>
-              <label className="flex items-center gap-1.5 text-xs text-zinc-400">
+              <label className="flex items-center gap-1.5 text-xs text-[#a8a6a2]">
                 <input
                   type="checkbox"
                   checked={closeClickOutside}
@@ -2361,7 +2361,7 @@ function AddInteractionForm({
                 />
                 Close on outside click
               </label>
-              <label className="flex items-center gap-1.5 text-xs text-zinc-400">
+              <label className="flex items-center gap-1.5 text-xs text-[#a8a6a2]">
                 <input
                   type="checkbox"
                   checked={backgroundOverlay}
@@ -2378,7 +2378,7 @@ function AddInteractionForm({
           <select
             value={animationType}
             onChange={(e) => setAnimationType(e.target.value)}
-            className="w-full rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-200"
+            className="w-full rounded bg-[#0f0f0f] px-2 py-0.5 text-xs text-[#f6f4f0]"
           >
             <option value="instant">Instant</option>
             <option value="dissolve">Dissolve</option>
@@ -2398,14 +2398,14 @@ function AddInteractionForm({
                   max={10000}
                   value={animDuration}
                   onChange={(e) => setAnimDuration(parseInt(e.target.value) || 0)}
-                  className="w-full rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-200 outline-none"
+                  className="w-full rounded bg-[#0f0f0f] px-2 py-0.5 text-xs text-[#f6f4f0] outline-none"
                   title="Duration (ms)"
                 />
               </div>
               <select
                 value={animEasing}
                 onChange={(e) => setAnimEasing(e.target.value)}
-                className="flex-1 rounded bg-zinc-800 px-1 py-0.5 text-xs text-zinc-200"
+                className="flex-1 rounded bg-[#0f0f0f] px-1 py-0.5 text-xs text-[#f6f4f0]"
               >
                 <option value="linear">Linear</option>
                 <option value="ease">Ease</option>
@@ -2421,7 +2421,7 @@ function AddInteractionForm({
             <select
               value={animDirection}
               onChange={(e) => setAnimDirection(e.target.value)}
-              className="w-full rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-200"
+              className="w-full rounded bg-[#0f0f0f] px-2 py-0.5 text-xs text-[#f6f4f0]"
             >
               <option value="right">→ Right</option>
               <option value="left">← Left</option>
@@ -2432,7 +2432,7 @@ function AddInteractionForm({
 
           <button
             onClick={handleAdd}
-            className="w-full rounded bg-indigo-600 py-1 text-xs font-medium text-white hover:bg-indigo-500"
+            className="w-full rounded bg-indigo-600 py-1 text-xs font-medium text-[#f6f4f0] hover:bg-indigo-500"
           >
             Add Interaction
           </button>
@@ -2448,8 +2448,8 @@ function ScrollConfigSection({ shape }: { shape: PenpotShape }) {
   const scrollConfig = shape.scrollConfig || { behavior: "none" as const, overflow: "hidden" as const };
 
   return (
-    <div className="space-y-1.5 rounded border border-zinc-700 p-2">
-      <div className="text-[10px] uppercase tracking-wider text-zinc-500">Scroll Behavior</div>
+    <div className="space-y-1.5 rounded border border-white/[0.08] p-2">
+      <div className="text-[10px] uppercase tracking-wider text-[#666360]">Scroll Behavior</div>
       <select
         value={scrollConfig.behavior}
         onChange={(e) =>
@@ -2457,7 +2457,7 @@ function ScrollConfigSection({ shape }: { shape: PenpotShape }) {
             scrollConfig: { ...scrollConfig, behavior: e.target.value as any },
           } as any)
         }
-        className="w-full rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-200"
+        className="w-full rounded bg-[#0f0f0f] px-2 py-1 text-xs text-[#f6f4f0]"
       >
         <option value="none">No scrolling</option>
         <option value="vertical">Vertical</option>
@@ -2472,7 +2472,7 @@ function ScrollConfigSection({ shape }: { shape: PenpotShape }) {
               scrollConfig: { ...scrollConfig, overflow: e.target.value as any },
             } as any)
           }
-          className="w-full rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-200"
+          className="w-full rounded bg-[#0f0f0f] px-2 py-1 text-xs text-[#f6f4f0]"
         >
           <option value="hidden">Clip overflow</option>
           <option value="scroll">Show overflow</option>
@@ -2535,10 +2535,10 @@ function SizePresetsDropdown({
       <div className="flex items-center gap-1">
         <button
           onClick={() => setOpen(!open)}
-          className="flex flex-1 items-center justify-between rounded bg-zinc-800 px-2 py-1.5 text-xs text-zinc-200 hover:bg-zinc-700"
+          className="flex flex-1 items-center justify-between rounded bg-[#0f0f0f] px-2 py-1.5 text-xs text-[#f6f4f0] hover:bg-white/[0.08]"
         >
           <span>{matchLabel || "Size presets"}</span>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-zinc-500">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-[#666360]">
             <path d="M6 9l6 6 6-6" />
           </svg>
         </button>
@@ -2547,8 +2547,8 @@ function SizePresetsDropdown({
           onClick={() => setOrientation("portrait")}
           className={`rounded p-1.5 ${
             orientation === "portrait"
-              ? "bg-zinc-700 text-white"
-              : "text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+              ? "bg-white/[0.08] text-[#f6f4f0]"
+              : "text-[#666360] hover:bg-[#0f0f0f] hover:text-[#d7d6d2]"
           }`}
           title="Portrait"
         >
@@ -2560,8 +2560,8 @@ function SizePresetsDropdown({
           onClick={() => setOrientation("landscape")}
           className={`rounded p-1.5 ${
             orientation === "landscape"
-              ? "bg-zinc-700 text-white"
-              : "text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+              ? "bg-white/[0.08] text-[#f6f4f0]"
+              : "text-[#666360] hover:bg-[#0f0f0f] hover:text-[#d7d6d2]"
           }`}
           title="Landscape"
         >
@@ -2573,10 +2573,10 @@ function SizePresetsDropdown({
 
       {/* Dropdown */}
       {open && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-[70vh] overflow-y-auto rounded-lg border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
+        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-[70vh] overflow-y-auto rounded-lg border border-white/[0.08] bg-[#0a0a0a] py-1 shadow-xl">
           {DEVICE_PRESETS.map((group) => (
             <div key={group.label}>
-              <div className="sticky top-0 bg-zinc-900 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+              <div className="sticky top-0 bg-[#0a0a0a] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#666360]">
                 {group.label}
               </div>
               {group.presets.map((preset) => {
@@ -2587,12 +2587,12 @@ function SizePresetsDropdown({
                   <button
                     key={`${group.label}-${preset.name}`}
                     onClick={() => applyPreset(preset)}
-                    className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-xs hover:bg-zinc-800 ${
-                      isActive ? "text-indigo-400" : "text-zinc-300"
+                    className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-xs hover:bg-[#0f0f0f] ${
+                      isActive ? "text-indigo-400" : "text-[#d7d6d2]"
                     }`}
                   >
                     <span>{preset.name}</span>
-                    <span className="text-zinc-500">{w} x {h}</span>
+                    <span className="text-[#666360]">{w} x {h}</span>
                   </button>
                 );
               })}
@@ -2615,13 +2615,13 @@ function PropertyInput({
   onChange: (v: number) => void;
 }) {
   return (
-    <div className="flex items-center rounded bg-zinc-800 px-2 py-1">
-      <span className="mr-1 text-[10px] text-zinc-500">{label}</span>
+    <div className="flex items-center rounded bg-[#0f0f0f] px-2 py-1">
+      <span className="mr-1 text-[10px] text-[#666360]">{label}</span>
       <input
         type="number"
         value={Math.round(value * 100) / 100}
         onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-        className="w-full bg-transparent text-right text-xs text-zinc-200 outline-none"
+        className="w-full bg-transparent text-right text-xs text-[#f6f4f0] outline-none"
       />
     </div>
   );

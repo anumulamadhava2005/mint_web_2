@@ -59,7 +59,7 @@ export default function Projects() {
   ];
 
   return (
-    <div className="relative h-screen overflow-hidden bg-[#0a0a0a] text-white selection:bg-emerald-500/30">
+    <div className="relative h-screen overflow-hidden bg-[#0a0a0a] text-[#f6f4f0] selection:bg-emerald-500/30">
       {/* Dynamic Ambient Background */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(16,185,129,0.12),transparent_40%),radial-gradient(ellipse_at_bottom_right,rgba(59,130,246,0.1),transparent_40%)]" />
       <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] mix-blend-overlay pointer-events-none" />
@@ -70,11 +70,11 @@ export default function Projects() {
           {/* Sidebar */}
           <aside className="flex flex-col h-full">
             <div className="flex items-center gap-3 pb-8 pl-2">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-sm font-bold text-white shadow-lg shadow-emerald-900/20">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-sm font-bold text-[#f6f4f0] shadow-lg shadow-emerald-900/20">
                 {initial}
               </div>
               <div className="min-w-0">
-                <h2 className="truncate text-sm font-semibold tracking-tight text-white/90">{displayName}</h2>
+                <h2 className="truncate text-sm font-semibold tracking-tight text-[#f6f4f0]">{displayName}</h2>
                 <p className="text-[11px] font-medium tracking-widest text-emerald-400/80 uppercase">Mint Studio</p>
               </div>
             </div>
@@ -82,7 +82,7 @@ export default function Projects() {
             <div className="flex flex-col gap-6">
               {/* Search */}
               <div className="group relative">
-                <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-white/30 group-focus-within:text-emerald-400 transition-colors">
+                <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-[#666360] group-focus-within:text-emerald-400 transition-colors">
                   <Search size={16} />
                 </div>
                 <input
@@ -90,7 +90,7 @@ export default function Projects() {
                   placeholder="Search projects..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="w-full rounded-2xl bg-white/[0.03] border border-white/[0.05] py-3 pl-10 pr-4 text-sm text-white placeholder:text-white/30 outline-none transition-all focus:bg-white/[0.06] focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10"
+                  className="w-full rounded-2xl bg-white/[0.04] border border-white/[0.06] py-3 pl-10 pr-4 text-sm text-[#f6f4f0] placeholder:text-[#666360] outline-none transition-all focus:bg-white/[0.06] focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/10"
                 />
               </div>
 
@@ -100,8 +100,8 @@ export default function Projects() {
                   onClick={() => setActiveTab("recents")}
                   className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 ${
                     activeTab === "recents"
-                      ? "bg-white/[0.08] text-white shadow-sm"
-                      : "text-white/50 hover:bg-white/[0.03] hover:text-white/80"
+                      ? "bg-white/[0.08] text-[#f6f4f0] shadow-sm"
+                      : "text-[#a8a6a2] hover:bg-white/[0.04] hover:text-[#d7d6d2]"
                   }`}
                 >
                   <Grid2X2 size={18} className={activeTab === "recents" ? "text-emerald-400" : ""} />
@@ -111,8 +111,8 @@ export default function Projects() {
                   onClick={() => setActiveTab("community")}
                   className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 ${
                     activeTab === "community"
-                      ? "bg-white/[0.08] text-white shadow-sm"
-                      : "text-white/50 hover:bg-white/[0.03] hover:text-white/80"
+                      ? "bg-white/[0.08] text-[#f6f4f0] shadow-sm"
+                      : "text-[#a8a6a2] hover:bg-white/[0.04] hover:text-[#d7d6d2]"
                   }`}
                 >
                   <Sparkles size={18} className={activeTab === "community" ? "text-blue-400" : ""} />
@@ -125,7 +125,7 @@ export default function Projects() {
               <button
                 onClick={handleLogout}
                 type="button"
-                className="group flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm font-medium text-white/50 transition-all hover:bg-red-500/10 hover:text-red-400"
+                className="group flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm font-medium text-[#a8a6a2] transition-all hover:bg-red-500/10 hover:text-red-400"
               >
                 <span className="flex items-center gap-3">
                   <LogOut size={16} className="group-hover:-translate-x-0.5 transition-transform" />
@@ -137,7 +137,7 @@ export default function Projects() {
 
           {/* Main Content Area */}
           <main className="flex min-w-0 min-h-0 flex-col h-full">
-            <section className="flex-1 flex flex-col rounded-[32px] bg-[#0f0f0f]/80 border border-white/[0.04] shadow-2xl shadow-black/50 backdrop-blur-2xl overflow-hidden">
+            <section className="flex-1 flex flex-col rounded-[32px] bg-[#0f0f0f]/80 border border-white/[0.06] shadow-2xl shadow-black/50 backdrop-blur-2xl overflow-hidden">
               {activeTab === "recents" ? (
                 <ProjectsContent search={search} />
               ) : (

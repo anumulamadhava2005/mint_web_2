@@ -83,14 +83,14 @@ export default function  ProjectsContent({ search = "" }: Props) {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header - Fixed */}
-      <div className="flex-none flex items-end justify-between gap-4 px-6 sm:px-10 pt-6 sm:pt-8 pb-6 border-b border-white/[0.04] bg-white/[0.01]">
+      <div className="flex-none flex items-end justify-between gap-4 px-6 sm:px-10 pt-6 sm:pt-8 pb-6 border-b border-white/[0.06] bg-white/[0.02]">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white mb-1">Recent Work</h1>
-          <p className="text-sm text-white/40">Manage and create your design projects.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-[#f6f4f0] mb-1">Recent Work</h1>
+          <p className="text-sm text-[#a8a6a2]">Manage and create your design projects.</p>
         </div>
         <button
           onClick={() => setDialogOpen(true)}
-          className="group inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] active:scale-95 border border-emerald-400/20"
+          className="group inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-[#f6f4f0] shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] active:scale-95 border border-emerald-400/20"
         >
           New Project
           <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
@@ -107,12 +107,12 @@ export default function  ProjectsContent({ search = "" }: Props) {
             </svg>
           </div>
         ) : filteredProjects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-[32px] border border-dashed border-white/[0.05] bg-white/[0.01] py-24 text-center mt-4">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/[0.03] text-white/20">
+          <div className="flex flex-col items-center justify-center rounded-[32px] border border-dashed border-white/[0.06] bg-white/[0.02] py-24 text-center mt-4">
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/[0.04] text-[#666360]">
               <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
             </div>
-            <p className="text-base font-medium text-white/80">No projects found</p>
-            <p className="mt-1.5 text-sm text-white/40 max-w-sm">
+            <p className="text-base font-medium text-[#d7d6d2]">No projects found</p>
+            <p className="mt-1.5 text-sm text-[#a8a6a2] max-w-sm">
               {search ? "We couldn't find any projects matching your search." : "Get started by creating your first design project."}
             </p>
           </div>
@@ -126,7 +126,7 @@ export default function  ProjectsContent({ search = "" }: Props) {
                 <div
                   key={p.id}
                   onClick={() => router.push(`/projects/${p.id}`)}
-                  className="group relative cursor-pointer overflow-hidden rounded-[24px] border border-white/[0.04] bg-white/[0.02] transition-all duration-300 hover:-translate-y-1.5 hover:bg-white/[0.04] hover:border-white/10 hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.5)]"
+                  className="group relative cursor-pointer overflow-hidden rounded-[24px] border border-white/[0.06] bg-white/[0.02] transition-all duration-300 hover:-translate-y-1.5 hover:bg-white/[0.04] hover:border-white/10 hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.5)]"
                 >
                   {/* Thumbnail */}
                   <div className="relative aspect-video w-full overflow-hidden bg-black/40">
@@ -138,14 +138,14 @@ export default function  ProjectsContent({ search = "" }: Props) {
                       />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0.05),transparent)]">
-                        <span className="text-5xl font-semibold text-white/10 group-hover:scale-110 transition-transform duration-500 ease-out">{initial}</span>
+                        <span className="text-5xl font-semibold text-[#55524f] group-hover:scale-110 transition-transform duration-500 ease-out">{initial}</span>
                       </div>
                     )}
                     {/* Gradient Overlay for contrast */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-60" />
                     
                     {/* Floating Date Badge */}
-                    <div className="absolute top-3 right-3 rounded-lg bg-black/40 backdrop-blur-md px-2.5 py-1 text-[10px] font-medium text-white/80 border border-white/10">
+                    <div className="absolute top-3 right-3 rounded-lg bg-black/40 backdrop-blur-md px-2.5 py-1 text-[10px] font-medium text-[#d7d6d2] border border-white/10">
                       {new Date(p.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                     </div>
                   </div>
@@ -153,30 +153,30 @@ export default function  ProjectsContent({ search = "" }: Props) {
                   {/* Card Content */}
                   <div className="p-5">
                     <div className="flex items-start justify-between gap-3 mb-2">
-                      <h3 className="truncate text-base font-semibold text-white/90 group-hover:text-emerald-400 transition-colors">{p.name}</h3>
+                      <h3 className="truncate text-base font-semibold text-[#f6f4f0] group-hover:text-emerald-400 transition-colors">{p.name}</h3>
                       <span className="shrink-0 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-emerald-400">
                         open
                       </span>
                     </div>
 
                     {p.description ? (
-                      <p className="line-clamp-2 text-xs leading-relaxed text-white/40 mb-4 h-8">{p.description}</p>
+                      <p className="line-clamp-2 text-xs leading-relaxed text-[#a8a6a2] mb-4 h-8">{p.description}</p>
                     ) : (
-                      <p className="text-xs text-white/20 mb-4 h-8 italic">No description provided.</p>
+                      <p className="text-xs text-[#666360] mb-4 h-8 italic">No description provided.</p>
                     )}
 
-                    <div className="flex items-center justify-between pt-4 border-t border-white/[0.04]">
+                    <div className="flex items-center justify-between pt-4 border-t border-white/[0.06]">
                       <div className="flex items-center gap-2">
-                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-gray-700 to-gray-900 text-[9px] font-bold text-white shadow-inner">
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-gray-700 to-gray-900 text-[9px] font-bold text-[#f6f4f0] shadow-inner">
                           {initial}
                         </div>
-                        <p className="truncate text-xs text-white/50">{ownerName}</p>
+                        <p className="truncate text-xs text-[#a8a6a2]">{ownerName}</p>
                       </div>
 
-                      <div className="flex items-center gap-3 text-[11px] text-white/40">
+                      <div className="flex items-center gap-3 text-[11px] text-[#a8a6a2]">
                         <button 
                           onClick={(e) => togglePublish(p, e)}
-                          className={`flex items-center gap-1.5 transition-colors mr-2 ${p.is_public ? 'text-blue-400 hover:text-blue-300' : 'hover:text-white/80'}`}
+                          className={`flex items-center gap-1.5 transition-colors mr-2 ${p.is_public ? 'text-blue-400 hover:text-blue-300' : 'hover:text-[#d7d6d2]'}`}
                           title={p.is_public ? "Unpublish from Community" : "Publish to Community"}
                         >
                           <Globe size={12} className={p.is_public ? "animate-pulse" : ""} />

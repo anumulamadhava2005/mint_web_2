@@ -58,7 +58,7 @@ function ConfidenceBadge({ level }: { level: "high" | "medium" | "low" }) {
   const config = {
     high: { label: "High confidence", bg: "bg-green-500/20", text: "text-green-400", dot: "bg-green-400" },
     medium: { label: "Medium confidence", bg: "bg-amber-500/20", text: "text-amber-400", dot: "bg-amber-400" },
-    low: { label: "Low confidence", bg: "bg-zinc-500/20", text: "text-zinc-400", dot: "bg-zinc-400" },
+    low: { label: "Low confidence", bg: "bg-zinc-500/20", text: "text-[#a8a6a2]", dot: "bg-zinc-400" },
   }[level];
 
   return (
@@ -74,13 +74,13 @@ function ScoreBar({ score, maxScore = 100 }: { score: number; maxScore?: number 
   const pct = Math.round((score / maxScore) * 100);
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1.5 w-20 rounded-full bg-zinc-700">
+      <div className="h-1.5 w-20 rounded-full bg-white/[0.08]">
         <div
           className="h-1.5 rounded-full bg-indigo-500 transition-all duration-300"
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="text-[10px] tabular-nums text-zinc-500">{score}</span>
+      <span className="text-[10px] tabular-nums text-[#666360]">{score}</span>
     </div>
   );
 }
@@ -508,15 +508,15 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
       {/* Dialog */}
       <div
         ref={dialogRef}
-        className="relative w-full max-w-lg rounded-2xl border border-white/10 bg-zinc-900 shadow-2xl"
+        className="relative w-full max-w-lg rounded-2xl border border-white/10 bg-[#0a0a0a] shadow-2xl"
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/5 px-5 py-4">
           <div>
-            <h2 className="text-base font-semibold text-white">
+            <h2 className="text-base font-semibold text-[#f6f4f0]">
               {step === "orphans" ? "Unreachable Screens" : "Export to Code"}
             </h2>
-            <p className="mt-0.5 text-xs text-zinc-400">
+            <p className="mt-0.5 text-xs text-[#a8a6a2]">
               {step === "orphans"
                 ? "These screens have no navigation pointing to them"
                 : "Choose a target framework for your design"}
@@ -524,7 +524,7 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
+            className="rounded-lg p-1.5 text-[#a8a6a2] transition-colors hover:bg-[#0f0f0f] hover:text-[#f6f4f0]"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 6 6 18M6 6l12 12" />
@@ -576,17 +576,17 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
                       }`}
                     >
                       {isRecommended && (
-                        <span className="absolute -top-1.5 right-2 rounded-full bg-indigo-500 px-1.5 py-px text-[9px] font-semibold text-white">
+                        <span className="absolute -top-1.5 right-2 rounded-full bg-indigo-500 px-1.5 py-px text-[9px] font-semibold text-[#f6f4f0]">
                           AI Pick
                         </span>
                       )}
                       <div className="flex items-center gap-2">
                         <span className="text-base">{info.icon}</span>
-                        <span className="text-sm font-medium text-zinc-200">
+                        <span className="text-sm font-medium text-[#f6f4f0]">
                           {fw.displayName}
                         </span>
                       </div>
-                      <p className="text-[11px] leading-snug text-zinc-500">
+                      <p className="text-[11px] leading-snug text-[#666360]">
                         {info.description}
                       </p>
                       <ScoreBar score={fw.score} />
@@ -601,7 +601,7 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
               <div className="px-5 pb-2">
                 <button
                   onClick={() => setShowDetails(!showDetails)}
-                  className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-300"
+                  className="flex items-center gap-1 text-[11px] text-[#666360] hover:text-[#d7d6d2]"
                 >
                   <svg
                     width="12"
@@ -638,8 +638,8 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
                     <div className="mt-3 space-y-1.5">
                       {rankings.filter((r) => r.reasons.length > 0).map((r) => (
                         <div key={r.framework} className="text-[10px]">
-                          <span className="font-medium text-zinc-400">{r.displayName}:</span>{" "}
-                          <span className="text-zinc-500">{r.reasons.join(" · ")}</span>
+                          <span className="font-medium text-[#a8a6a2]">{r.displayName}:</span>{" "}
+                          <span className="text-[#666360]">{r.reasons.join(" · ")}</span>
                         </div>
                       ))}
                     </div>
@@ -680,11 +680,11 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
                     }`}
                   >
                     <div className="flex items-center gap-2.5">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-zinc-500">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-[#666360]">
                         <rect x="2" y="2" width="20" height="20" rx="2" />
                         <path d="M2 8h20M8 2v20" />
                       </svg>
-                      <span className="text-sm text-zinc-200">{frame.name}</span>
+                      <span className="text-sm text-[#f6f4f0]">{frame.name}</span>
                     </div>
                     <button
                       onClick={() => {
@@ -700,7 +700,7 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
                       }}
                       className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-colors ${
                         isExcluded
-                          ? "bg-zinc-700 text-zinc-400 hover:bg-zinc-600"
+                          ? "bg-white/[0.08] text-[#a8a6a2] hover:bg-zinc-600"
                           : "bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30"
                       }`}
                     >
@@ -722,21 +722,21 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
 
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-white/5 px-5 py-4">
-          <p className="text-[11px] text-zinc-500">
+          <p className="text-[11px] text-[#666360]">
             {file?.name || "Untitled"} · Page {currentPageId ? "1" : "—"}
           </p>
           <div className="flex items-center gap-2">
             {step === "orphans" && (
               <button
                 onClick={() => setStep("framework")}
-                className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:text-white"
+                className="rounded-lg px-3 py-1.5 text-xs font-medium text-[#a8a6a2] transition-colors hover:text-[#f6f4f0]"
               >
                 ← Back
               </button>
             )}
             <button
               onClick={onClose}
-              className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:text-white"
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-[#a8a6a2] transition-colors hover:text-[#f6f4f0]"
             >
               Cancel
             </button>
@@ -746,8 +746,8 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
                 disabled={!selected || converting}
                 className={`flex items-center gap-2 rounded-lg px-4 py-1.5 text-xs font-medium transition-all ${
                   !selected || converting
-                    ? "cursor-not-allowed bg-zinc-700 text-zinc-500"
-                    : "bg-indigo-600 text-white hover:bg-indigo-500"
+                    ? "cursor-not-allowed bg-white/[0.08] text-[#666360]"
+                    : "bg-indigo-600 text-[#f6f4f0] hover:bg-indigo-500"
                 }`}
               >
                 {converting ? (
@@ -770,8 +770,8 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
                 disabled={converting}
                 className={`flex items-center gap-2 rounded-lg px-4 py-1.5 text-xs font-medium transition-all ${
                   converting
-                    ? "cursor-not-allowed bg-zinc-700 text-zinc-500"
-                    : "bg-indigo-600 text-white hover:bg-indigo-500"
+                    ? "cursor-not-allowed bg-white/[0.08] text-[#666360]"
+                    : "bg-indigo-600 text-[#f6f4f0] hover:bg-indigo-500"
                 }`}
               >
                 {converting ? (
@@ -800,8 +800,8 @@ export default function ConvertDialog({ open, onClose }: ConvertDialogProps) {
 
 function Detail({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="flex justify-between text-zinc-400">
-      <span className="text-zinc-500">{label}</span>
+    <div className="flex justify-between text-[#a8a6a2]">
+      <span className="text-[#666360]">{label}</span>
       <span className="font-medium">{String(value)}</span>
     </div>
   );

@@ -84,18 +84,18 @@ export default function ProjectSettingsPage({ params }: { params: Promise<{ id: 
   const runtimeTables: any[] = dashData?.runtimeSchema?.schema?.database?.tables || [];
 
   if (loading) return (
-    <div className="flex min-h-screen items-center justify-center bg-[#171717]">
+    <div className="flex min-h-screen items-center justify-center bg-[#0a0a0a]">
       <div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
     </div>
   );
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#171717] text-[#ededed]">
+    <div className="flex h-screen overflow-hidden bg-[#0a0a0a] text-[#f6f4f0]">
       {/* Sidebar */}
-      <aside className="flex w-[220px] shrink-0 flex-col bg-[#1c1c1c] border-r border-[#2a2a2a]">
-        <div className="flex items-center gap-2.5 px-4 h-[49px] border-b border-[#2a2a2a]">
+      <aside className="flex w-[220px] shrink-0 flex-col bg-[#0f0f0f] border-r border-[#1f1f1f]">
+        <div className="flex items-center gap-2.5 px-4 h-[49px] border-b border-[#1f1f1f]">
           <button onClick={() => router.push(`/projects/${projectId}`)}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#666] hover:text-[#ededed] hover:bg-[#2a2a2a] transition-colors">
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#777572] hover:text-[#f6f4f0] hover:bg-[#1f1f1f] transition-colors">
             <ArrowLeft size={15} />
           </button>
           <span className="text-[13px] font-medium truncate">{projectName}</span>
@@ -130,9 +130,9 @@ export default function ProjectSettingsPage({ params }: { params: Promise<{ id: 
 
       {/* Main */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-[49px] shrink-0 items-center justify-between border-b border-[#2a2a2a] bg-[#1c1c1c] px-5">
+        <header className="flex h-[49px] shrink-0 items-center justify-between border-b border-[#1f1f1f] bg-[#0f0f0f] px-5">
           <div className="flex items-center gap-3">
-            <span className="text-[13px] font-medium text-[#888]">{projectName}</span>
+            <span className="text-[13px] font-medium text-[#a8a6a2]">{projectName}</span>
             <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400">Active</span>
           </div>
           <div className="flex items-center gap-2">
@@ -169,7 +169,7 @@ export default function ProjectSettingsPage({ params }: { params: Promise<{ id: 
 function SidebarGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="px-3 pt-4 pb-1.5"><span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#555]">{label}</span></div>
+      <div className="px-3 pt-4 pb-1.5"><span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#666360]">{label}</span></div>
       {children}
     </div>
   );
@@ -178,10 +178,10 @@ function SidebarGroup({ label, children }: { label: string; children: React.Reac
 function NavItem({ icon: Icon, label, active, onClick, badge }: { icon: any; label: string; active?: boolean; onClick: () => void; badge?: string }) {
   return (
     <button onClick={onClick}
-      className={`group flex w-full items-center gap-2.5 px-4 py-[7px] text-[13px] transition-colors ${active ? "bg-[#2a2a2a] text-[#ededed] font-medium" : "text-[#888] hover:bg-[#232323] hover:text-[#ccc]"}`}>
-      <Icon size={15} className={active ? "text-emerald-400" : "text-[#555] group-hover:text-[#888]"} />
+      className={`group flex w-full items-center gap-2.5 px-4 py-[7px] text-[13px] transition-colors ${active ? "bg-[#1f1f1f] text-[#f6f4f0] font-medium" : "text-[#a8a6a2] hover:bg-[#161616] hover:text-[#d7d6d2]"}`}>
+      <Icon size={15} className={active ? "text-emerald-400" : "text-[#666360] group-hover:text-[#a8a6a2]"} />
       <span className="flex-1 text-left truncate">{label}</span>
-      {badge && <span className="text-[10px] text-[#555] bg-[#252525] px-1.5 py-0.5 rounded">{badge}</span>}
+      {badge && <span className="text-[10px] text-[#666360] bg-[#1a1a1a] px-1.5 py-0.5 rounded">{badge}</span>}
     </button>
   );
 }
@@ -198,17 +198,17 @@ function OverviewTab({ projectId, projectName, stats }: { projectId: string; pro
           { label: "Commits", value: stats?.commitCount ?? "—", icon: GitCommit, color: "text-emerald-400 bg-emerald-400/10" },
           { label: "Tables", value: stats?.totalTables ?? "—", icon: Database, color: "text-amber-400 bg-amber-400/10" },
         ].map((s) => (
-          <div key={s.label} className="rounded-lg border border-[#2a2a2a] bg-[#1c1c1c] p-4 flex items-center gap-2.5">
+          <div key={s.label} className="rounded-lg border border-[#1f1f1f] bg-[#0f0f0f] p-4 flex items-center gap-2.5">
             <div className={`flex h-8 w-8 items-center justify-center rounded-md ${s.color}`}><s.icon size={14} /></div>
-            <div><p className="text-xl font-semibold tabular-nums">{s.value}</p><p className="text-[11px] text-[#555]">{s.label}</p></div>
+            <div><p className="text-xl font-semibold tabular-nums">{s.value}</p><p className="text-[11px] text-[#666360]">{s.label}</p></div>
           </div>
         ))}
       </div>
       <div>
-        <h3 className="text-[13px] font-medium text-[#888] mb-3">Quick Actions</h3>
-        <a href={`/projects/${projectId}`} className="group flex items-center gap-3 rounded-lg border border-[#2a2a2a] bg-[#1c1c1c] p-3.5 hover:border-[#333] hover:bg-[#222] transition-all w-fit">
+        <h3 className="text-[13px] font-medium text-[#a8a6a2] mb-3">Quick Actions</h3>
+        <a href={`/projects/${projectId}`} className="group flex items-center gap-3 rounded-lg border border-[#1f1f1f] bg-[#0f0f0f] p-3.5 hover:border-[#282828] hover:bg-[#161616] transition-all w-fit">
           <div className="flex h-8 w-8 items-center justify-center rounded-md bg-emerald-400/10 text-emerald-400"><ExternalLink size={14} /></div>
-          <div><p className="text-[13px] font-medium">Open Editor</p><p className="text-[11px] text-[#555]">Design and build</p></div>
+          <div><p className="text-[13px] font-medium">Open Editor</p><p className="text-[11px] text-[#666360]">Design and build</p></div>
         </a>
       </div>
     </div>
@@ -219,13 +219,13 @@ function OverviewTab({ projectId, projectName, stats }: { projectId: string; pro
 function SchemaTab({ tables, loading, onRefresh }: { tables: any[]; loading: boolean; onRefresh: () => void }) {
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-[#2a2a2a]">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-[#1f1f1f]">
         <div className="flex items-center gap-2">
           <Database size={15} className="text-emerald-400" />
           <span className="text-[14px] font-semibold">Database Schema</span>
-          <span className="text-[11px] text-[#555] ml-2">Drag to rearrange • Scroll to zoom</span>
+          <span className="text-[11px] text-[#666360] ml-2">Drag to rearrange • Scroll to zoom</span>
         </div>
-        <button onClick={onRefresh} className="flex items-center gap-1.5 rounded-md bg-[#2a2a2a] border border-[#333] px-3 py-1.5 text-[11px] text-[#888] hover:text-[#ccc] transition-colors">
+        <button onClick={onRefresh} className="flex items-center gap-1.5 rounded-md bg-[#1f1f1f] border border-[#282828] px-3 py-1.5 text-[11px] text-[#a8a6a2] hover:text-[#d7d6d2] transition-colors">
           <RefreshCw size={12} /> Refresh
         </button>
       </div>
@@ -235,7 +235,7 @@ function SchemaTab({ tables, loading, onRefresh }: { tables: any[]; loading: boo
         ) : tables.length > 0 ? (
           <div className="h-full"><SchemaVisualizer tables={tables} /></div>
         ) : (
-          <div className="flex flex-col items-center justify-center h-full text-[#555]"><Database size={28} className="mb-2 text-[#333]" /><p className="text-[13px]">No tables defined</p><p className="text-[11px] text-[#444] mt-1">Add tables in the Backend panel of the editor</p></div>
+          <div className="flex flex-col items-center justify-center h-full text-[#666360]"><Database size={28} className="mb-2 text-[#282828]" /><p className="text-[13px]">No tables defined</p><p className="text-[11px] text-[#333] mt-1">Add tables in the Backend panel of the editor</p></div>
         )}
       </div>
     </div>
@@ -250,40 +250,40 @@ function TableDataTab({ tableName, data, onRefresh }: { tableName: string; data?
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-[#2a2a2a]">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-[#1f1f1f]">
         <div className="flex items-center gap-2">
           <Table2 size={15} className="text-emerald-400" />
           <span className="text-[14px] font-semibold">{tableName}</span>
-          <span className="rounded-md bg-[#252525] px-2 py-0.5 text-[10px] text-[#666] font-medium ml-1">{tableData?.rowCount ?? 0} rows</span>
+          <span className="rounded-md bg-[#1a1a1a] px-2 py-0.5 text-[10px] text-[#777572] font-medium ml-1">{tableData?.rowCount ?? 0} rows</span>
         </div>
-        <button onClick={onRefresh} className="flex items-center gap-1.5 rounded-md bg-[#2a2a2a] border border-[#333] px-3 py-1.5 text-[11px] text-[#888] hover:text-[#ccc] transition-colors">
+        <button onClick={onRefresh} className="flex items-center gap-1.5 rounded-md bg-[#1f1f1f] border border-[#282828] px-3 py-1.5 text-[11px] text-[#a8a6a2] hover:text-[#d7d6d2] transition-colors">
           <RefreshCw size={12} /> Refresh
         </button>
       </div>
 
       <div className="flex-1 min-h-0 overflow-auto">
         {rows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-[#555]">
-            <Table2 size={28} className="mb-2 text-[#333]" />
-            <p className="text-[13px]">No rows in <span className="text-[#888] font-medium">{tableName}</span></p>
-            <p className="text-[11px] text-[#444] mt-1">Data will appear here once records are inserted</p>
+          <div className="flex flex-col items-center justify-center h-full text-[#666360]">
+            <Table2 size={28} className="mb-2 text-[#282828]" />
+            <p className="text-[13px]">No rows in <span className="text-[#a8a6a2] font-medium">{tableName}</span></p>
+            <p className="text-[11px] text-[#333] mt-1">Data will appear here once records are inserted</p>
           </div>
         ) : (
           <table className="w-full text-[12px]">
             <thead className="sticky top-0 z-10">
-              <tr className="bg-[#1c1c1c] border-b border-[#2a2a2a]">
-                <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-[#555] w-[50px]">#</th>
+              <tr className="bg-[#0f0f0f] border-b border-[#1f1f1f]">
+                <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-[#666360] w-[50px]">#</th>
                 {columns.map((c) => (
-                  <th key={c} className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-[#555] whitespace-nowrap">{c}</th>
+                  <th key={c} className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-[#666360] whitespace-nowrap">{c}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {rows.map((row: any, i: number) => (
-                <tr key={i} className="border-b border-[#222] hover:bg-[#1e1e1e] transition-colors">
-                  <td className="px-4 py-2.5 text-[#444] font-mono">{i + 1}</td>
+                <tr key={i} className="border-b border-[#161616] hover:bg-[#111111] transition-colors">
+                  <td className="px-4 py-2.5 text-[#333] font-mono">{i + 1}</td>
                   {columns.map((c) => (
-                    <td key={c} className="px-4 py-2.5 text-[#999] whitespace-nowrap max-w-[300px] truncate font-mono">
+                    <td key={c} className="px-4 py-2.5 text-[#b5b3af] whitespace-nowrap max-w-[300px] truncate font-mono">
                       {fmtCell(row[c])}
                     </td>
                   ))}
@@ -313,22 +313,22 @@ function AccessTab({ isPublic, setIsPublic, allowPublicEdit, setAllowPublicEdit,
     <div className="p-6 space-y-6 max-w-2xl">
       <h2 className="text-[15px] font-semibold">Access Control</h2>
       <div className="space-y-2">
-        <label className="text-[11px] font-semibold uppercase tracking-wider text-[#555]">Visibility</label>
+        <label className="text-[11px] font-semibold uppercase tracking-wider text-[#666360]">Visibility</label>
         <div onClick={() => { setIsPublic(false); setAllowPublicEdit(false); }}
-          className={`flex cursor-pointer items-center gap-3.5 rounded-lg border p-4 transition-all ${!isPublic ? "bg-[#1c1c1c] border-emerald-500/30" : "bg-[#1c1c1c] border-[#2a2a2a] hover:border-[#333]"}`}>
-          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${!isPublic ? "bg-emerald-400/10 text-emerald-400" : "bg-[#2a2a2a] text-[#555]"}`}><Lock size={15} /></div>
-          <div className="flex-1"><p className="text-[13px] font-medium">Private</p><p className="text-[11px] text-[#555] mt-0.5">Only you can access</p></div>
+          className={`flex cursor-pointer items-center gap-3.5 rounded-lg border p-4 transition-all ${!isPublic ? "bg-[#0f0f0f] border-emerald-500/30" : "bg-[#0f0f0f] border-[#1f1f1f] hover:border-[#282828]"}`}>
+          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${!isPublic ? "bg-emerald-400/10 text-emerald-400" : "bg-[#1f1f1f] text-[#666360]"}`}><Lock size={15} /></div>
+          <div className="flex-1"><p className="text-[13px] font-medium">Private</p><p className="text-[11px] text-[#666360] mt-0.5">Only you can access</p></div>
           {!isPublic && <div className="h-2 w-2 rounded-full bg-emerald-400" />}
         </div>
         <div onClick={() => setIsPublic(true)}
-          className={`flex cursor-pointer items-start gap-3.5 rounded-lg border p-4 transition-all ${isPublic ? "bg-[#1c1c1c] border-indigo-500/30" : "bg-[#1c1c1c] border-[#2a2a2a] hover:border-[#333]"}`}>
-          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${isPublic ? "bg-indigo-400/10 text-indigo-400" : "bg-[#2a2a2a] text-[#555]"}`}><Globe size={15} /></div>
+          className={`flex cursor-pointer items-start gap-3.5 rounded-lg border p-4 transition-all ${isPublic ? "bg-[#0f0f0f] border-indigo-500/30" : "bg-[#0f0f0f] border-[#1f1f1f] hover:border-[#282828]"}`}>
+          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${isPublic ? "bg-indigo-400/10 text-indigo-400" : "bg-[#1f1f1f] text-[#666360]"}`}><Globe size={15} /></div>
           <div className="flex-1">
-            <p className="text-[13px] font-medium">Public</p><p className="text-[11px] text-[#555] mt-0.5">Visible in community feed</p>
+            <p className="text-[13px] font-medium">Public</p><p className="text-[11px] text-[#666360] mt-0.5">Visible in community feed</p>
             {isPublic && (
-              <div className="mt-3"><label className="text-[11px] text-[#666] mb-1.5 block">Permissions</label>
+              <div className="mt-3"><label className="text-[11px] text-[#777572] mb-1.5 block">Permissions</label>
                 <select value={allowPublicEdit ? "edit" : "view"} onChange={(e) => setAllowPublicEdit(e.target.value === "edit")} onClick={(e) => e.stopPropagation()}
-                  className="w-full rounded-md border border-[#333] bg-[#222] px-3 py-2 text-[12px] text-[#ccc] outline-none focus:border-indigo-500/50">
+                  className="w-full rounded-md border border-[#282828] bg-[#161616] px-3 py-2 text-[12px] text-[#d7d6d2] outline-none focus:border-indigo-500/50">
                   <option value="view">View Only</option><option value="edit">Can Edit</option>
                 </select>
               </div>
@@ -338,12 +338,12 @@ function AccessTab({ isPublic, setIsPublic, allowPublicEdit, setAllowPublicEdit,
         </div>
       </div>
       <div className="space-y-2">
-        <label className="text-[11px] font-semibold uppercase tracking-wider text-[#555]">Share Link</label>
+        <label className="text-[11px] font-semibold uppercase tracking-wider text-[#666360]">Share Link</label>
         <div className="flex items-center gap-2">
           <input readOnly value={typeof window !== "undefined" ? `${window.location.origin}/projects/${projectId}` : ""}
-            className="flex-1 rounded-md border border-[#2a2a2a] bg-[#222] px-3 py-2 text-[12px] text-[#888] font-mono outline-none" />
+            className="flex-1 rounded-md border border-[#1f1f1f] bg-[#161616] px-3 py-2 text-[12px] text-[#a8a6a2] font-mono outline-none" />
           <button onClick={handleCopyLink}
-            className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-[12px] font-medium transition-colors ${copied ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-[#2a2a2a] text-[#888] border border-[#333]"}`}>
+            className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-[12px] font-medium transition-colors ${copied ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-[#1f1f1f] text-[#a8a6a2] border border-[#282828]"}`}>
             {copied ? <Check size={13} /> : <Copy size={13} />} {copied ? "Copied" : "Copy"}
           </button>
         </div>
@@ -360,20 +360,20 @@ function DangerTab({ showDeleteConfirm, setShowDeleteConfirm, deleting, handleDe
   return (
     <div className="p-6 space-y-6 max-w-2xl">
       <h2 className="text-[15px] font-semibold text-red-400">Project Settings</h2>
-      <div className="rounded-lg border border-red-500/15 bg-[#1c1c1c]">
+      <div className="rounded-lg border border-red-500/15 bg-[#0f0f0f]">
         <div className="p-4 flex items-start gap-3">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-red-400/10 text-red-400"><Trash2 size={15} /></div>
-          <div className="flex-1"><p className="text-[13px] font-medium">Delete Project</p><p className="text-[11px] text-[#555] mt-0.5">Permanently remove <span className="text-[#888]">{projectName}</span> and all data.</p></div>
+          <div className="flex-1"><p className="text-[13px] font-medium">Delete Project</p><p className="text-[11px] text-[#666360] mt-0.5">Permanently remove <span className="text-[#a8a6a2]">{projectName}</span> and all data.</p></div>
           {!showDeleteConfirm && <button onClick={() => setShowDeleteConfirm(true)} className="rounded-md bg-red-500/10 border border-red-500/15 px-3 py-1.5 text-[12px] text-red-400 hover:bg-red-500/20">Delete</button>}
         </div>
         {showDeleteConfirm && (
           <div className="border-t border-red-500/10 p-4 space-y-3">
-            <div><label className="text-[11px] text-[#666] mb-1 block">Type <span className="font-mono text-red-400">{projectName}</span> to confirm</label>
+            <div><label className="text-[11px] text-[#777572] mb-1 block">Type <span className="font-mono text-red-400">{projectName}</span> to confirm</label>
               <input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder={projectName}
-                className="w-full rounded-md border border-red-500/20 bg-[#222] px-3 py-2 text-[12px] text-[#ededed] outline-none focus:border-red-500/40 placeholder:text-[#333]" />
+                className="w-full rounded-md border border-red-500/20 bg-[#161616] px-3 py-2 text-[12px] text-[#f6f4f0] outline-none focus:border-red-500/40 placeholder:text-[#282828]" />
             </div>
             <div className="flex justify-end gap-2">
-              <button onClick={() => { setShowDeleteConfirm(false); setConfirmText(""); }} className="rounded-md bg-[#2a2a2a] px-3 py-1.5 text-[12px] text-[#888]">Cancel</button>
+              <button onClick={() => { setShowDeleteConfirm(false); setConfirmText(""); }} className="rounded-md bg-[#1f1f1f] px-3 py-1.5 text-[12px] text-[#a8a6a2]">Cancel</button>
               <button onClick={handleDelete} disabled={deleting || confirmText !== projectName}
                 className="flex items-center gap-1.5 rounded-md bg-red-600 px-3.5 py-1.5 text-[12px] font-medium text-white disabled:opacity-40 disabled:cursor-not-allowed">
                 {deleting ? <div className="h-3 w-3 animate-spin rounded-full border border-white/30 border-t-white" /> : <Trash2 size={12} />} Delete permanently
