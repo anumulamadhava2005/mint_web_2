@@ -4,9 +4,9 @@ import { findUserByToken } from "../../../../../lib/auth";
 import db from "../../../../../lib/db";
 
 // PATCH /api/projects/[id]/settings — update project settings and access control
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { id: projectId } = await Promise.resolve(params);
+    const { id: projectId } = await params;
     const cookieStore = await cookies();
     const token = cookieStore.get("token")?.value;
     

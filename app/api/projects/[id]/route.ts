@@ -4,9 +4,9 @@ import { findUserByToken } from "../../../../lib/auth";
 import db from "../../../../lib/db";
 
 // DELETE /api/projects/[id] — Delete a project and all associated files
-export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { id: projectId } = await Promise.resolve(params);
+    const { id: projectId } = await params;
     const cookieStore = await cookies();
     const token = cookieStore.get("token")?.value;
     
