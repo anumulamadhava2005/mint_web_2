@@ -13,6 +13,7 @@ import { ROOT_FRAME_ID } from "@/lib/penpot/types";
 import { DEVICE_PRESETS, type DevicePreset } from "@/lib/devicePresets";
 import ConvertDialog from "./ConvertDialog";
 import BackendPanel from "./BackendPanel";
+import { Settings, Share } from "lucide-react";
 // socket.io-client removed — sync daemon uses HTTP polling now
 
 // ── Props ─────────────────────────────────────────────────────
@@ -21,6 +22,7 @@ interface PenpotEditorProps {
   projectId: string;
   projectName: string;
   onBack: () => void;
+  readOnly?: boolean;
 }
 
 export default function PenpotEditor({
@@ -28,6 +30,7 @@ export default function PenpotEditor({
   projectId,
   projectName,
   onBack,
+  readOnly = false,
 }: PenpotEditorProps) {
   const initWorkspace = useWorkspaceStore((s) => s.initWorkspace);
   const file = useWorkspaceStore((s) => s.file);
@@ -51,6 +54,7 @@ export default function PenpotEditor({
   const setProfile = useWorkspaceStore((s) => s.setProfile);
   const [loading, setLoading] = useState(true);
   const [convertOpen, setConvertOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [commitFramework, setCommitFramework] = useState<string>("react");
   const [commitToast, setCommitToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
@@ -320,10 +324,10 @@ export default function PenpotEditor({
   const dirty = useWorkspaceStore((s) => s.dirty);
   useEffect(() => {
     const interval = setInterval(() => {
-      if (file && dirty) saveFile();
+      if (file && dirty && !readOnly) saveFile();
     }, 30000); // save every 30s
     return () => clearInterval(interval);
-  }, [file, dirty, saveFile]);
+  }, [file, dirty, saveFile, readOnly]);
 
   // Current tool label
   const currentTool: string = local.drawing?.tool || "select";
@@ -355,39 +359,48 @@ export default function PenpotEditor({
         onSave={saveFile}
         onPlay={() => setViewerMode(true)}
         onConvert={() => setConvertOpen(true)}
+        onSettings={() => setSettingsOpen(true)}
         onCommit={handleCommit}
         onUndo={undo}
         onRedo={redo}
+        readOnly={readOnly}
       />
 
       <div className="flex flex-1 overflow-hidden">
         {/* ── Left Panel (Layers + Pages) ── */}
-        <LeftPanel />
+        {!readOnly && <LeftPanel />}
 
         {/* ── Center: Toolbar + Canvas ── */}
-        <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex flex-1 flex-col overflow-hidden relative">
           {/* Toolbar */}
-          <Toolbar
-            currentTool={currentTool}
-            onToolChange={(t) => setDrawing(t === "select" ? null : t as any)}
-            showRulers={showRulers}
-            showGrid={showGrid}
-            onToggleRulers={toggleRulers}
-            onToggleGrid={toggleGrid}
-          />
+          {!readOnly && (
+            <Toolbar
+              currentTool={currentTool}
+              onToolChange={(t) => setDrawing(t === "select" ? null : t as any)}
+              showRulers={showRulers}
+              showGrid={showGrid}
+              onToggleRulers={toggleRulers}
+              onToggleGrid={toggleGrid}
+            />
+          )}
 
           {/* Canvas */}
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 overflow-hidden relative">
             <SVGViewport fileId={fileId} />
+            {readOnly && (
+              <div className="absolute inset-0 z-50 cursor-not-allowed" />
+            )}
           </div>
         </div>
 
         {/* ── Right Panel (Design / Inspect / Prototype) ── */}
-        <RightPanel
-          optionsMode={optionsMode}
-          onModeChange={setOptionsMode}
-          projectId={projectId}
-        />
+        {!readOnly && (
+          <RightPanel
+            optionsMode={optionsMode}
+            onModeChange={setOptionsMode}
+            projectId={projectId}
+          />
+        )}
       </div>
 
       {/* Convert to code dialog */}
@@ -557,9 +570,11 @@ const Header = memo(function Header({
   onSave,
   onPlay,
   onConvert,
+  onSettings,
   onCommit,
   onUndo,
   onRedo,
+  readOnly,
 }: {
   projectName: string;
   fileName: string;
@@ -573,10 +588,18 @@ const Header = memo(function Header({
   onSave: () => void;
   onPlay: () => void;
   onConvert: () => void;
+  onSettings: () => void;
   onCommit: () => void;
   onUndo: () => void;
   onRedo: () => void;
+  readOnly: boolean;
 }) {
+  const copyLink = () => {
+    const url = window.location.origin + "/projects/" + (window.location.pathname.split("/").pop() || "");
+    navigator.clipboard.writeText(url);
+    // basic feedback could be added, or it relies on the settings dialog for complex sharing
+  };
+
   return (
     <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-700 bg-zinc-900 px-3">
       {/* Left: Back + file info */}
@@ -594,14 +617,18 @@ const Header = memo(function Header({
         <span className="text-xs text-zinc-500">{projectName}</span>
         <span className="text-xs text-zinc-500">/</span>
         <span className="text-sm font-medium text-zinc-200">{fileName}</span>
-        {saving && <span className="text-xs text-amber-400">Saving...</span>}
-        {!saving && lastSaved && (
+        {readOnly ? (
+          <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs font-medium text-zinc-400 border border-white/5">View Only</span>
+        ) : saving ? (
+          <span className="text-xs text-amber-400">Saving...</span>
+        ) : lastSaved ? (
           <span className="text-xs text-zinc-500">Saved</span>
-        )}
+        ) : null}
       </div>
 
       {/* Center: Undo/Redo */}
-      <div className="flex items-center gap-1">
+      {!readOnly && (
+        <div className="flex items-center gap-1">
         <button
           onClick={onUndo}
           className="rounded p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white"
@@ -622,7 +649,8 @@ const Header = memo(function Header({
             <path d="M21 10l-3 3m3-3-3-3" />
           </svg>
         </button>
-      </div>
+        </div>
+      )}
 
       {/* Right: Status + Play */}
       <div className="flex items-center gap-2">
@@ -634,12 +662,14 @@ const Header = memo(function Header({
             {connected ? "Connected" : "Offline"}
           </span>
         </div>
-        <button
-          onClick={onSave}
-          className="rounded px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-white"
-        >
-          Save
-        </button>
+        {!readOnly && (
+          <button
+            onClick={onSave}
+            className="rounded px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-white"
+          >
+            Save
+          </button>
+        )}
         <button
           onClick={onConvert}
           className="flex items-center gap-1.5 rounded border border-emerald-500/30 bg-emerald-600/10 px-3 py-1 text-xs font-medium text-emerald-400 hover:bg-emerald-600/20 hover:text-emerald-300 transition-colors"
@@ -650,6 +680,23 @@ const Header = memo(function Header({
           </svg>
           Convert
         </button>
+        <div className="h-4 w-px bg-zinc-700 mx-1" />
+        <button
+          onClick={copyLink}
+          className="rounded p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
+          title="Copy Link to Share"
+        >
+          <Share size={14} />
+        </button>
+        {!readOnly && (
+          <button
+            onClick={() => window.location.href = `/projects/${window.location.pathname.split("/").pop()}/settings`}
+            className="rounded p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors mr-1"
+            title="Project Settings"
+          >
+            <Settings size={14} />
+          </button>
+        )}
         {/* Commit: framework selector + commit button */}
         <div className="flex items-center gap-0.5">
           <select

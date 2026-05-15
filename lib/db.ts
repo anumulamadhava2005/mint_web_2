@@ -64,6 +64,8 @@ async function init() {
   await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS views integer NOT NULL DEFAULT 0`).catch(() => {});
   await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now()`).catch(() => {});
   await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_default boolean NOT NULL DEFAULT false`).catch(() => {});
+  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_public boolean NOT NULL DEFAULT false`).catch(() => {});
+  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS allow_public_edit boolean NOT NULL DEFAULT false`).catch(() => {});
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS fullname text NOT NULL DEFAULT ''`).catch(() => {});
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS photo text NOT NULL DEFAULT ''`).catch(() => {});
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS lang text NULL`).catch(() => {});

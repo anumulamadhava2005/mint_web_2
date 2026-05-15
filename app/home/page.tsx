@@ -302,13 +302,6 @@ export default function HomePage() {
               Get started for free
               <ArrowRight size={16} />
             </Link>
-            <Link
-              href="/login"
-              className="flex items-center gap-2 text-[#a8a6a2] hover:text-[#f6f4f0] px-5 py-3.5 rounded-full font-medium text-[15px] transition-colors border border-white/[0.08] hover:border-white/[0.15]"
-            >
-              <Monitor size={16} />
-              See how it works
-            </Link>
           </motion.div>
         </div>
 
@@ -329,7 +322,7 @@ export default function HomePage() {
               </div>
               <div className="flex-1 flex justify-center">
                 <div className="bg-white/[0.05] rounded-md px-16 py-1.5 text-[11px] text-[#a8a6a2] font-mono">
-                  mintweb2.mintit.pro
+                  mintweb.mintit.pro
                 </div>
               </div>
             </div>

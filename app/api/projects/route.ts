@@ -24,10 +24,10 @@ export async function GET(req: Request) {
     if (projectId) {
       // Fetch single project
       const res = await db.query(
-        `SELECT p.id, p.name, p.description, p.thumbnail_url, p.likes, p.views, p.created_at, p.updated_at, u.email as owner_email
+        `SELECT p.id, p.name, p.description, p.thumbnail_url, p.likes, p.views, p.created_at, p.updated_at, p.is_public, p.allow_public_edit, u.email as owner_email, (p.owner_id = $2) as is_owner
          FROM projects p
          JOIN users u ON u.id = p.owner_id
-         WHERE p.id = $1 AND p.owner_id = $2`,
+         WHERE p.id = $1 AND (p.owner_id = $2 OR p.is_public = true)`,
         [projectId, user.id]
       );
 
@@ -40,7 +40,7 @@ export async function GET(req: Request) {
 
     // List all projects
     const res = await db.query(
-      `SELECT p.id, p.name, p.description, p.thumbnail_url, p.likes, p.views, p.created_at, p.updated_at, u.email as owner_email
+      `SELECT p.id, p.name, p.description, p.thumbnail_url, p.likes, p.views, p.created_at, p.updated_at, p.is_public, u.email as owner_email
        FROM projects p
        JOIN users u ON u.id = p.owner_id
        WHERE p.owner_id = $1

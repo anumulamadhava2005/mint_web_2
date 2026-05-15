@@ -15,6 +15,8 @@ type Project = {
   likes: number;
   views: number;
   owner_email: string;
+  is_owner: boolean;
+  allow_public_edit: boolean;
 };
 
 export default function ProjectEditor({ params }: { params: Promise<{ id: string }> }) {
@@ -88,6 +90,8 @@ export default function ProjectEditor({ params }: { params: Promise<{ id: string
     );
   }
 
+  const readOnly = project ? (!project.is_owner && !project.allow_public_edit) : false;
+
   return (
     <div className="h-screen w-screen bg-zinc-950">
       {/* Penpot-style editor */}
@@ -96,6 +100,7 @@ export default function ProjectEditor({ params }: { params: Promise<{ id: string
         projectId={projectId}
         projectName={project?.name || "Untitled"}
         onBack={() => router.push("/projects")}
+        readOnly={readOnly}
       />
 
       {/* Prototype viewer overlay */}

@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Card from "@/components/Card";
-import { ArrowRight, Heart, Eye } from "lucide-react";
+import { ArrowRight, Heart, Eye, Globe } from "lucide-react";
 import NewProjectDialog from "@/components/NewProjectDialog";
 
 type Project = {
@@ -15,6 +15,7 @@ type Project = {
   views: number;
   owner_email: string;
   created_at: string;
+  is_public?: boolean;
 };
 
 function formatCount(n: number): string {
@@ -47,6 +48,26 @@ export default function  ProjectsContent({ search = "" }: Props) {
       /* ignore */
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function togglePublish(project: Project, e: React.MouseEvent) {
+    e.stopPropagation();
+    
+    // Optimistic update
+    setProjects(projects.map(p => p.id === project.id ? { ...p, is_public: !p.is_public } : p));
+    
+    try {
+      const res = await fetch(`/api/projects/${project.id}/publish`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_public: !project.is_public })
+      });
+      if (!res.ok) {
+        setProjects(projects.map(p => p.id === project.id ? { ...p, is_public: project.is_public } : p));
+      }
+    } catch {
+      setProjects(projects.map(p => p.id === project.id ? { ...p, is_public: project.is_public } : p));
     }
   }
 
@@ -153,6 +174,14 @@ export default function  ProjectsContent({ search = "" }: Props) {
                       </div>
 
                       <div className="flex items-center gap-3 text-[11px] text-white/40">
+                        <button 
+                          onClick={(e) => togglePublish(p, e)}
+                          className={`flex items-center gap-1.5 transition-colors mr-2 ${p.is_public ? 'text-blue-400 hover:text-blue-300' : 'hover:text-white/80'}`}
+                          title={p.is_public ? "Unpublish from Community" : "Publish to Community"}
+                        >
+                          <Globe size={12} className={p.is_public ? "animate-pulse" : ""} />
+                          {p.is_public ? 'Public' : 'Publish'}
+                        </button>
                         <span className="flex items-center gap-1 hover:text-rose-400 transition-colors">
                           <Heart size={12} />
                           {formatCount(p.likes)}

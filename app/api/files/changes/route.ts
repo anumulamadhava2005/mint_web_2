@@ -45,7 +45,7 @@ export async function POST(req: Request) {
         `SELECT f.id, f.revn, f.data
          FROM files f
          JOIN projects p ON f.project_id = p.id
-         WHERE f.id = $1 AND p.owner_id = $2 AND f.deleted_at IS NULL
+         WHERE f.id = $1 AND (p.owner_id = $2 OR p.allow_public_edit = true) AND f.deleted_at IS NULL
          FOR UPDATE`,
         [fileId, user.id]
       );
@@ -139,7 +139,7 @@ export async function GET(req: Request) {
        FROM file_changes fc
        JOIN files f ON fc.file_id = f.id
        JOIN projects p ON f.project_id = p.id
-       WHERE fc.file_id = $1 AND fc.revn > $2 AND p.owner_id = $3
+       WHERE fc.file_id = $1 AND fc.revn > $2 AND (p.owner_id = $3 OR p.is_public = true)
        ORDER BY fc.revn ASC
        LIMIT 100`,
       [fileId, fromRevn, user.id]
