@@ -15,9 +15,9 @@ async function safeQuery(text: string, params?: any[]) {
 }
 
 // GET /api/projects/[id]/dashboard — fetch project-specific data overview
-export async function GET(req: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { id: projectId } = await Promise.resolve(params);
+    const { id: projectId } = await params;
     const cookieStore = await cookies();
     const token = cookieStore.get("token")?.value;
 
