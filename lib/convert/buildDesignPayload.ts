@@ -183,6 +183,11 @@ export function buildDesignPayload(
       }
     }
 
+    // Runtime bindings → pluginData so the tree builder picks them up
+    if (shape.runtimeBindings && Object.values(shape.runtimeBindings).some(Boolean)) {
+      node.pluginData = { runtimeBindings: shape.runtimeBindings };
+    }
+
     return node;
   }
 

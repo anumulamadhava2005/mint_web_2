@@ -9,6 +9,8 @@
 import { deflateSync } from "zlib";
 import { ICON_PNG_B64, ICON_BG_PNG_B64, ICON_MONO_PNG_B64, b64ToUint8Array } from "../assets/mintIcons";
 import { generateMintRuntimeBundle } from "../../runtime/bundle";
+import { generateMintRuntimeProvider } from "../core/mintRuntime";
+import { hasMintBindings } from "../core/render";
 
 import type {
   DrawableNode,
@@ -61,6 +63,9 @@ export const reactNativeBuilder: FrameworkBuilder = {
     );
     const transitionMap = buildTransitionMap(interactions);
 
+    // ── Check if any node has runtime bindings ──────────────
+    const hasRuntimeBindings = hasMintBindings(nodes) || !!options.runtimeSchema;
+
     // We no longer generate package.json, app.json, and tsconfig.json here.
     // They are generated dynamically via \`npx create-expo-app\` in the convert API route.
 
@@ -77,24 +82,29 @@ export const reactNativeBuilder: FrameworkBuilder = {
     const overlayProviderImport = hasOverlays
       ? `import { OverlayProvider } from "../components/OverlayProvider";\n`
       : "";
-    const overlayProviderOpen = hasOverlays ? `      <OverlayProvider>\n` : "";
-    const overlayProviderClose = hasOverlays ? `      </OverlayProvider>\n` : "";
+    const overlayProviderOpen = hasOverlays ? `        <OverlayProvider>\n` : "";
+    const overlayProviderClose = hasOverlays ? `        </OverlayProvider>\n` : "";
+
+    const mintProviderImport = hasRuntimeBindings
+      ? `import { MintProvider } from "../lib/mint-runtime";\n`
+      : "";
+    const mintProviderOpen = hasRuntimeBindings ? `      <MintProvider>\n` : "";
+    const mintProviderClose = hasRuntimeBindings ? `      </MintProvider>\n` : "";
 
     files.push({
       path: "app/_layout.tsx",
       content: `import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { MintLiveProvider } from "../providers/MintLiveProvider";
-${overlayProviderImport}
-export default function RootLayout() {
+${overlayProviderImport}${mintProviderImport}export default function RootLayout() {
   return (
     <>
       <StatusBar style="light" />
       <MintLiveProvider>
-${overlayProviderOpen}      <Stack>
+${mintProviderOpen}${overlayProviderOpen}        <Stack>
 ${screenEntries}
-      </Stack>
-${overlayProviderClose}      </MintLiveProvider>
+        </Stack>
+${overlayProviderClose}${mintProviderClose}      </MintLiveProvider>
     </>
   );
 }
@@ -117,7 +127,7 @@ ${overlayProviderClose}      </MintLiveProvider>
       const fileName = route.isHome ? "app/index.tsx" : `app/${route.slug}.tsx`;
       files.push({
         path: fileName,
-        content: generateRNScreenComponent(route, routedInteractions, manifest, hasOverlays),
+        content: generateRNScreenComponent(route, routedInteractions, manifest, hasOverlays, hasRuntimeBindings),
         type: "text",
       });
     }
@@ -251,12 +261,12 @@ ${hasNavigateInteractions ? `## Navigation
 Interactions wired as expo-router navigation:
 
 ${interactions
-  .filter((i) => i.action === "NAVIGATE" && i.targetId)
-  .map((i) => {
-    const sourceName = nodes.find((n) => n.id === i.sourceId)?.name || i.sourceId;
-    const targetRoute = routeMap.get(i.targetId || "") || i.targetId;
-    return `- **${sourceName}** → \`${targetRoute}\` (${i.trigger})`;
-  }).join("\n")}` : ""}
+            .filter((i) => i.action === "NAVIGATE" && i.targetId)
+            .map((i) => {
+              const sourceName = nodes.find((n) => n.id === i.sourceId)?.name || i.sourceId;
+              const targetRoute = routeMap.get(i.targetId || "") || i.targetId;
+              return `- **${sourceName}** → \`${targetRoute}\` (${i.trigger})`;
+            }).join("\n")}` : ""}
 
 ## Running on devices
 
@@ -282,6 +292,15 @@ ${interactions
     // The app polls /api/design-data for new design JSON and
     // MintRenderer renders the UI dynamically from that JSON.
     files.push(...generateSDUIFiles(options, routes));
+
+    // ── Mint Runtime Code (Offline bindings) ──────────────────
+    if (hasRuntimeBindings) {
+      files.push({
+        path: "lib/mint-runtime.tsx",
+        content: generateMintRuntimeProvider(options, true),
+        type: "text",
+      });
+    }
 
     // ── Mint Runtime Library ──────────────────────────────────
     // Bundled state engine, expression parser, action dispatcher,
@@ -383,19 +402,19 @@ export { evalExpr, isExpression };
     // Add Mint-branded PNG assets into assets/images/.
     // icon + foreground use the main branded icon; background and monochrome
     // each have their own designed assets. Favicon is a mini version of the icon.
-    const iconPng    = b64ToUint8Array(ICON_PNG_B64);
-    const bgPng      = b64ToUint8Array(ICON_BG_PNG_B64);
-    const monoPng    = b64ToUint8Array(ICON_MONO_PNG_B64);
+    const iconPng = b64ToUint8Array(ICON_PNG_B64);
+    const bgPng = b64ToUint8Array(ICON_BG_PNG_B64);
+    const monoPng = b64ToUint8Array(ICON_MONO_PNG_B64);
     // Favicon: use a small solid-color PNG since 48x48 crop of branded icon isn't available
     const faviconPng = buildSolidPng(48, 48, 99, 102, 241);
 
     const imageAssets: Array<{ name: string; png: Uint8Array }> = [
-      { name: "icon.png",                       png: iconPng },
-      { name: "splash-icon.png",                png: iconPng },
-      { name: "android-icon-foreground.png",    png: iconPng },
-      { name: "android-icon-background.png",    png: bgPng },
-      { name: "android-icon-monochrome.png",    png: monoPng },
-      { name: "favicon.png",                    png: faviconPng },
+      { name: "icon.png", png: iconPng },
+      { name: "splash-icon.png", png: iconPng },
+      { name: "android-icon-foreground.png", png: iconPng },
+      { name: "android-icon-background.png", png: bgPng },
+      { name: "android-icon-monochrome.png", png: monoPng },
+      { name: "favicon.png", png: faviconPng },
     ];
     for (const { name, png } of imageAssets) {
       files.push({ path: `assets/images/${name}`, content: png, type: "binary" });
@@ -422,7 +441,8 @@ function generateRNScreenComponent(
   route: FrameRoute,
   routedInteractions: Interaction[],
   manifest: ImageManifest,
-  hasOverlays: boolean
+  hasOverlays: boolean,
+  hasRuntimeBindings: boolean = false
 ): string {
   const { frame } = route;
   const refW = Math.round(frame.w);
@@ -453,19 +473,20 @@ function generateRNScreenComponent(
   // Build the RN tree for this frame's children
   const rnContent = frame.children?.length
     ? frame.children
-        .map((child) =>
-          renderRNNode(
-            child,
-            manifest,
-            needsInteractions ? pageInteractions : undefined,
-            pageHasNav ? "navigate" : undefined,
-            10,
-            pageHasOverlay ? "openOverlay" : undefined,
-            pageHasOverlay ? "closeOverlay" : undefined,
-            pageHasOverlay ? "swapOverlay" : undefined
-          )
+      .map((child) =>
+        renderRNNode(
+          child,
+          manifest,
+          needsInteractions ? pageInteractions : undefined,
+          pageHasNav ? "navigate" : undefined,
+          10,
+          pageHasOverlay ? "openOverlay" : undefined,
+          pageHasOverlay ? "closeOverlay" : undefined,
+          pageHasOverlay ? "swapOverlay" : undefined,
+          undefined
         )
-        .join("\n")
+      )
+      .join("\n")
     : "";
 
   const imports: string[] = [];
@@ -495,8 +516,22 @@ function generateRNScreenComponent(
     imports.push(`import { Linking } from "react-native";`);
   }
 
+  if (hasRuntimeBindings) {
+    imports.push(`import { useMint } from "../lib/mint-runtime";`);
+    if (frame.bindings?.onMount) {
+      imports.push(`import { useEffect } from "react";`);
+    }
+  }
+
   // Deduplicate imports
   const uniqueImports = [...new Set(imports)];
+
+  if (hasRuntimeBindings) {
+    hooks.push(`  const { state, setState, actions, db } = useMint();`);
+    if (frame.bindings?.onMount) {
+      hooks.push(`  useEffect(() => {\n    if (actions.${frame.bindings.onMount}) {\n      actions.${frame.bindings.onMount}();\n    }\n  }, [actions]);`);
+    }
+  }
 
   const hookBlock = hooks.length || callbacks.length
     ? `\n${hooks.join("\n")}\n${callbacks.join("\n")}\n`
@@ -520,7 +555,7 @@ ${rnContent}
 ${rnContent}
         </View>`;
 
-  return `import { StyleSheet, View, Dimensions, Text, Image, Pressable, ScrollView } from "react-native";
+  return `import { StyleSheet, View, Dimensions, Text, Image, Pressable, ScrollView, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useMintDesign } from "../providers/MintLiveProvider";
 import { MintRenderer } from "../components/MintRenderer";
@@ -577,6 +612,12 @@ const styles = StyleSheet.create({
 // React Native Component Generation
 // ═══════════════════════════════════════════════════════════════
 
+function safeStateExpr(key: string): string {
+  const parts = key.split('.');
+  if (parts.length === 1) return `state.${key}`;
+  return `${parts[0]}` + parts.slice(1).map(p => `?.${p}`).join('');
+}
+
 function renderRNNode(
   node: DrawableNode,
   manifest: ImageManifest,
@@ -585,7 +626,8 @@ function renderRNNode(
   indent = 6,
   overlayHandler?: string,
   closeOverlayHandler?: string,
-  swapOverlayHandler?: string
+  swapOverlayHandler?: string,
+  loopVarName?: string
 ): string {
   const spaces = " ".repeat(indent);
   const style = generateRNStyle(node);
@@ -668,7 +710,37 @@ function renderRNNode(
     }
   }
 
+  // ── Runtime bindings handlers ──
+  const b = node.bindings;
+  if (b?.onClick) {
+    wrapWithPressable = true;
+    const clickArg = loopVarName ? loopVarName : "";
+    pressableAction = `actions.${b.onClick}(${clickArg})`;
+  }
+
+  const wrapVisible = b?.visibleBind;
+  const wrapRepeat = b?.repeatFor;
+
   let content: string;
+
+  // ── Input binding: render as <TextInput> ──
+  if (b?.inputBind) {
+    const stateKey = b.inputBind.replace(/^\$/, '');
+    const accessor = safeStateExpr(stateKey);
+    const containerStyle = wrapWithPressable ? innerStyle : style;
+    const inputJSX = `${spaces}<TextInput style={${containerStyle}} value={${accessor} ?? ""} onChangeText={(text) => setState("${stateKey}", text)} placeholder="${node.name.replace(/_/g, ' ')}" placeholderTextColor="#888" />`;
+
+    let result = inputJSX;
+    if (wrapWithPressable && pressableAction) {
+      result = `${spaces}<Pressable style={${pressableStyle}} onPress={() => ${pressableAction}}>\n${inputJSX}\n${spaces}</Pressable>`;
+    }
+    if (wrapVisible) {
+      const visKey = wrapVisible.replace(/^\$/, '').replace(/\s*==.*/, '');
+      const visAccessor = safeStateExpr(visKey);
+      return `${spaces}{${visAccessor} ? (\n${result}\n${spaces}) : null}`;
+    }
+    return result;
+  }
 
   // Determine if this node is a scroll container
   const isScrollContainer =
@@ -686,14 +758,18 @@ function renderRNNode(
   // Text node
   if (node.type === "TEXT" && node.text) {
     const textStyle = generateRNTextStyle(node.text);
-    const text = node.text.characters ?? "";
+    const staticText = node.text.characters ?? "";
+    const textContent = b?.textBind
+      ? `{${safeStateExpr(b.textBind.replace(/^\$/, ''))} ?? ${JSON.stringify(staticText)}}`
+      : escapeRNText(staticText);
+
     if (wrapWithPressable) {
       content = `${spaces}  <View style={${innerStyle}}>
-${spaces}    <Text style={${textStyle}}>${escapeRNText(text)}</Text>
+${spaces}    <Text style={${textStyle}}>${textContent}</Text>
 ${spaces}  </View>`;
     } else {
       content = `${spaces}<View style={${style}}>
-${spaces}  <Text style={${textStyle}}>${escapeRNText(text)}</Text>
+${spaces}  <Text style={${textStyle}}>${textContent}</Text>
 ${spaces}</View>`;
     }
   }
@@ -736,9 +812,29 @@ ${spaces}</View>`;
 
     const childContent = scrollableChildren
       .map((child) =>
-        renderRNNode(child, manifest, interactions, navigateHandler, indent + 2, overlayHandler, closeOverlayHandler, swapOverlayHandler)
+        renderRNNode(child, manifest, interactions, navigateHandler, indent + (isScrollContainer ? 4 : 2), overlayHandler, closeOverlayHandler, swapOverlayHandler, wrapRepeat && b?.repeatAs ? b.repeatAs : loopVarName)
       )
       .join("\n");
+
+    let finalChildContent = childContent;
+    if (wrapRepeat && b?.repeatAs && scrollableChildren.length > 0) {
+      const minY = Math.floor(Math.min(...scrollableChildren.map(c => c.y)));
+      const maxY = Math.ceil(Math.max(...scrollableChildren.map(c => c.y + c.h)));
+      const itemHeight = Math.max(0, maxY - minY);
+      const gap = 12; // 12px default gap for stacked list items
+
+      const listKey = wrapRepeat.replace(/^\$/, '');
+      const listAccessor = safeStateExpr(listKey);
+      const itemVar = b.repeatAs;
+      finalChildContent = `${spaces}  <View style={{ height: ${minY}, flexShrink: 0 }} />
+${spaces}  {(${listAccessor} || []).map((${itemVar}: any, _idx: number) => (
+${spaces}    <View key={_idx} style={{ position: "relative", width: "100%", height: ${itemHeight + gap}, flexShrink: 0 }}>
+${spaces}      <View style={{ position: "absolute", top: -${minY}, left: 0, width: "100%", height: "100%" }}>
+${childContent}
+${spaces}      </View>
+${spaces}    </View>
+${spaces}  ))}`;
+    }
 
     if (isScrollContainer) {
       // Compute the actual content dimensions from children
@@ -775,13 +871,13 @@ ${spaces}</View>`;
       // Wrap in ScrollView inside the container
       content = `${spaces}<View style={${containerStyle}}>
 ${spaces}  <ScrollView ${scrollProps.join(" ")} style={{ flex: 1 }}>
-${childContent}
+${finalChildContent}
 ${spaces}  </ScrollView>${fixedContent ? `\n${fixedContent}` : ""}
 ${spaces}</View>`;
     } else {
       const containerStyle = wrapWithPressable ? innerStyle : style;
       content = `${spaces}<View style={${containerStyle}}>
-${childContent}
+${finalChildContent}
 ${spaces}</View>`;
     }
   }
@@ -795,9 +891,16 @@ ${spaces}</View>`;
   // Wrap with Pressable if this node has an interaction
   // Position/size styles go on the Pressable so it has a proper hit area
   if (wrapWithPressable && pressableAction) {
-    return `${spaces}<Pressable style={${pressableStyle}} onPress={() => ${pressableAction}}>
+    content = `${spaces}<Pressable style={${pressableStyle}} onPress={() => ${pressableAction}}>
 ${content}
 ${spaces}</Pressable>`;
+  }
+
+  // ── Apply conditional visibility wrapper if bound ──
+  if (wrapVisible) {
+    const visKey = wrapVisible.replace(/^\$/, '').replace(/\s*==.*/, '');
+    const visAccessor = safeStateExpr(visKey);
+    content = `${spaces}{${visAccessor} ? (\n${content}\n${spaces}) : null}`;
   }
 
   return content;
@@ -952,19 +1055,19 @@ function generateRNOverlayProvider(
 
     const innerContent = frame.children?.length
       ? frame.children
-          .map((child) =>
-            renderRNNode(
-              child,
-              manifest,
-              routedInteractions,
-              undefined,
-              10,
-              "openOverlay",
-              "closeOverlay",
-              "swapOverlay"
-            )
+        .map((child) =>
+          renderRNNode(
+            child,
+            manifest,
+            routedInteractions,
+            undefined,
+            10,
+            "openOverlay",
+            "closeOverlay",
+            "swapOverlay"
           )
-          .join("\n")
+        )
+        .join("\n")
       : "";
 
     return { id: frame.id, componentName, w, h, bgColor, innerContent };
@@ -1095,7 +1198,7 @@ function generateSDUIFiles(
   const userId = options.userId || "unknown";
   // In production the app should point at the deployed Mint server.
   // Users must replace this URL before publishing to the Play Store.
-  const apiOrigin = "https://YOUR_PRODUCTION_MINT_URL.com";
+  const apiOrigin = "https://mintweb2.vercel.app";
 
   // ── 1. mint.config.ts ───────────────────────────────────────
   files.push({
@@ -1298,6 +1401,8 @@ interface MintLiveContextValue {
   getScreenNodes: (screenIdOrRoute: string) => any | null;
   /** Force a refresh from the server. */
   refresh: () => Promise<void>;
+  /** Specific screen data if requested via useMintDesign(screenIdOrRoute) */
+  screenData?: any;
 }
 
 const MintLiveContext = createContext<MintLiveContextValue>({
@@ -1307,6 +1412,7 @@ const MintLiveContext = createContext<MintLiveContextValue>({
   isLoading: false,
   getScreenNodes: () => null,
   refresh: async () => {},
+  screenData: null,
 });
 
 export function useMintDesign(screenIdOrRoute?: string) {
@@ -1441,21 +1547,18 @@ export function MintLiveProvider({ children }: { children: ReactNode }) {
 // Mint Renderer — Dynamic runtime renderer for design nodes
 //
 // Takes a design node tree (JSON from /api/design-data) and
-// renders it using React Native primitives. This is the runtime
-// equivalent of the static code generated by the builder.
-//
-// Usage:
-//   import { MintRenderer } from "../components/MintRenderer";
-//   <MintRenderer node={screenNode} />
+// renders it using React Native primitives. Supports runtime
+// bindings: inputBind, textBind, onClick, repeatFor, onMount.
 // ═══════════════════════════════════════════════════════════════
 
-import React from "react";
+import React, { useEffect } from "react";
 import {
   View,
   Text,
   Image,
   Pressable,
   ScrollView,
+  TextInput,
   Dimensions,
   Linking,
   ViewStyle,
@@ -1464,6 +1567,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { useMint } from "../lib/mint-runtime";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -1529,6 +1633,17 @@ interface DesignNode {
   overflowBehavior?: string;
   fixedWhenScrolling?: boolean;
   children?: DesignNode[];
+  pluginData?: {
+    runtimeBindings?: {
+      inputBind?: string;
+      textBind?: string;
+      onClick?: string;
+      onMount?: string;
+      repeatFor?: string;
+      repeatAs?: string;
+      visibleIf?: string;
+    };
+  };
 }
 
 interface Interaction {
@@ -1544,6 +1659,33 @@ const ROUTE_MAP: Record<string, string> = {
 ${routeEntries}
 };
 
+// ── Helpers ───────────────────────────────────────────────────
+
+/** Resolve a $path expression against state + loopContext */
+function resolveBinding(expr: string, state: any, loopCtx?: Record<string, any>): any {
+  if (!expr) return undefined;
+  const path = expr.startsWith("$") ? expr.slice(1) : expr;
+  const parts = path.split(".");
+
+  // First try loop context (e.g. $msg.sender → loopCtx.msg.sender)
+  if (loopCtx && parts[0] in loopCtx) {
+    let cur: any = loopCtx;
+    for (const p of parts) {
+      if (cur == null) return undefined;
+      cur = cur[p];
+    }
+    return cur;
+  }
+
+  // Then try global state
+  let cur: any = state;
+  for (const p of parts) {
+    if (cur == null) return undefined;
+    cur = cur[p];
+  }
+  return cur;
+}
+
 // ── Main Renderer ─────────────────────────────────────────────
 
 interface MintRendererProps {
@@ -1557,6 +1699,15 @@ export function MintRenderer({ node, interactions = [] }: MintRendererProps) {
   const refW = node.width;
   const refH = node.height;
   const scale = Math.min(SCREEN_WIDTH / refW, SCREEN_HEIGHT / refH, 1);
+  const { actions } = useMint();
+
+  // Handle onMount binding on the screen node
+  const onMount = node.pluginData?.runtimeBindings?.onMount;
+  useEffect(() => {
+    if (onMount && actions[onMount as keyof typeof actions]) {
+      (actions as any)[onMount]();
+    }
+  }, [onMount]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#1a1a1a" }}>
@@ -1580,10 +1731,108 @@ export function MintRenderer({ node, interactions = [] }: MintRendererProps) {
 
 // ── Recursive Node Renderer ───────────────────────────────────
 
-function NodeRenderer({ node, interactions }: { node: DesignNode; interactions: Interaction[] }) {
+function NodeRenderer({
+  node,
+  interactions,
+  loopCtx,
+}: {
+  node: DesignNode;
+  interactions: Interaction[];
+  loopCtx?: Record<string, any>;
+}) {
   const router = useRouter();
+  const { state, setState, actions } = useMint();
 
   if (node.visible === false) return null;
+
+  const bindings = node.pluginData?.runtimeBindings;
+
+  // ── repeatFor: render children as a list ──────────────────
+  if (bindings?.repeatFor && bindings?.repeatAs) {
+    let listData = resolveBinding(bindings.repeatFor, state, loopCtx);
+    const itemVar = bindings.repeatAs;
+
+    if (!Array.isArray(listData)) {
+      listData = [];
+    }
+
+    const style = buildNodeStyle(node);
+    const gap = 12;
+
+    const scrollableChildren = node.children || [];
+    let minY = 0;
+    let itemHeight = 0;
+
+    if (scrollableChildren.length > 0) {
+      minY = Math.floor(Math.min(...scrollableChildren.map((c) => c.y)));
+      const maxY = Math.ceil(Math.max(...scrollableChildren.map((c) => c.y + c.height)));
+      itemHeight = Math.max(0, maxY - minY);
+    }
+
+    return (
+      <View style={style}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          showsHorizontalScrollIndicator={false}
+          style={{ flex: 1 }}
+        >
+          {scrollableChildren.length > 0 && (
+            <View style={{ height: minY, flexShrink: 0 }} />
+          )}
+          {listData.map((item: any, idx: number) => {
+            const childLoopCtx = { ...loopCtx, [itemVar]: item };
+            return (
+              <View
+                key={idx}
+                style={{
+                  position: "relative",
+                  width: "100%",
+                  height: itemHeight + gap,
+                  flexShrink: 0,
+                }}
+              >
+                <View
+                  style={{
+                    position: "absolute",
+                    top: -minY,
+                    left: 0,
+                    width: "100%",
+                    height: "100%",
+                  }}
+                >
+                  {scrollableChildren.map((child) => (
+                    <NodeRenderer
+                      key={\`\${child.id}-\${idx}\`}
+                      node={child}
+                      interactions={interactions}
+                      loopCtx={childLoopCtx}
+                    />
+                  ))}
+                </View>
+              </View>
+            );
+          })}
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // ── inputBind: render TextInput ───────────────────────────
+  if (bindings?.inputBind) {
+    const stateKey = bindings.inputBind.replace(/^\\$/, "");
+    const value = resolveBinding(bindings.inputBind, state, loopCtx);
+    const style = buildNodeStyle(node);
+
+    return (
+      <TextInput
+        style={[style, { color: "#FFFFFF", paddingHorizontal: 12 }]}
+        value={value ?? ""}
+        onChangeText={(text) => setState(stateKey, text)}
+        placeholder={node.name?.replace(/_/g, " ") || ""}
+        placeholderTextColor="#888"
+      />
+    );
+  }
 
   const isText = node.type === "TEXT";
   const isImage = node.type === "IMAGE" || node.fills?.some((f) => f.type === "IMAGE");
@@ -1591,9 +1840,12 @@ function NodeRenderer({ node, interactions }: { node: DesignNode; interactions: 
   // Build the style object
   const style = buildNodeStyle(node);
 
-  // Check for interactions on this node
+  // ── onClick binding (from pluginData) ─────────────────────
+  const hasOnClick = !!bindings?.onClick;
+
+  // Check for interactions on this node (from prototype wiring)
   const nodeInteraction = interactions.find((ix) => ix.sourceId === node.id);
-  const isClickable = !!nodeInteraction;
+  const isClickable = hasOnClick || !!nodeInteraction;
 
   // When clickable, split styles: position/size on Pressable, visuals on inner View
   const pressableStyle: ViewStyle | undefined = isClickable ? {
@@ -1623,9 +1875,17 @@ function NodeRenderer({ node, interactions }: { node: DesignNode; interactions: 
 
   if (isText && node.text) {
     const textStyle = buildTextStyle(node.text);
+
+    // textBind: resolve dynamic text from state/loop context
+    let displayText = node.text.characters || "";
+    if (bindings?.textBind) {
+      const bound = resolveBinding(bindings.textBind, state, loopCtx);
+      displayText = bound != null ? String(bound) : displayText;
+    }
+
     content = (
       <View style={containerStyle}>
-        <Text style={textStyle}>{node.text.characters || ""}</Text>
+        <Text style={textStyle}>{displayText}</Text>
       </View>
     );
   } else if (isImage) {
@@ -1655,7 +1915,7 @@ function NodeRenderer({ node, interactions }: { node: DesignNode; interactions: 
           style={{ flex: 1 }}
         >
           {node.children.map((child) => (
-            <NodeRenderer key={child.id} node={child} interactions={interactions} />
+            <NodeRenderer key={child.id} node={child} interactions={interactions} loopCtx={loopCtx} />
           ))}
         </ScrollView>
       </View>
@@ -1664,7 +1924,7 @@ function NodeRenderer({ node, interactions }: { node: DesignNode; interactions: 
     content = (
       <View style={containerStyle}>
         {node.children.map((child) => (
-          <NodeRenderer key={child.id} node={child} interactions={interactions} />
+          <NodeRenderer key={child.id} node={child} interactions={interactions} loopCtx={loopCtx} />
         ))}
       </View>
     );
@@ -1672,11 +1932,27 @@ function NodeRenderer({ node, interactions }: { node: DesignNode; interactions: 
     content = <View style={containerStyle} />;
   }
 
-  // Wrap with Pressable if the node has an interaction
-  // Position/size styles on Pressable give it a proper hit area
-  if (isClickable && nodeInteraction && pressableStyle) {
+  // Wrap with Pressable if the node has a click handler
+  if (isClickable && pressableStyle) {
+    const handlePress = () => {
+      // onClick binding takes priority
+      if (bindings?.onClick) {
+        const actionName = bindings.onClick;
+        if (actions[actionName as keyof typeof actions]) {
+          (actions as any)[actionName]();
+        } else {
+          console.warn(\`Action "\${actionName}" not found in MintProvider\`);
+        }
+        return;
+      }
+      // Fall back to prototype interaction
+      if (nodeInteraction) {
+        handleInteraction(nodeInteraction, router);
+      }
+    };
+
     return (
-      <Pressable style={pressableStyle} onPress={() => handleInteraction(nodeInteraction, router)}>
+      <Pressable style={pressableStyle} onPress={handlePress}>
         {content}
       </Pressable>
     );
@@ -1705,9 +1981,6 @@ function handleInteraction(ix: Interaction, router: any) {
         Linking.openURL(ix.destinationUrl);
       }
       break;
-    // OPEN_OVERLAY, CLOSE_OVERLAY, SWAP_OVERLAY are handled by
-    // the OverlayProvider if present. The renderer focuses on
-    // navigation interactions for production use.
     default:
       break;
   }
@@ -1729,7 +2002,7 @@ function buildNodeStyle(node: DesignNode): ViewStyle {
   // Background color (only for non-text nodes)
   if (!isText && node.fills?.length) {
     const solidFill = node.fills.find((f) => f.type === "SOLID" && f.color);
-    if (solidFill) {
+    if (solidFill && solidFill.color !== "transparent") {
       style.backgroundColor = solidFill.color;
     }
   }
@@ -1819,7 +2092,7 @@ function buildTextStyle(text: NonNullable<DesignNode["text"]>): TextStyle {
   return style;
 }
 `,
-    type: "text",
+  type: "text",
   });
 
   return files;

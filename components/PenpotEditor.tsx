@@ -7,6 +7,7 @@
 import React, { useEffect, useMemo, useCallback, memo, useState, useRef } from "react";
 import { useWorkspaceStore, type OptionsMode } from "@/lib/penpot/store";
 import { useEditorStore } from "@/lib/editorStore";
+import { useRuntimeStore } from "@/lib/runtime/runtime-store";
 import { SVGViewport } from "./penpot/SVGViewport";
 import type { UUID, PenpotShape } from "@/lib/penpot/types";
 import { ROOT_FRAME_ID } from "@/lib/penpot/types";
@@ -15,6 +16,10 @@ import ConvertDialog from "./ConvertDialog";
 import BackendPanel from "./BackendPanel";
 import { Settings, Share } from "lucide-react";
 // socket.io-client removed — sync daemon uses HTTP polling now
+
+// Stable empty array for Zustand selectors (avoids infinite loop from new [] each render)
+const EMPTY_BINDING_ARR: any[] = [];
+const EMPTY_PAGE_OBJECTS: Record<string, any> = {};
 
 // ── Props ─────────────────────────────────────────────────────
 interface PenpotEditorProps {
@@ -146,6 +151,10 @@ export default function PenpotEditor({
           const kids = shape.shapes.map((id: string) => objects[id]).filter((s: any): s is PenpotShape => !!s && !s.hidden);
           if (kids.length > 0) node.children = kids.map((k: PenpotShape) => shapeToNode(k, shape.x, shape.y));
         }
+        // Runtime bindings → pluginData so the tree builder picks them up
+        if (shape.runtimeBindings && Object.values(shape.runtimeBindings).some(Boolean)) {
+          node.pluginData = { runtimeBindings: shape.runtimeBindings };
+        }
         return node;
       }
 
@@ -276,6 +285,7 @@ export default function PenpotEditor({
           targetFramework: commitFramework,
           fileName: file.name || "design-export",
           nodes: filteredNodes, referenceFrame, interactions: filteredInteractions,
+          runtimeSchema: useRuntimeStore.getState().schema,
         }),
       });
 
@@ -349,6 +359,7 @@ export default function PenpotEditor({
       <Header
         projectName={projectName}
         fileName={file?.name || "Untitled"}
+        fileId={fileId}
         saving={saving}
         lastSaved={lastSaved}
         connected={connected}
@@ -364,6 +375,11 @@ export default function PenpotEditor({
         onUndo={undo}
         onRedo={redo}
         readOnly={readOnly}
+        onFileNameChange={(newName: string) => {
+          useWorkspaceStore.setState((state: any) => {
+            if (state.file) state.file.name = newName;
+          });
+        }}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -560,6 +576,7 @@ export default function PenpotEditor({
 const Header = memo(function Header({
   projectName,
   fileName,
+  fileId,
   saving,
   lastSaved,
   connected,
@@ -575,9 +592,11 @@ const Header = memo(function Header({
   onUndo,
   onRedo,
   readOnly,
+  onFileNameChange,
 }: {
   projectName: string;
   fileName: string;
+  fileId: string;
   saving: boolean;
   lastSaved: string | null;
   connected: boolean;
@@ -593,7 +612,41 @@ const Header = memo(function Header({
   onUndo: () => void;
   onRedo: () => void;
   readOnly: boolean;
+  onFileNameChange: (name: string) => void;
 }) {
+  const [editingName, setEditingName] = useState(false);
+  const [nameValue, setNameValue] = useState(fileName);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync nameValue when fileName changes externally
+  useEffect(() => {
+    if (!editingName) setNameValue(fileName);
+  }, [fileName, editingName]);
+
+  // Auto-focus + select when entering edit mode
+  useEffect(() => {
+    if (editingName && nameInputRef.current) {
+      nameInputRef.current.focus();
+      nameInputRef.current.select();
+    }
+  }, [editingName]);
+
+  const commitRename = useCallback(async () => {
+    setEditingName(false);
+    const trimmed = nameValue.trim() || "Untitled";
+    if (trimmed === fileName) return;
+    onFileNameChange(trimmed);
+    try {
+      await fetch("/api/files", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: fileId, name: trimmed }),
+      });
+    } catch (e) {
+      console.error("Failed to rename file:", e);
+    }
+  }, [nameValue, fileName, fileId, onFileNameChange]);
   const copyLink = () => {
     const url = window.location.origin + "/projects/" + (window.location.pathname.split("/").pop() || "");
     navigator.clipboard.writeText(url);
@@ -616,7 +669,31 @@ const Header = memo(function Header({
         <div className="h-4 w-px bg-white/[0.08]" />
         <span className="text-xs text-[#666360]">{projectName}</span>
         <span className="text-xs text-[#666360]">/</span>
-        <span className="text-sm font-medium text-[#f6f4f0]">{fileName}</span>
+        {editingName ? (
+          <input
+            ref={nameInputRef}
+            value={nameValue}
+            onChange={(e) => setNameValue(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitRename();
+              if (e.key === "Escape") {
+                setNameValue(fileName);
+                setEditingName(false);
+              }
+            }}
+            className="text-sm font-medium text-[#f6f4f0] bg-transparent border-b border-indigo-500 outline-none px-0.5 min-w-[60px] max-w-[200px]"
+            style={{ width: `${Math.max(60, nameValue.length * 8)}px` }}
+          />
+        ) : (
+          <span
+            className="text-sm font-medium text-[#f6f4f0] cursor-pointer hover:text-indigo-400 transition-colors"
+            onDoubleClick={() => !readOnly && setEditingName(true)}
+            title="Double-click to rename"
+          >
+            {fileName}
+          </span>
+        )}
         {readOnly ? (
           <span className="rounded-full bg-[#0f0f0f] px-2 py-0.5 text-xs font-medium text-[#a8a6a2] border border-white/5">View Only</span>
         ) : saving ? (
@@ -942,8 +1019,8 @@ const LeftPanel = memo(function LeftPanel() {
   const [editingLayerId, setEditingLayerId] = useState<UUID | null>(null);
 
   const pageObjects = useWorkspaceStore((s) => {
-    if (!s.file || !s.currentPageId) return {};
-    return s.file.pagesIndex[s.currentPageId]?.objects || {};
+    if (!s.file || !s.currentPageId) return EMPTY_PAGE_OBJECTS;
+    return s.file.pagesIndex[s.currentPageId]?.objects || EMPTY_PAGE_OBJECTS;
   });
 
   const rootChildren: UUID[] = pageObjects[ROOT_FRAME_ID]?.shapes || [];
@@ -1413,9 +1490,32 @@ function DesignPanel() {
 
   // Access page objects to resolve parent frame for relative positioning
   const pageObjects = useWorkspaceStore((s) => {
-    if (!s.file || !s.currentPageId) return {};
-    return s.file.pagesIndex[s.currentPageId]?.objects || {};
+    if (!s.file || !s.currentPageId) return EMPTY_PAGE_OBJECTS;
+    return s.file.pagesIndex[s.currentPageId]?.objects || EMPTY_PAGE_OBJECTS;
   });
+
+  // ── Pull live data from Backend tab for binding suggestions ──
+  // Stable empty array avoids "getSnapshot should be cached" infinite loop
+  const runtimeGlobalState = useRuntimeStore((s) => s.schema.globalState || EMPTY_BINDING_ARR);
+  const runtimeGlobalActions = useRuntimeStore((s) => s.schema.globalActions || EMPTY_BINDING_ARR);
+  const runtimeTables = useRuntimeStore((s) => (s.schema.database as any)?.tables || EMPTY_BINDING_ARR);
+
+  const stateOptions = useMemo(() =>
+    runtimeGlobalState.map((sv: any) => ({ value: `$${sv.name}`, type: sv.type })),
+    [runtimeGlobalState]
+  );
+  const actionOptions = useMemo(() =>
+    runtimeGlobalActions.map((a: any) => a.name),
+    [runtimeGlobalActions]
+  );
+  const tableOptions = useMemo(() =>
+    runtimeTables.map((t: any) => t.name),
+    [runtimeTables]
+  );
+  const arrayStateOptions = useMemo(() =>
+    stateOptions.filter((o: any) => o.type === "array"),
+    [stateOptions]
+  );
 
   if (selectedShapes.length === 0) {
     return (
@@ -1800,18 +1900,42 @@ function DesignPanel() {
       <div>
         <label className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wider text-emerald-400">
           <span>⚡</span> Bindings
+          {(stateOptions.length > 0 || actionOptions.length > 0 || tableOptions.length > 0) && (
+            <span className="ml-auto font-normal normal-case tracking-normal text-[9px] text-zinc-500">
+              {stateOptions.length > 0 && `${stateOptions.length} vars`}
+              {stateOptions.length > 0 && actionOptions.length > 0 && " · "}
+              {actionOptions.length > 0 && `${actionOptions.length} actions`}
+              {(stateOptions.length > 0 || actionOptions.length > 0) && tableOptions.length > 0 && " · "}
+              {tableOptions.length > 0 && `${tableOptions.length} tables`}
+            </span>
+          )}
         </label>
         <div className="space-y-1.5 rounded-lg border border-white/[0.08]/50 bg-[#0f0f0f]/30 p-2">
+          {/* Datalists for autocomplete */}
+          <datalist id="dl-state-vars">
+            {stateOptions.map((o: any) => <option key={o.value} value={o.value}>{o.value} ({o.type})</option>)}
+          </datalist>
+          <datalist id="dl-actions">
+            {actionOptions.map((n: string) => <option key={n} value={n} />)}
+          </datalist>
+          <datalist id="dl-tables">
+            {tableOptions.map((n: string) => <option key={n} value={n} />)}
+          </datalist>
+          <datalist id="dl-array-state">
+            {arrayStateOptions.map((o: any) => <option key={o.value} value={o.value}>{o.value} ({o.type})</option>)}
+          </datalist>
+
           {/* Text Binding */}
           {(shape.type === "text" || shape.type === "rect" || shape.type === "frame") && (
             <div>
               <label className="text-[10px] text-[#666360]">Text / Content</label>
               <input
+                list="dl-state-vars"
                 value={shape.runtimeBindings?.textBind || ""}
                 onChange={(e) => updateShape(shape.id, {
                   runtimeBindings: { ...shape.runtimeBindings, textBind: e.target.value }
                 })}
-                placeholder="$state.variable"
+                placeholder={stateOptions.length > 0 ? `e.g. ${stateOptions[0].value}` : "$state.variable"}
                 className="w-full rounded bg-[#0a0a0a] px-2 py-1 text-xs text-[#f6f4f0] outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
               />
             </div>
@@ -1821,11 +1945,12 @@ function DesignPanel() {
           <div>
             <label className="text-[10px] text-[#666360]">Input Bind (2-way)</label>
             <input
+              list="dl-state-vars"
               value={shape.runtimeBindings?.inputBind || ""}
               onChange={(e) => updateShape(shape.id, {
                 runtimeBindings: { ...shape.runtimeBindings, inputBind: e.target.value }
               })}
-              placeholder="$form.fieldName"
+              placeholder={stateOptions.length > 0 ? `e.g. ${stateOptions[0].value}` : "$form.fieldName"}
               className="w-full rounded bg-[#0a0a0a] px-2 py-1 text-xs text-[#f6f4f0] outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
             />
           </div>
@@ -1834,11 +1959,12 @@ function DesignPanel() {
           <div>
             <label className="text-[10px] text-[#666360]">On Click (action)</label>
             <input
+              list="dl-actions"
               value={shape.runtimeBindings?.onClick || ""}
               onChange={(e) => updateShape(shape.id, {
                 runtimeBindings: { ...shape.runtimeBindings, onClick: e.target.value }
               })}
-              placeholder="actionName or $expression"
+              placeholder={actionOptions.length > 0 ? `e.g. ${actionOptions[0]}` : "actionName or $expression"}
               className="w-full rounded bg-[#0a0a0a] px-2 py-1 text-xs text-[#f6f4f0] outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
             />
           </div>
@@ -1847,11 +1973,12 @@ function DesignPanel() {
           <div>
             <label className="text-[10px] text-[#666360]">Visible When</label>
             <input
+              list="dl-state-vars"
               value={shape.runtimeBindings?.visibleBind || ""}
               onChange={(e) => updateShape(shape.id, {
                 runtimeBindings: { ...shape.runtimeBindings, visibleBind: e.target.value }
               })}
-              placeholder="$isLoggedIn"
+              placeholder={stateOptions.find((o: any) => o.type === "boolean")?.value || "$isLoggedIn"}
               className="w-full rounded bg-[#0a0a0a] px-2 py-1 text-xs text-[#f6f4f0] outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
             />
           </div>
@@ -1862,11 +1989,12 @@ function DesignPanel() {
               <div>
                 <label className="text-[10px] text-[#666360]">Data Source (table)</label>
                 <input
+                  list="dl-tables"
                   value={shape.runtimeBindings?.dataSource || ""}
                   onChange={(e) => updateShape(shape.id, {
                     runtimeBindings: { ...shape.runtimeBindings, dataSource: e.target.value }
                   })}
-                  placeholder="todos"
+                  placeholder={tableOptions.length > 0 ? `e.g. ${tableOptions[0]}` : "todos"}
                   className="w-full rounded bg-[#0a0a0a] px-2 py-1 text-xs text-[#f6f4f0] outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
                 />
               </div>
@@ -1874,11 +2002,12 @@ function DesignPanel() {
                 <label className="text-[10px] text-[#666360]">Repeat For / As</label>
                 <div className="flex gap-1">
                   <input
+                    list="dl-array-state"
                     value={shape.runtimeBindings?.repeatFor || ""}
                     onChange={(e) => updateShape(shape.id, {
                       runtimeBindings: { ...shape.runtimeBindings, repeatFor: e.target.value }
                     })}
-                    placeholder="$todos"
+                    placeholder={arrayStateOptions.length > 0 ? `e.g. ${arrayStateOptions[0].value}` : "$todos"}
                     className="flex-1 rounded bg-[#0a0a0a] px-2 py-1 text-xs text-[#f6f4f0] outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
                   />
                   <input
@@ -1912,8 +2041,8 @@ function DesignPanel() {
 function InspectPanel() {
   const selectedShapes = useSelectedShapes();
   const pageObjects = useWorkspaceStore((s) => {
-    if (!s.file || !s.currentPageId) return {};
-    return s.file.pagesIndex[s.currentPageId]?.objects || {};
+    if (!s.file || !s.currentPageId) return EMPTY_PAGE_OBJECTS;
+    return s.file.pagesIndex[s.currentPageId]?.objects || EMPTY_PAGE_OBJECTS;
   });
 
   if (selectedShapes.length === 0) {
@@ -1965,8 +2094,8 @@ function PrototypePanel() {
   const setFlow = useWorkspaceStore((s) => s.setFlow);
 
   const pageObjects = useWorkspaceStore((s) => {
-    if (!s.file || !s.currentPageId) return {};
-    return s.file.pagesIndex[s.currentPageId]?.objects || {};
+    if (!s.file || !s.currentPageId) return EMPTY_PAGE_OBJECTS;
+    return s.file.pagesIndex[s.currentPageId]?.objects || EMPTY_PAGE_OBJECTS;
   });
 
   const currentFlows = useMemo(() => {

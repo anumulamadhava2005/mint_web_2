@@ -24,6 +24,8 @@ import {
 } from "@/lib/penpot/geom";
 import { snapMove, snapResize, type SnapGuide } from "@/lib/penpot/snapping";
 
+const EMPTY_PAGE_OBJECTS: Record<string, any> = {};
+
 /**
  * Create a shallow overlay of the objects map where the dragged shapes
  * are at their *original* pre-drag positions. This way `snapMove` can
@@ -180,8 +182,8 @@ function SVGViewportInner({ fileId }: ViewportProps) {
 
   // Derive current page objects
   const pageObjects = useWorkspaceStore((s) => {
-    if (!s.file || !s.currentPageId) return {};
-    return s.file.pagesIndex[s.currentPageId]?.objects || {};
+    if (!s.file || !s.currentPageId) return EMPTY_PAGE_OBJECTS;
+    return s.file.pagesIndex[s.currentPageId]?.objects || EMPTY_PAGE_OBJECTS;
   });
 
   // Interaction state

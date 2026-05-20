@@ -37,6 +37,8 @@ import {
   type PrototypeState,
 } from "@/lib/penpot/prototypeEngine";
 
+const EMPTY_PAGE_OBJECTS: Record<string, any> = {};
+
 // ── Props ─────────────────────────────────────────────────────
 interface PrototypeViewerProps {
   onClose: () => void;
@@ -52,8 +54,8 @@ export default function PrototypeViewer({ onClose }: PrototypeViewerProps) {
 
   // Page data
   const pageObjects = useMemo(() => {
-    if (!file || !currentPageId) return {};
-    return file.pagesIndex[currentPageId]?.objects || {};
+    if (!file || !currentPageId) return EMPTY_PAGE_OBJECTS;
+    return file.pagesIndex[currentPageId]?.objects || EMPTY_PAGE_OBJECTS;
   }, [file, currentPageId]);
 
   const flows = useMemo(() => {
@@ -304,7 +306,7 @@ export default function PrototypeViewer({ onClose }: PrototypeViewerProps) {
   const scrollConfig = currentFrame.scrollConfig;
   const scrollBehavior = scrollConfig?.behavior || "none";
   const hasScroll = scrollBehavior !== "none";
-  const fixedElements = new Set(scrollConfig?.fixedElements || []);
+  const fixedElements = new Set<UUID>(scrollConfig?.fixedElements || []);
 
   // Transition styles
   const anim = protoState.transitionActive

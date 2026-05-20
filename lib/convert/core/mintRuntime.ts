@@ -26,7 +26,8 @@ interface ActionDef {
  * Generates the MintRuntime provider + useMint hook as a React file.
  */
 export function generateMintRuntimeProvider(
-  options: ConversionOptions
+  options: ConversionOptions,
+  isNative: boolean = false
 ): string {
   const schema = options.runtimeSchema;
   const states: StateVar[] = schema?.globalState ?? [];
@@ -47,7 +48,7 @@ export function generateMintRuntimeProvider(
 
   // Build action function bodies
   const actionFns = actions
-    .map((a) => buildActionFunction(a, fetchActionNames))
+    .map((a) => buildActionFunction(a, fetchActionNames, isNative))
     .join("\n\n");
 
   // Build action refs for chaining (allows CALL from onSuccess)
@@ -65,6 +66,9 @@ export function generateMintRuntimeProvider(
   L("// Project: " + projectId);
   L("// ═══════════════════════════════════════════════════════════════");
   L('import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";');
+  if (isNative) {
+    L('import { useRouter } from "expo-router";');
+  }
   L("");
   L("// ── Types ─────────────────────────────────────────────────────");
   L("interface MintState { [key: string]: any; }");
@@ -114,6 +118,9 @@ export function generateMintRuntimeProvider(
   L("");
   L("// ── Provider ──────────────────────────────────────────────────");
   L("export function MintProvider({ children }: { children: React.ReactNode }) {");
+  if (isNative) {
+    L("  const router = useRouter();");
+  }
   L("  const [state, _setState] = useState<MintState>({ ...INITIAL_STATE });");
   L("  const stateRef = useRef(state);");
   L("  stateRef.current = state;");
@@ -160,7 +167,9 @@ export function generateMintRuntimeProvider(
   }
 
   L("  const actions: MintActions = {");
-  L("    " + actions.map((a) => a.name).join(",\n    ") + ",");
+  if (actions.length > 0) {
+    L("    " + actions.map((a) => a.name).join(",\n    "));
+  }
   L("  };");
   L("");
   L("  const value: MintContextValue = { state, setState, actions, db: db() };");
@@ -211,15 +220,16 @@ export function generateMintRuntimeProvider(
 
 function buildActionFunction(
   action: ActionDef,
-  fetchActionNames: string[]
+  fetchActionNames: string[],
+  isNative: boolean
 ): string {
   const { name, type, config } = action;
   const cfg = config || {};
 
   switch (type) {
     case "fetch": {
-      const sql = cfg.body?.sql ?? "";
-      const rawParams: any[] = cfg.body?.params ?? [];
+      const sql = cfg.sql ?? cfg.body?.sql ?? "";
+      const rawParams: any[] = cfg.params ?? cfg.body?.params ?? [];
       const onSuccess = cfg.onSuccess ?? "";
       const onError = cfg.onError ?? "";
 
@@ -244,7 +254,7 @@ function buildActionFunction(
       }
 
       lines.push('      const result = await dbQuery(' + JSON.stringify(sql) + ', params);');
-      const successCode = generateOnSuccess(onSuccess, fetchActionNames);
+      const successCode = generateOnSuccess(onSuccess, fetchActionNames, isNative);
       if (successCode) lines.push(successCode);
       lines.push("    } catch (err) {");
       lines.push('      console.error("Action ' + name + ' failed:", err);');
@@ -267,19 +277,51 @@ function buildActionFunction(
       // If this sets currentScreen, also navigate to the corresponding route
       if (/current.?screen/i.test(String(path)) && cfg.value !== undefined) {
         const route = screenNameToRoute(String(cfg.value));
-        lines.push('    window.location.href = "' + route + '";');
+        if (isNative) {
+          lines.push('    router.push("' + route + '");');
+        } else {
+          lines.push('    window.location.href = "' + route + '";');
+        }
       }
-      const alsoCode = generateAlsoStatements(also, fetchActionNames);
+      const alsoCode = generateAlsoStatements(also, fetchActionNames, isNative);
       if (alsoCode) lines.push(alsoCode);
       lines.push("  }, [setState]);");
       return lines.join("\n");
     }
 
+    case "custom": {
+      const onSuccess = cfg.onSuccess ?? "";
+      const onError = cfg.onError ?? "";
+      const also = cfg.also ?? "";
+
+      const lines: string[] = [];
+      lines.push("  const " + name + " = useCallback(async (...args: any[]) => {");
+      lines.push("    try {");
+      
+      const successCode = generateOnSuccess(onSuccess, fetchActionNames, isNative);
+      if (successCode) lines.push(successCode);
+
+      const alsoCode = generateAlsoStatements(also, fetchActionNames, isNative);
+      if (alsoCode) lines.push(alsoCode);
+
+      lines.push("    } catch (err) {");
+      lines.push('      console.error("Action ' + name + ' failed:", err);');
+      const errorCode = generateOnError(onError);
+      if (errorCode) lines.push(errorCode);
+      lines.push("    }");
+      lines.push("  }, [setState]);");
+
+      return lines.join("\n");
+    }
+
     case "navigate": {
       const target = cfg.target ?? "/";
+      const navCode = isNative
+        ? '    router.push("' + target + '");'
+        : '    window.location.href = "' + target + '";';
       return [
         "  const " + name + " = useCallback((...args: any[]) => {",
-        '    window.location.href = "' + target + '";',
+        navCode,
         "  }, []);",
       ].join("\n");
     }
@@ -298,9 +340,31 @@ function buildActionFunction(
 // onSuccess / onError / also statement parsers
 // ═══════════════════════════════════════════════════════════════
 
+function parseActionExpr(expr: string): string {
+  let val = expr.trim();
+  val = val.replace(/\$result/g, "result");
+  val = val.replace(/\$([a-zA-Z_][a-zA-Z0-9_.]*)/g, "stateRef.current.$1");
+  return val;
+}
+
+function formatStateValue(val: string): string {
+  if (
+    ["true", "false", "null", "undefined", "result"].includes(val) ||
+    /^["'].*["']$/.test(val) ||
+    val.includes("stateRef") ||
+    val.includes("result") ||
+    val.startsWith("dbQuery") ||
+    /^\d+$/.test(val)
+  ) {
+    return val;
+  }
+  return `"${val}"`;
+}
+
 function generateOnSuccess(
   onSuccess: string,
-  fetchActionNames: string[]
+  fetchActionNames: string[],
+  isNative: boolean
 ): string {
   if (!onSuccess) return "";
   const statements = onSuccess.split(";").map((s) => s.trim()).filter(Boolean);
@@ -310,17 +374,18 @@ function generateOnSuccess(
       const setMatch = stmt.match(/^SET\s+\$(\S+)\s*=\s*(.+)$/i);
       if (setMatch) {
         const [, key, expr] = setMatch;
-        const val = expr
-          .trim()
-          .replace(/\$result/g, "result")
-          .replace(/\$(\w[\w.]*)/g, "stateRef.current.$1");
+        const rawVal = parseActionExpr(expr);
+        const val = formatStateValue(rawVal);
         let code = '      setState("' + key + '", ' + val + ");";
-        // If setting currentScreen, also navigate
         if (/current.?screen/i.test(key)) {
           const screenVal = expr.trim().replace(/['"`]/g, "");
           if (!/stateRef|result/.test(screenVal)) {
             const route = screenNameToRoute(screenVal);
-            code += '\n      window.location.href = "' + route + '";';
+            if (isNative) {
+              code += '\n      router.push("' + route + '");';
+            } else {
+              code += '\n      window.location.href = "' + route + '";';
+            }
           }
         }
         return code;
@@ -356,7 +421,8 @@ function generateOnError(onError: string): string {
       const setMatch = stmt.match(/^SET\s+\$(\S+)\s*=\s*(.+)$/i);
       if (setMatch) {
         const [, key, expr] = setMatch;
-        const val = expr.trim().replace(/'/g, '"');
+        const rawVal = parseActionExpr(expr);
+        const val = formatStateValue(rawVal);
         return '      setState("' + key + '", ' + val + ");";
       }
       return "      // " + stmt;
@@ -366,7 +432,8 @@ function generateOnError(onError: string): string {
 
 function generateAlsoStatements(
   also: string,
-  fetchActionNames: string[]
+  fetchActionNames: string[],
+  isNative: boolean
 ): string {
   if (!also) return "";
   const statements = also.split(";").map((s) => s.trim()).filter(Boolean);
@@ -375,14 +442,18 @@ function generateAlsoStatements(
       const setMatch = stmt.match(/^SET\s+\$(\S+)\s*=\s*(.+)$/i);
       if (setMatch) {
         const [, key, expr] = setMatch;
-        const val = expr.trim().replace(/'/g, '"');
+        const rawVal = parseActionExpr(expr);
+        const val = formatStateValue(rawVal);
         let code = '    setState("' + key + '", ' + val + ");";
-        // If setting currentScreen, also navigate
         if (/current.?screen/i.test(key)) {
           const screenVal = expr.trim().replace(/['"`]/g, "");
           if (!/stateRef|result/.test(screenVal)) {
             const route = screenNameToRoute(screenVal);
-            code += '\n    window.location.href = "' + route + '";';
+            if (isNative) {
+              code += '\n    router.push("' + route + '");';
+            } else {
+              code += '\n    window.location.href = "' + route + '";';
+            }
           }
         }
         return code;

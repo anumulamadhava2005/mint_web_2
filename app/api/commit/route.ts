@@ -35,6 +35,7 @@ export async function POST(req: Request) {
       nodes,
       referenceFrame,
       interactions = [],
+      runtimeSchema,
     } = body;
 
     if (!projectId || !fileId) {
@@ -56,6 +57,28 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
+    // Load saved runtime schema from DB (authoritative source)
+    // The client may send a stale/empty schema if the BackendPanel wasn't opened
+    let effectiveRuntimeSchema = runtimeSchema;
+    if (!effectiveRuntimeSchema?.globalActions?.length && !effectiveRuntimeSchema?.globalState?.length) {
+      try {
+        const schemaRes = await db.query(
+          `SELECT schema_json FROM runtime_schemas WHERE project_id = $1`,
+          [projectId]
+        );
+        if (schemaRes.rows.length > 0) {
+          const saved = typeof schemaRes.rows[0].schema_json === "string"
+            ? JSON.parse(schemaRes.rows[0].schema_json)
+            : schemaRes.rows[0].schema_json;
+          if (saved?.globalActions?.length || saved?.globalState?.length) {
+            effectiveRuntimeSchema = saved;
+          }
+        }
+      } catch {
+        // If runtime_schemas table doesn't exist yet, continue with client data
+      }
+    }
+
     // Run code conversion with the nodes sent by the client
     const conversionResult = await convertDesign({
       target: targetFramework as TargetFramework,
@@ -68,6 +91,8 @@ export async function POST(req: Request) {
         cssFramework: "tailwind",
         includeComments: true,
         enableLiveSync: false, // sync files are only in the initial ZIP
+        projectId,
+        runtimeSchema: effectiveRuntimeSchema || undefined,
       },
     });
 
