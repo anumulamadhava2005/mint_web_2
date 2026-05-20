@@ -21,8 +21,8 @@ export function generateLiveSyncFiles(
   const fileKey = options.fileKey || "unknown";
   const projectId = options.projectId || fileKey;
   const userId = options.userId || "unknown";
-  // The editor runs on NEXT_PUBLIC_APP_URL or defaults to the vercel URL
-  const editorOrigin = process.env.NEXT_PUBLIC_APP_URL || "https://mintweb2.vercel.app";
+  // The editor runs on NEXT_PUBLIC_APP_URL or defaults to the production URL
+  const editorOrigin = process.env.NEXT_PUBLIC_APP_URL || "https://mintweb.mintit.pro";
 
   // ─── 1. Default Home Page ──────────────────────────────────
   const homePage = generateHomePage();

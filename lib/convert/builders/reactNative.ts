@@ -1198,7 +1198,7 @@ function generateSDUIFiles(
   const userId = options.userId || "unknown";
   // In production the app should point at the deployed Mint server.
   // Users must replace this URL before publishing to the Play Store.
-  const apiOrigin = "https://mintweb2.vercel.app";
+  const apiOrigin = process.env.NEXT_PUBLIC_APP_URL || "https://mintweb.mintit.pro";
 
   // ── 1. mint.config.ts ───────────────────────────────────────
   files.push({

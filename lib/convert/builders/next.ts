@@ -175,10 +175,12 @@ module.exports = nextConfig;
 
     // ── .env.local (live sync) ────────────────────────────────
     if (enableLiveSync) {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001";
+      const wsUrl = appUrl.replace(/^https:/, "wss:").replace(/^http:/, "ws:");
       files.push({
         path: ".env.local",
         content: `# Live Sync Configuration
-NEXT_PUBLIC_WEBSOCKET_URL=ws://localhost:3001
+NEXT_PUBLIC_WEBSOCKET_URL=${wsUrl}
 NEXT_PUBLIC_FILE_KEY=${options.fileKey}
 `,
         type: "text",
