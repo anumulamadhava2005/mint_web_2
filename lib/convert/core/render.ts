@@ -20,11 +20,17 @@ export function hasMintBindings(nodes: DrawableNode[]): boolean {
  *   "form.username" → "state.form?.username"
  *   "todos"         → "state.todos"
  */
-function safeStateExpr(key: string): string {
+function safeStateExpr(key: string, loopVarName?: string): string {
   const parts = key.split('.');
-  if (parts.length === 1) return `state.${key}`;
+
+  if (loopVarName && parts[0].trim() === loopVarName.trim()) {
+    if (parts.length === 1) return parts[0];
+    return parts[0] + parts.slice(1).map(p => `?.${p}`).join('');
+  }
+
+  if (parts.length === 1) return `state.${key.trim()}`;
   // state.part1?.part2?.part3
-  return `state.${parts[0]}` + parts.slice(1).map(p => `?.${p}`).join('');
+  return `state.${parts[0].trim()}` + parts.slice(1).map(p => `?.${p}`).join('');
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -177,11 +183,11 @@ function renderJSXNode(
     style.border = "none";
     style.outline = "none";
     const styleStr = cssToReactStyle(style, indent);
-    const accessor = safeStateExpr(stateKey);
+    const accessor = safeStateExpr(stateKey, loopVarName);
     const inputJSX = `${spaces}<input style={${styleStr}}${dataAttrs} value={${accessor} ?? ""} onChange={(e) => setState("${stateKey}", e.target.value)} placeholder="${node.name.replace(/_/g, ' ')}" />`;
     if (wrapVisible) {
       const visKey = wrapVisible.replace(/^\$/, '').replace(/\s*==.*/, '');
-      const visAccessor = safeStateExpr(visKey);
+      const visAccessor = safeStateExpr(visKey, loopVarName);
       return `${spaces}{${visAccessor} && (\n${inputJSX}\n${spaces})}`;
     }
     return inputJSX;
@@ -189,10 +195,10 @@ function renderJSXNode(
 
   // Handle different node types
   if (node.type === "TEXT") {
-    let textJSX = renderTextNode(node, style, indent, includeDataAttributes, eventHandler);
+    let textJSX = renderTextNode(node, style, indent, includeDataAttributes, eventHandler, loopVarName);
     if (wrapVisible) {
       const visKey = wrapVisible.replace(/^\$/, '').replace(/\s*==.*/, '');
-      const visAccessor = safeStateExpr(visKey);
+      const visAccessor = safeStateExpr(visKey, loopVarName);
       textJSX = `${spaces}{${visAccessor} && (\n${textJSX}\n${spaces})}`;
     }
     return textJSX;
@@ -243,7 +249,7 @@ function renderJSXNode(
       const gap = 12; // 12px default gap for stacked list items
       
       const listKey = wrapRepeat.replace(/^\$/, '');
-      const listAccessor = safeStateExpr(listKey);
+      const listAccessor = safeStateExpr(listKey, loopVarName);
       const itemVar = b.repeatAs;
       finalChildContent = `${spaces}  {/* Preserve original top padding */}\n${spaces}  <div style={{ height: ${minY}, flexShrink: 0 }} />
 ${spaces}  {(${listAccessor} || []).map((${itemVar}: any, _idx: number) => (
@@ -295,7 +301,7 @@ ${spaces}</div>`;
 
     if (wrapVisible) {
       const visKey = wrapVisible.replace(/^\$/, '').replace(/\s*==.*/, '');
-      const visAccessor = safeStateExpr(visKey);
+      const visAccessor = safeStateExpr(visKey, loopVarName);
       return `${spaces}{${visAccessor} && (\n${containerJSX}\n${spaces})}`;
     }
     return containerJSX;
@@ -305,7 +311,7 @@ ${spaces}</div>`;
   let simpleJSX = `${spaces}<div style={${finalStyleStr}}${dataAttrs}${eventHandler} />`;
   if (wrapVisible) {
     const visKey = wrapVisible.replace(/^\$/, '').replace(/\s*==.*/, '');
-    const visAccessor = safeStateExpr(visKey);
+    const visAccessor = safeStateExpr(visKey, loopVarName);
     simpleJSX = `${spaces}{${visAccessor} && (\n${simpleJSX}\n${spaces})}`;
   }
   return simpleJSX;
@@ -319,7 +325,8 @@ function renderTextNode(
   style: CSSProperties,
   indent: number,
   includeDataAttrs: boolean,
-  eventHandler: string
+  eventHandler: string,
+  loopVarName?: string
 ): string {
   const spaces = " ".repeat(indent);
   const styleStr = cssToReactStyle(style, indent);
@@ -331,7 +338,7 @@ function renderTextNode(
   // If text is bound to state, emit dynamic expression
   if (node.bindings?.textBind) {
     const stateKey = node.bindings.textBind.replace(/^\$/, '');
-    const accessor = safeStateExpr(stateKey);
+    const accessor = safeStateExpr(stateKey, loopVarName);
     return `${spaces}<div style={${styleStr}}${dataAttrs}${eventHandler}>{${accessor} ?? ${JSON.stringify(text)}}</div>`;
   }
 

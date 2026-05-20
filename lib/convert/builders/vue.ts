@@ -220,12 +220,7 @@ createApp(App).use(router).mount("#app");
     });
 
     // ── src/App.vue — RouterView + optional nav + overlays ────
-    const navLinks = routes
-      .map(
-        (r) =>
-          `      <router-link to="${r.routePath}">${r.frame.name}</router-link>`
-      )
-      .join("\n");
+    const navLinks = "";
 
     const overlayContainerImport = hasOverlays
       ? `<script setup lang="ts">\nimport OverlayContainer from "./components/OverlayContainer.vue";\n</script>\n\n`
@@ -235,40 +230,8 @@ createApp(App).use(router).mount("#app");
     files.push({
       path: "src/App.vue",
       content: `${overlayContainerImport}<template>
-${routes.length > 1 ? `  <nav class="page-nav">
-${navLinks}
-  </nav>
-` : ""}  <router-view />
+  <router-view />
 ${overlayContainerTag}</template>
-</template>
-
-<style scoped>
-.page-nav {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 1000;
-  display: flex;
-  gap: 4px;
-  padding: 8px 16px;
-  background: rgba(255,255,255,0.9);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid #eee;
-}
-
-.page-nav a {
-  padding: 4px 12px;
-  border-radius: 4px;
-  text-decoration: none;
-  color: #333;
-  font-size: 13px;
-}
-
-.page-nav a:hover {
-  background: #f0f0f0;
-}
-</style>
 `,
       type: "text",
     });

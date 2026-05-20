@@ -186,9 +186,7 @@ NEXT_PUBLIC_FILE_KEY=${options.fileKey}
     }
 
     // ── app/layout.tsx ────────────────────────────────────────
-    const navLinks = routes
-      .map((r) => `        <a href="${r.routePath}" style={{ padding: "4px 12px", borderRadius: 4, textDecoration: "none", color: "#333", fontSize: 13 }}>${r.frame.name}</a>`)
-      .join("\n");
+    const navLinks = "";
 
     const overlayProviderImport = hasOverlays
       ? `import { OverlayProvider } from "../components/OverlayProvider";\n`
@@ -220,10 +218,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-${mintProviderOpen}${overlayProviderOpen}${routes.length > 1 ? `        <nav className="page-nav">
-${navLinks}
-        </nav>
-` : ""}        {children}
+${mintProviderOpen}${overlayProviderOpen}        {children}
 ${overlayProviderClose}${mintProviderClose}      </body>
     </html>
   );
@@ -295,23 +290,6 @@ html, body {
   scrollbar-width: none;
 }
 
-.page-nav {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 1000;
-  display: flex;
-  gap: 4px;
-  padding: 8px 16px;
-  background: rgba(255,255,255,0.9);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid #eee;
-}
-
-.page-nav a:hover {
-  background: #f0f0f0;
-}
 
 [data-img-missing] {
   background: linear-gradient(45deg, #e0e0e0 25%, #f0f0f0 25%, #f0f0f0 50%, #e0e0e0 50%, #e0e0e0 75%, #f0f0f0 75%);
