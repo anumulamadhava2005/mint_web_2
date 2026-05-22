@@ -173,7 +173,7 @@ export async function POST(req: Request) {
       files: changedFiles,          // Only changed files — sent to connector
       allFiles: allCodeFiles,       // Full snapshot — used for diffing next commit
       warnings: conversionResult.warnings,
-      designData: { nodes, interactions, referenceFrame },
+      designData: { nodes, interactions, referenceFrame, runtimeSchema: effectiveRuntimeSchema },
     };
 
     await db.query(

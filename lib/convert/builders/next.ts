@@ -607,6 +607,7 @@ function generateMintLiveProvider(
 
   return `"use client";
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
+import { useMint } from "./mint-runtime";
 
 const API_ORIGIN = "${apiOrigin}";
 const PROJECT_ID = "${projectId}";
@@ -617,6 +618,7 @@ interface DesignData {
   nodes: any[];
   interactions: any[];
   referenceFrame?: any;
+  runtimeSchema?: any;
 }
 
 interface MintLiveContextValue {
@@ -640,6 +642,16 @@ export function useMintDesign(screenId?: string) {
   const ctx = useContext(MintLiveContext);
   if (!screenId) return ctx;
   return { ...ctx, screenData: ctx.getScreenNodes(screenId) };
+}
+
+function SchemaUpdater({ designData, version }: { designData: DesignData | null; version: number }) {
+  const { updateSchema } = useMint();
+  useEffect(() => {
+    if (designData?.runtimeSchema && updateSchema) {
+      updateSchema(designData.runtimeSchema, version);
+    }
+  }, [designData, version, updateSchema]);
+  return null;
 }
 
 export function MintLiveProvider({ children }: { children: React.ReactNode }) {
@@ -692,7 +704,12 @@ export function MintLiveProvider({ children }: { children: React.ReactNode }) {
     designData, version, isLive: !!designData, isLoading, getScreenNodes,
   };
 
-  return <MintLiveContext.Provider value={value}>{children}</MintLiveContext.Provider>;
+  return (
+    <MintLiveContext.Provider value={value}>
+      <SchemaUpdater designData={designData} version={version} />
+      {children}
+    </MintLiveContext.Provider>
+  );
 }
 `;
 }
