@@ -15,6 +15,16 @@
 import { NextResponse } from "next/server";
 import db from "@/lib/db";
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+}
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ projectId: string }> }
@@ -22,7 +32,7 @@ export async function GET(
   try {
     const { projectId } = await params;
     if (!projectId) {
-      return NextResponse.json({ error: "projectId required" }, { status: 400 });
+      return NextResponse.json({ error: "projectId required" }, { status: 400, headers: CORS_HEADERS });
     }
 
     const { searchParams } = new URL(req.url);
@@ -40,7 +50,7 @@ export async function GET(
       );
 
       if (res.rows.length === 0) {
-        return new NextResponse(null, { status: 204 });
+        return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
       }
 
       const row = res.rows[0];
@@ -48,9 +58,9 @@ export async function GET(
         ? JSON.parse(row.config_json)
         : row.config_json;
 
-      // Only return if designData exists (mobile commits)
+      // Only return if designData exists
       if (!data.designData) {
-        return new NextResponse(null, { status: 204 });
+        return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
       }
 
       return NextResponse.json({
@@ -59,7 +69,7 @@ export async function GET(
         framework: data.framework,
         designData: data.designData,
         committedAt: row.created_at,
-      });
+      }, { headers: CORS_HEADERS });
     }
 
     // ── Latest commit ──────────────────────────────────────────
@@ -77,7 +87,7 @@ export async function GET(
         version: 0,
         framework: null,
         designData: null,
-      });
+      }, { headers: CORS_HEADERS });
     }
 
     const row = res.rows[0];
@@ -91,9 +101,9 @@ export async function GET(
       framework: data.framework,
       designData: data.designData || null,
       committedAt: row.created_at,
-    });
+    }, { headers: CORS_HEADERS });
   } catch (e: any) {
     console.error("GET /api/design-data error:", e);
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+    return NextResponse.json({ error: "Internal error" }, { status: 500, headers: CORS_HEADERS });
   }
 }
