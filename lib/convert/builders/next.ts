@@ -173,6 +173,21 @@ module.exports = nextConfig;
       });
     }
 
+    // ── SDUI files (live production updates) ──────────────────
+    const hasSDUI = hasRuntimeBindings && !!options.projectId;
+    if (hasSDUI) {
+      files.push({
+        path: "lib/mint-live.tsx",
+        content: generateMintLiveProvider(options, routes),
+        type: "text",
+      });
+      files.push({
+        path: "components/MintWebRenderer.tsx",
+        content: generateMintWebRenderer(routes),
+        type: "text",
+      });
+    }
+
     // ── .env.local (live sync) ────────────────────────────────
     if (enableLiveSync) {
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001";
@@ -199,13 +214,18 @@ NEXT_PUBLIC_FILE_KEY=${options.fileKey}
     const mintProviderImport = hasRuntimeBindings
       ? `import { MintProvider } from "../lib/mint-runtime";\n`
       : "";
+    const mintLiveImport = hasSDUI
+      ? `import { MintLiveProvider } from "../lib/mint-live";\n`
+      : "";
     const mintProviderOpen = hasRuntimeBindings ? `        <MintProvider>\n` : "";
     const mintProviderClose = hasRuntimeBindings ? `        </MintProvider>\n` : "";
+    const mintLiveOpen = hasSDUI ? `          <MintLiveProvider>\n` : "";
+    const mintLiveClose = hasSDUI ? `          </MintLiveProvider>\n` : "";
 
     files.push({
       path: "app/layout.tsx",
       content: `import type { Metadata } from "next";
-${mintProviderImport}${overlayProviderImport}import "./globals.css";
+${mintProviderImport}${mintLiveImport}${overlayProviderImport}import "./globals.css";
 
 export const metadata: Metadata = {
   title: "${options.fileName || "Design Export"}",
@@ -220,8 +240,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-${mintProviderOpen}${overlayProviderOpen}        {children}
-${overlayProviderClose}${mintProviderClose}      </body>
+${mintProviderOpen}${mintLiveOpen}${overlayProviderOpen}        {children}
+${overlayProviderClose}${mintLiveClose}${mintProviderClose}      </body>
     </html>
   );
 }
@@ -343,7 +363,7 @@ ${generatePageTransitionCSS()}
 
       files.push({
         path: pagePath,
-        content: generateFramePage(route, routedInteractions, manifest, hasNavigateInteractions, hasOverlays, hasRuntimeBindings),
+        content: generateFramePage(route, routedInteractions, manifest, hasNavigateInteractions, hasOverlays, hasRuntimeBindings, hasSDUI),
         type: "text",
       });
     }
@@ -416,7 +436,8 @@ function generateFramePage(
   manifest: ImageManifest,
   hasNavigation: boolean,
   hasOverlays: boolean,
-  hasRuntimeBindings: boolean = false
+  hasRuntimeBindings: boolean = false,
+  hasSDUI: boolean = false
 ): string {
   const { frame } = route;
 
@@ -493,9 +514,26 @@ function generateFramePage(
     if (hasRuntimeBindings) {
       hookLines.push(`  const { state, setState, actions, db } = useMint();`);
     }
+    if (hasSDUI) {
+      imports.push(`import { useMintDesign } from "${route.isHome ? '../' : '../../'}lib/mint-live";`);
+      imports.push(`import { MintWebRenderer } from "${route.isHome ? '../' : '../../'}components/MintWebRenderer";`);
+      hookLines.push(`  const { screenData, designData, isLive } = useMintDesign("${frame.id}");`);
+    }
     if (frame.bindings?.onMount) {
       hookLines.push(`\n  useEffect(() => {\n    if (actions.${frame.bindings.onMount}) {\n      actions.${frame.bindings.onMount}();\n    }\n  }, [actions]);`);
     }
+
+    const sduiCheck = hasSDUI ? `
+  // Live SDUI — render dynamically from server data (works in production)
+  if (isLive && screenData) {
+    return (
+      <MintWebRenderer
+        node={screenData}
+        interactions={designData?.interactions || []}
+      />
+    );
+  }
+` : "";
 
     return `"use client";
 
@@ -503,7 +541,8 @@ ${imports.join("\n")}
 
 export default function ${route.componentName}Page() {
 ${hookLines.join("\n")}
-
+${sduiCheck}
+  // ${hasSDUI ? 'Offline fallback — static generated UI' : ''}
   return (
     <main className="viewport">
       <section
@@ -555,4 +594,310 @@ function collectAllIds(node: DrawableNode): Set<string> {
   return ids;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// SDUI — Server-Driven UI for Next.js (production live updates)
+// ═══════════════════════════════════════════════════════════════
+
+function generateMintLiveProvider(
+  options: ConversionOptions,
+  routes: FrameRoute[]
+): string {
+  const apiOrigin = process.env.NEXT_PUBLIC_APP_URL || "https://mintweb.mintit.pro";
+  const projectId = options.projectId || "unknown";
+
+  return `"use client";
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
+
+const API_ORIGIN = "${apiOrigin}";
+const PROJECT_ID = "${projectId}";
+const POLL_INTERVAL = 5000;
+const CACHE_KEY = "@mint_web_design";
+
+interface DesignData {
+  nodes: any[];
+  interactions: any[];
+  referenceFrame?: any;
+}
+
+interface MintLiveContextValue {
+  designData: DesignData | null;
+  version: number;
+  isLive: boolean;
+  isLoading: boolean;
+  getScreenNodes: (screenId: string) => any | null;
+  screenData?: any;
+}
+
+const MintLiveContext = createContext<MintLiveContextValue>({
+  designData: null,
+  version: 0,
+  isLive: false,
+  isLoading: false,
+  getScreenNodes: () => null,
+});
+
+export function useMintDesign(screenId?: string) {
+  const ctx = useContext(MintLiveContext);
+  if (!screenId) return ctx;
+  return { ...ctx, screenData: ctx.getScreenNodes(screenId) };
+}
+
+export function MintLiveProvider({ children }: { children: React.ReactNode }) {
+  const [designData, setDesignData] = useState<DesignData | null>(null);
+  const [version, setVersion] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const lastVersionRef = useRef(0);
+
+  useEffect(() => {
+    // Load from localStorage cache
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed.designData) {
+          setDesignData(parsed.designData);
+          setVersion(parsed.version || 0);
+          lastVersionRef.current = parsed.version || 0;
+        }
+      }
+    } catch {}
+
+    // Poll for updates
+    const poll = async () => {
+      try {
+        const url = API_ORIGIN + "/api/design-data/" + PROJECT_ID + "?since=" + lastVersionRef.current;
+        const res = await fetch(url);
+        if (res.status === 204 || !res.ok) return;
+        const data = await res.json();
+        if (data.designData && data.version > lastVersionRef.current) {
+          setDesignData(data.designData);
+          setVersion(data.version);
+          lastVersionRef.current = data.version;
+          try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch {}
+        }
+      } catch {}
+    };
+
+    poll();
+    const timer = setInterval(poll, POLL_INTERVAL);
+    return () => clearInterval(timer);
+  }, []);
+
+  const getScreenNodes = useCallback((screenId: string) => {
+    if (!designData?.nodes) return null;
+    return designData.nodes.find((n: any) => n.id === screenId) || null;
+  }, [designData]);
+
+  const value: MintLiveContextValue = {
+    designData, version, isLive: !!designData, isLoading, getScreenNodes,
+  };
+
+  return <MintLiveContext.Provider value={value}>{children}</MintLiveContext.Provider>;
+}
+`;
+}
+
+function generateMintWebRenderer(routes: FrameRoute[]): string {
+  const routeEntries = routes.map((r) =>
+    `  "${r.frame.id}": "${r.isHome ? "/" : `/${r.slug}`}"`
+  ).join(",\n");
+
+  return `"use client";
+import React, { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useMint } from "../lib/mint-runtime";
+
+const ROUTE_MAP: Record<string, string> = {
+${routeEntries}
+};
+
+function resolveBinding(expr: string, state: any, loopCtx?: Record<string, any>): any {
+  if (!expr) return undefined;
+  const path = expr.startsWith("$") ? expr.slice(1) : expr;
+  const parts = path.split(".");
+  if (loopCtx && parts[0] in loopCtx) {
+    let cur: any = loopCtx;
+    for (const p of parts) { if (cur == null) return undefined; cur = cur[p]; }
+    return cur;
+  }
+  let cur: any = state;
+  for (const p of parts) { if (cur == null) return undefined; cur = cur[p]; }
+  return cur;
+}
+
+interface MintWebRendererProps {
+  node: any;
+  interactions?: any[];
+}
+
+export function MintWebRenderer({ node, interactions = [] }: MintWebRendererProps) {
+  const { actions } = useMint();
+  const bgFill = node.fills?.find((f: any) => f.type === "SOLID");
+  const bgColor = bgFill?.color || undefined;
+  const onMount = node.pluginData?.runtimeBindings?.onMount;
+
+  useEffect(() => {
+    if (onMount && (actions as any)[onMount]) {
+      (actions as any)[onMount]();
+    }
+  }, [onMount]);
+
+  return (
+    <main style={{ width: "100vw", height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", background: "#f5f5f5" }}>
+      <section style={{ width: node.width, height: node.height, position: "relative", overflow: "hidden", flexShrink: 0, backgroundColor: bgColor }}>
+        {node.children?.map((child: any) => (
+          <NodeRenderer key={child.id} node={child} interactions={interactions} />
+        ))}
+      </section>
+    </main>
+  );
+}
+
+function NodeRenderer({ node, interactions, loopCtx }: { node: any; interactions: any[]; loopCtx?: Record<string, any> }) {
+  const router = useRouter();
+  const { state, setState, actions } = useMint();
+
+  if (node.visible === false) return null;
+  const b = node.pluginData?.runtimeBindings;
+
+  // ── repeatFor: render as list ──
+  if (b?.repeatFor && b?.repeatAs) {
+    const listKey = b.repeatFor.replace(/^\\$/, "");
+    let listData = resolveBinding(listKey, state, loopCtx);
+    if (!Array.isArray(listData)) listData = [];
+    const itemVar = b.repeatAs.trim();
+    const kids = node.children || [];
+    let minY = 0, itemH = 0;
+    if (kids.length > 0) {
+      minY = Math.floor(Math.min(...kids.map((c: any) => c.y)));
+      const maxY = Math.ceil(Math.max(...kids.map((c: any) => c.y + c.height)));
+      itemH = Math.max(0, maxY - minY);
+    }
+    const gap = 12;
+    const style = buildStyle(node);
+    return (
+      <div style={{ ...style, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ height: minY, flexShrink: 0 }} />
+        {listData.map((item: any, idx: number) => {
+          const childCtx = { ...loopCtx, [itemVar]: item };
+          return (
+            <div key={idx} style={{ position: "relative", width: "100%", height: itemH + gap, flexShrink: 0 }}>
+              <div style={{ position: "absolute", top: -minY, left: 0, width: "100%", height: "100%" }}>
+                {kids.map((child: any) => (
+                  <NodeRenderer key={child.id + "-" + idx} node={child} interactions={interactions} loopCtx={childCtx} />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // ── inputBind: render <input> ──
+  if (b?.inputBind) {
+    const stateKey = b.inputBind.replace(/^\\$/, "").trim();
+    const value = resolveBinding(stateKey, state, loopCtx);
+    const style = buildStyle(node);
+    return (
+      <input
+        style={{ ...style, color: "#e2e8f0", paddingLeft: 12, fontSize: 16, border: "none", outline: "none", boxSizing: "border-box" as const }}
+        value={value ?? ""}
+        onChange={(e) => setState(stateKey, e.target.value)}
+        placeholder={node.name?.replace(/_/g, " ") || ""}
+      />
+    );
+  }
+
+  const isText = node.type === "TEXT";
+  const style = buildStyle(node);
+
+  // onClick from bindings or interactions
+  const nodeIx = interactions.find((ix: any) => ix.sourceId === node.id);
+  const isClickable = !!b?.onClick || !!nodeIx;
+
+  const handleClick = isClickable ? () => {
+    if (b?.onClick) {
+      const fn = (actions as any)[b.onClick];
+      if (fn) fn(); else console.warn("Action not found:", b.onClick);
+      return;
+    }
+    if (nodeIx) {
+      if (nodeIx.action === "NAVIGATE" && nodeIx.targetId) {
+        const route = ROUTE_MAP[nodeIx.targetId];
+        if (route) router.push(route);
+      } else if (nodeIx.action === "BACK") {
+        router.back();
+      } else if (nodeIx.action === "OPEN_URL" && nodeIx.destinationUrl) {
+        window.open(nodeIx.destinationUrl, "_blank");
+      }
+    }
+  } : undefined;
+
+  // ── Text node ──
+  if (isText && node.text) {
+    let displayText = node.text.characters || "";
+    if (b?.textBind) {
+      const bound = resolveBinding(b.textBind, state, loopCtx);
+      if (bound != null) displayText = String(bound);
+    }
+    const textStyle: React.CSSProperties = {
+      fontFamily: node.text.fontFamily ? node.text.fontFamily + ", system-ui, sans-serif" : undefined,
+      fontSize: node.text.fontSize,
+      fontWeight: node.text.fontWeight,
+      color: node.text.color,
+      textAlign: node.text.textAlign?.toLowerCase() as any,
+    };
+    return (
+      <div style={{ ...style, cursor: isClickable ? "pointer" : undefined }} onClick={handleClick}>
+        <span style={textStyle}>{displayText}</span>
+      </div>
+    );
+  }
+
+  // ── Container with children ──
+  if (node.children?.length) {
+    return (
+      <div style={{ ...style, cursor: isClickable ? "pointer" : undefined }} onClick={handleClick}>
+        {node.children.map((child: any) => (
+          <NodeRenderer key={child.id} node={child} interactions={interactions} loopCtx={loopCtx} />
+        ))}
+      </div>
+    );
+  }
+
+  // ── Leaf node ──
+  return <div style={{ ...style, cursor: isClickable ? "pointer" : undefined }} onClick={handleClick} />;
+}
+
+function buildStyle(node: any): React.CSSProperties {
+  const style: React.CSSProperties = {
+    position: "absolute",
+    left: Math.round(node.x),
+    top: Math.round(node.y),
+    width: Math.round(node.width),
+    height: Math.round(node.height),
+    boxSizing: "border-box",
+  };
+  if (node.type !== "TEXT" && node.fills?.length) {
+    const solid = node.fills.find((f: any) => f.type === "SOLID" && f.color);
+    if (solid) style.backgroundColor = solid.color;
+  }
+  if (node.corners?.uniform) style.borderRadius = node.corners.uniform;
+  if (node.opacity !== undefined && node.opacity < 1) style.opacity = node.opacity;
+  if (node.strokes?.length) {
+    const s = node.strokes[0];
+    if (s.color && s.weight) { style.borderWidth = s.weight; style.borderColor = s.color; style.borderStyle = "solid"; }
+  }
+  if (node.layout?.mode && node.layout.mode !== "NONE") {
+    style.display = "flex";
+    style.flexDirection = node.layout.mode === "VERTICAL" ? "column" : "row";
+    if (node.layout.gap) style.gap = node.layout.gap;
+  }
+  return style;
+}
+`;
+}
+
 export default nextBuilder;
+

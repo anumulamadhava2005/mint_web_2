@@ -161,10 +161,9 @@ export async function POST(req: Request) {
 
     const changedFiles = allCodeFiles.filter((f) => changedPaths.has(f.path));
 
-    // For mobile frameworks, also store raw design data for Server-Driven UI.
-    // Production apps fetch this via /api/design-data and render dynamically
-    // without needing an app-store update.
-    const isMobileFramework = targetFramework === "react-native" || targetFramework === "flutter";
+    // Store raw design data for Server-Driven UI.
+    // All frameworks can use this for live updates in production —
+    // apps fetch via /api/design-data and render dynamically.
 
     // Store ALL files in DB (full snapshot for future diffs)
     // but separately identify which files changed for the connector
@@ -174,9 +173,7 @@ export async function POST(req: Request) {
       files: changedFiles,          // Only changed files — sent to connector
       allFiles: allCodeFiles,       // Full snapshot — used for diffing next commit
       warnings: conversionResult.warnings,
-      designData: isMobileFramework
-        ? { nodes, interactions, referenceFrame }
-        : undefined,
+      designData: { nodes, interactions, referenceFrame },
     };
 
     await db.query(
