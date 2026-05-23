@@ -100,12 +100,12 @@ ${overlayProviderImport}${mintProviderImport}export default function RootLayout(
   return (
     <>
       <StatusBar style="light" />
-      <MintLiveProvider>
-${mintProviderOpen}${overlayProviderOpen}        <Stack>
+${mintProviderOpen}      <MintLiveProvider>
+${overlayProviderOpen}        <Stack>
 ${screenEntries}
         </Stack>
-${overlayProviderClose}${mintProviderClose}      </MintLiveProvider>
-    </>
+${overlayProviderClose}      </MintLiveProvider>
+${mintProviderClose}    </>
   );
 }
 `,
@@ -1264,6 +1264,7 @@ export interface DesignDataResponse {
       width: number;
       height: number;
     };
+    runtimeSchema?: any;
   } | null;
   committedAt?: string;
 }
@@ -1379,6 +1380,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, Rea
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MINT_CONFIG } from "../mint.config";
 import { MintConnector, DesignDataResponse } from "../services/MintConnector";
+import { useMint } from "../lib/mint-runtime";
 
 const CACHE_KEY = "@mint_design_data";
 
@@ -1423,6 +1425,17 @@ export function useMintDesign(screenIdOrRoute?: string) {
     ...ctx,
     screenData: ctx.getScreenNodes(screenIdOrRoute),
   };
+}
+
+// ── Schema Updater — bridges design data → MintProvider ──────
+function SchemaUpdater({ designData, version }: { designData: DesignDataResponse["designData"]; version: number }) {
+  const { updateSchema } = useMint();
+  useEffect(() => {
+    if (designData?.runtimeSchema && updateSchema) {
+      updateSchema(designData.runtimeSchema, version);
+    }
+  }, [designData, version, updateSchema]);
+  return null;
 }
 
 // ── Provider ──────────────────────────────────────────────────
@@ -1532,6 +1545,7 @@ export function MintLiveProvider({ children }: { children: ReactNode }) {
 
   return (
     <MintLiveContext.Provider value={value}>
+      <SchemaUpdater designData={designData} version={version} />
       {children}
     </MintLiveContext.Provider>
   );

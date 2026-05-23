@@ -43,6 +43,26 @@ export function generateMintRuntimeProvider(
     initialState[s.name] = s.defaultValue ?? getDefaultForType(s.type);
   }
 
+  // Auto-initialize parent objects for nested state paths referenced in actions
+  // e.g. if an action uses $form.username, ensure form: {} exists in initial state
+  const nestedParents = new Set<string>();
+  for (const a of actions) {
+    const cfg = a.config || {};
+    const params: any[] = cfg.params ?? cfg.body?.params ?? [];
+    for (const p of params) {
+      if (typeof p === "string" && p.startsWith("$")) {
+        const fullPath = p.slice(1);
+        const parts = fullPath.split(".");
+        if (parts.length > 1) nestedParents.add(parts[0]);
+      }
+    }
+  }
+  for (const parent of Array.from(nestedParents)) {
+    if (!(parent in initialState)) {
+      initialState[parent] = {};
+    }
+  }
+
   // Collect action names that are "fetch" type for loadTodosRef-style chaining
   const fetchActionNames = actions.filter((a) => a.type === "fetch").map((a) => a.name);
 
@@ -190,6 +210,19 @@ export function generateMintRuntimeProvider(
   L('            next[s.name] = s.defaultValue ?? (s.type === "array" ? [] : s.type === "number" ? 0 : s.type === "boolean" ? false : "");');
   L("          }");
   L("        }");
+  L("        // Auto-initialize parent objects for nested param refs (e.g. $form.username -> form: {})");
+  L("        if (schema.globalActions) {");
+  L("          for (const a of schema.globalActions) {");
+  L("            const cfg = a.config || {};");
+  L("            const ps = cfg.params || cfg.body?.params || [];");
+  L("            for (const p of ps) {");
+  L('              if (typeof p === "string" && p.startsWith("$")) {');
+  L('                const parts = p.slice(1).split(".");');
+  L('                if (parts.length > 1 && !(parts[0] in next)) { next[parts[0]] = {}; }');
+  L("              }");
+  L("            }");
+  L("          }");
+  L("        }");
   L("        return next;");
   L("      });");
   L("    }");
@@ -207,6 +240,21 @@ export function generateMintRuntimeProvider(
   L("  const mergedActions = dynamicActions ? { ...actions, ...dynamicActions } : actions;");
   L("  const value: MintContextValue = { state, setState, actions: mergedActions, db: db(), updateSchema };");
   L("");
+
+  // For React Native: auto-navigate when currentScreen state changes
+  if (isNative) {
+    L("  // ── Auto-navigate when currentScreen changes (for dynamic actions) ──");
+    L("  const prevScreenRef = useRef<string | null>(null);");
+    L("  useEffect(() => {");
+    L("    const screen = state.currentScreen || state.CurrentScreen;");
+    L("    if (!screen || screen === prevScreenRef.current) return;");
+    L("    prevScreenRef.current = screen;");
+    L('    const route = "/" + String(screen).toLowerCase().replace(/\\s+/g, "-");');
+    L("    try { router.push(route as any); } catch (e) { console.warn(\"Navigation failed:\", e); }");
+    L("  }, [state.currentScreen, state.CurrentScreen, router]);");
+    L("");
+  }
+
   L("  return <MintContext.Provider value={value}>{children}</MintContext.Provider>;");
   L("}");
   L("");
@@ -274,6 +322,7 @@ export function generateMintRuntimeProvider(
   L('        if (config.onSuccess) handleOnSuccess(config.onSuccess, result, setState, stateRef, allActions);');
   L("      } catch (err) {");
   L('        console.error("Dynamic action " + name + " failed:", err);');
+  L('        if (config.onError) handleOnSuccess(config.onError, undefined, setState, stateRef, allActions);');
   L("      }");
   L("    };");
   L("  }");
@@ -305,11 +354,12 @@ export function generateMintRuntimeProvider(
   L('    if (setMatch) {');
   L('      var key = setMatch[1];');
   L('      var rawVal = setMatch[2].trim();');
-  L('      var val = rawVal;');
-  L('      if (rawVal === "$result") val = result;');
-  L('      else if (rawVal === "$result.rows") val = result && result.rows ? result.rows : [];');
-  L('      else if (rawVal.indexOf("$result.rows[") === 0) {');
-  L('        var bm = rawVal.match(/\\$result\\.rows\\[(\\d+)\\]\\.?(.*)/);');
+  L('      var val: any = rawVal;');
+  L('      var rv = rawVal.replace(/^\\$/, "");');
+  L('      if (rv === "result") val = result;');
+  L('      else if (rv === "result.rows") val = result && result.rows ? result.rows : [];');
+  L('      else if (rv.indexOf("result.rows[") === 0) {');
+  L('        var bm = rv.match(/result\\.rows\\[(\\d+)\\]\\.?(.*)/);');
   L('        if (bm && result && result.rows) { val = bm[2] ? (result.rows[parseInt(bm[1])] || {})[bm[2]] : result.rows[parseInt(bm[1])]; }');
   L('      }');
   L(`      else if (rawVal === '""' || rawVal === "''" ) val = "";`);
