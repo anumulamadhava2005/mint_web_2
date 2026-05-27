@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState, useEffect, useCallback } from "react";
+import React, { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import { Key, Hash, Fingerprint, Diamond, CircleDot, GripVertical } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────────
@@ -25,8 +25,8 @@ interface RelationDef {
 interface TableDef {
   id: string;
   name: string;
-  fields: FieldDef[];
-  relations: RelationDef[];
+  fields?: FieldDef[];
+  relations?: RelationDef[];
   timestamps?: boolean;
   softDelete?: boolean;
 }
@@ -36,6 +36,10 @@ interface Props {
   relations?: RelationDef[];
 }
 
+// Safe accessors — API may omit these arrays
+function tFields(t: TableDef): FieldDef[] { return t.fields ?? []; }
+function tRelations(t: TableDef): RelationDef[] { return t.relations ?? []; }
+
 // ── Layout helpers ───────────────────────────────────────────
 const TABLE_W = 240;
 const TABLE_HEADER_H = 36;
@@ -43,15 +47,38 @@ const ROW_H = 28;
 const GAP_X = 100;
 const GAP_Y = 60;
 
-function getTableHeight(t: TableDef) {
-  let rows = t.fields.length;
-  if (t.timestamps !== false) rows += 2; // created_at, updated_at
-  if (t.softDelete) rows += 1;
-  // add relation FK fields
-  for (const r of t.relations) {
-    if (r.type !== "many-to-many" && !t.fields.find((f) => f.name === r.foreignKey)) rows += 1;
+function getAllDisplayFields(table: TableDef) {
+  const rows: { name: string; type: string }[] = [];
+  const seen = new Set<string>();
+  const addRow = (row: { name: string; type: string }) => {
+    if (seen.has(row.name)) return;
+    seen.add(row.name);
+    rows.push(row);
+  };
+
+  const fields = tFields(table);
+  if (!fields.find((f) => f.name === "id")) {
+    addRow({ name: "id", type: "uuid" });
   }
-  return TABLE_HEADER_H + rows * ROW_H + 8;
+  for (const f of fields) addRow({ name: f.name, type: f.type });
+  for (const r of tRelations(table)) {
+    if (r.type !== "many-to-many") {
+      addRow({ name: r.foreignKey, type: "uuid" });
+    }
+  }
+  if (table.timestamps !== false) {
+    addRow({ name: "created_at", type: "timestamptz" });
+    addRow({ name: "updated_at", type: "timestamptz" });
+  }
+  if (table.softDelete) {
+    addRow({ name: "deleted_at", type: "timestamptz" });
+  }
+  return rows;
+}
+
+function getTableHeight(t: TableDef) {
+  const rows = getAllDisplayFields(t);
+  return TABLE_HEADER_H + rows.length * ROW_H + 8;
 }
 
 function autoLayout(tables: TableDef[]): Record<string, { x: number; y: number }> {
@@ -94,18 +121,24 @@ function TableCard({
   pos: { x: number; y: number };
   onDragStart: (id: string, e: React.PointerEvent) => void;
 }) {
-  const fkFields = new Set(table.relations.map((r) => r.foreignKey));
+  const fkFields = new Set(tRelations(table).map((r) => r.foreignKey));
 
   // Build display rows: id + fields + FK fields (if not already in fields) + timestamps
   const displayRows: { name: string; type: string; isPrimary?: boolean; isFK?: boolean; required?: boolean; unique?: boolean }[] = [];
+  const seen = new Set<string>();
+  const addRow = (row: { name: string; type: string; isPrimary?: boolean; isFK?: boolean; required?: boolean; unique?: boolean }) => {
+    if (seen.has(row.name)) return;
+    seen.add(row.name);
+    displayRows.push(row);
+  };
 
   // Primary key
-  if (!table.fields.find((f) => f.name === "id")) {
-    displayRows.push({ name: "id", type: "uuid", isPrimary: true, required: true });
+  if (!tFields(table).find((f) => f.name === "id")) {
+    addRow({ name: "id", type: "uuid", isPrimary: true, required: true });
   }
 
-  for (const f of table.fields) {
-    displayRows.push({
+  for (const f of tFields(table)) {
+    addRow({
       name: f.name,
       type: f.type,
       isPrimary: f.name === "id" || f.isPrimary,
@@ -116,19 +149,19 @@ function TableCard({
   }
 
   // FK fields not in schema
-  for (const r of table.relations) {
-    if (r.type !== "many-to-many" && !table.fields.find((f) => f.name === r.foreignKey)) {
-      displayRows.push({ name: r.foreignKey, type: "uuid", isFK: true, required: true });
+  for (const r of tRelations(table)) {
+    if (r.type !== "many-to-many") {
+      addRow({ name: r.foreignKey, type: "uuid", isFK: true, required: true });
     }
   }
 
   // Timestamps
   if (table.timestamps !== false) {
-    displayRows.push({ name: "created_at", type: "timestamptz", required: true });
-    displayRows.push({ name: "updated_at", type: "timestamptz", required: true });
+    addRow({ name: "created_at", type: "timestamptz", required: true });
+    addRow({ name: "updated_at", type: "timestamptz", required: true });
   }
   if (table.softDelete) {
-    displayRows.push({ name: "deleted_at", type: "timestamptz" });
+    addRow({ name: "deleted_at", type: "timestamptz" });
   }
 
   return (
@@ -256,27 +289,19 @@ function RelationEdge({
   );
 }
 
-function getAllDisplayFields(table: TableDef) {
-  const rows: { name: string; type: string }[] = [];
-  if (!table.fields.find((f) => f.name === "id")) {
-    rows.push({ name: "id", type: "uuid" });
-  }
-  for (const f of table.fields) rows.push({ name: f.name, type: f.type });
-  for (const r of table.relations) {
-    if (r.type !== "many-to-many" && !table.fields.find((f) => f.name === r.foreignKey)) {
-      rows.push({ name: r.foreignKey, type: "uuid" });
-    }
-  }
-  if (table.timestamps !== false) {
-    rows.push({ name: "created_at", type: "timestamptz" });
-    rows.push({ name: "updated_at", type: "timestamptz" });
-  }
-  if (table.softDelete) rows.push({ name: "deleted_at", type: "timestamptz" });
-  return rows;
-}
+// Helper moved above getTableHeight
 
 // ── Main Component ───────────────────────────────────────────
-export default function SchemaVisualizer({ tables }: Props) {
+export default function SchemaVisualizer({ tables: rawTables }: Props) {
+  // Normalize: ensure every table has relations + fields arrays (API may omit them)
+  const tables = useMemo(() =>
+    (rawTables || []).map((t) => ({
+      ...t,
+      relations: Array.isArray(t.relations) ? t.relations : [],
+      fields: Array.isArray(t.fields) ? t.fields : [],
+    })),
+    [rawTables]
+  );
   const svgRef = useRef<SVGSVGElement>(null);
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [dragging, setDragging] = useState<string | null>(null);
@@ -303,14 +328,17 @@ export default function SchemaVisualizer({ tables }: Props) {
   }, [tables]);
 
   // Collect all relations
-  const allEdges: { from: TableDef; to: TableDef; relation: RelationDef }[] = [];
-  const tableMap = new Map(tables.map((t) => [t.name, t]));
-  for (const t of tables) {
-    for (const r of t.relations) {
-      const target = tableMap.get(r.targetTable);
-      if (target) allEdges.push({ from: t, to: target, relation: r });
+  const allEdges = useMemo(() => {
+    const edges: { from: TableDef; to: TableDef; relation: RelationDef }[] = [];
+    const tableMap = new Map(tables.map((t) => [t.name, t]));
+    for (const t of tables) {
+      for (const r of (t.relations ?? [])) {
+        const target = tableMap.get(r.targetTable);
+        if (target) edges.push({ from: t, to: target, relation: r });
+      }
     }
-  }
+    return edges;
+  }, [tables]);
 
   const handleDragStart = useCallback((id: string, e: React.PointerEvent) => {
     e.stopPropagation();

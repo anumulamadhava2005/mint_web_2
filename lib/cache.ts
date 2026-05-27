@@ -15,7 +15,16 @@ async function getClient(): Promise<RedisClientType | null> {
   lastConnectAttempt = now;
   try {
     connectionFailed = false;
-    client = createClient({ url: REDIS_URL }) as RedisClientType;
+    client = createClient({
+      url: REDIS_URL,
+      socket: {
+        reconnectStrategy() {
+          // Fail fast on connection loss/failure; getClient handles reconnect attempts via cooldown
+          return false;
+        },
+        connectTimeout: 1000,
+      }
+    }) as RedisClientType;
     client.on("error", () => {
       connectionFailed = true;
       client = null;

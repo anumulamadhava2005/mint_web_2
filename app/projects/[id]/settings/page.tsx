@@ -81,7 +81,11 @@ export default function ProjectSettingsPage({ params }: { params: Promise<{ id: 
     setCopied(true); setTimeout(() => setCopied(false), 2000);
   };
 
-  const runtimeTables: any[] = dashData?.runtimeSchema?.schema?.database?.tables || [];
+  const runtimeTables: any[] = (dashData?.runtimeSchema?.schema?.database?.tables || []).map((t: any) => ({
+    ...t,
+    fields: Array.isArray(t.fields) ? t.fields : [],
+    relations: Array.isArray(t.relations) ? t.relations : [],
+  }));
 
   if (loading) return (
     <div className="flex min-h-screen items-center justify-center bg-[#0a0a0a]">

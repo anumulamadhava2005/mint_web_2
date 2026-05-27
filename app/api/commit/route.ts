@@ -119,7 +119,7 @@ export async function POST(req: Request) {
     const nextVersion = parseInt(versionRes.rows[0].max_version, 10) + 1;
 
     // Only store text files for code sync
-    const allCodeFiles = conversionResult.files
+    const allCodeFiles = (conversionResult.files || [])
       .filter((f) => f.type === "text")
       .map((f) => ({ path: f.path, content: f.content as string, type: f.type }));
 

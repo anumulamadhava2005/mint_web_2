@@ -87,10 +87,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         [projectId]
       ),
       safeQuery(
-        `SELECT sl.id, sl.pages, sl.flags, sl.created_at, u.email as owner_email
+        `SELECT sl.id, sl.pages, sl.flags, sl.created_at
          FROM share_links sl
          JOIN files f ON sl.file_id = f.id
-         JOIN users u ON sl.owner_id = u.id
          WHERE f.project_id = $1 AND f.deleted_at IS NULL
          ORDER BY sl.created_at DESC
          LIMIT 20`,
