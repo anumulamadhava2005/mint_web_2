@@ -29,7 +29,7 @@ export async function GET(req: Request) {
        JOIN users u ON ct.owner_id = u.id
        JOIN files f ON ct.file_id = f.id
        JOIN projects p ON f.project_id = p.id
-       WHERE ct.file_id = $1 AND p.owner_id = $2
+       WHERE ct.file_id = $1 AND (p.owner_id = $2 OR p.is_public = true)
        ORDER BY ct.created_at DESC`,
       [fileId, user.id]
     );
@@ -53,8 +53,19 @@ export async function POST(req: Request) {
 
     const body = await req.json();
 
-    // Reply to existing thread
+    // Reply to existing thread — verify access to parent project
     if (body.threadId) {
+      const threadCheck = await db.query(
+        `SELECT ct.id FROM comment_threads ct
+         JOIN files f ON ct.file_id = f.id
+         JOIN projects p ON f.project_id = p.id
+         WHERE ct.id = $1 AND (p.owner_id = $2 OR p.is_public = true)`,
+        [body.threadId, user.id]
+      );
+      if (!threadCheck.rows?.length) {
+        return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+      }
+
       const res = await db.query(
         `INSERT INTO comments (thread_id, owner_id, content)
          VALUES ($1, $2, $3)
@@ -64,10 +75,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ comment: res.rows[0] }, { status: 201 });
     }
 
-    // Create new thread
+    // Create new thread — verify access to file's project
     const { fileId, pageId, frameId, positionX, positionY, content } = body;
     if (!fileId || !pageId || !content) {
       return NextResponse.json({ error: "fileId, pageId, content required" }, { status: 400 });
+    }
+
+    const fileCheck = await db.query(
+      `SELECT f.id FROM files f
+       JOIN projects p ON f.project_id = p.id
+       WHERE f.id = $1 AND (p.owner_id = $2 OR p.is_public = true) AND f.deleted_at IS NULL`,
+      [fileId, user.id]
+    );
+    if (!fileCheck.rows?.length) {
+      return NextResponse.json({ error: "File not found" }, { status: 404 });
     }
 
     const res = await db.query(

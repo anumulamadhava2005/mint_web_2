@@ -10,22 +10,11 @@ import { cookies } from "next/headers";
 import { findUserByToken } from "../../../../lib/auth";
 import db from "../../../../lib/db";
 
-// Ensure the table exists
-const initPromise = db.query(`
-  CREATE TABLE IF NOT EXISTS runtime_schemas (
-    project_id UUID PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
-    schema_json JSONB NOT NULL DEFAULT '{}',
-    updated_at TIMESTAMPTZ DEFAULT now(),
-    updated_by UUID REFERENCES users(id)
-  )
-`).catch(() => {});
-
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    await initPromise;
     const cookieStore = await cookies();
     const token = cookieStore.get("token")?.value;
     if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -34,6 +23,15 @@ export async function GET(
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { projectId } = await params;
+
+    // Verify project ownership or public access
+    const projCheck = await db.query(
+      "SELECT id FROM projects WHERE id = $1 AND (owner_id = $2 OR is_public = true)",
+      [projectId, user.id]
+    );
+    if (!projCheck.rows?.length) {
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    }
 
     const result = await db.query(
       `SELECT schema_json, updated_at FROM runtime_schemas WHERE project_id = $1`,
@@ -58,7 +56,6 @@ export async function POST(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    await initPromise;
     const cookieStore = await cookies();
     const token = cookieStore.get("token")?.value;
     if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -67,6 +64,16 @@ export async function POST(
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { projectId } = await params;
+
+    // Verify project ownership
+    const projCheck = await db.query(
+      "SELECT id FROM projects WHERE id = $1 AND owner_id = $2",
+      [projectId, user.id]
+    );
+    if (!projCheck.rows?.length) {
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    }
+
     const body = await req.json();
     const { schema } = body;
 

@@ -1,23 +1,71 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { createClient } from "redis";
+
+// SD-13: Use Node.js runtime so we can use the redis npm package
+export const runtime = "nodejs";
 
 // Routes that require authentication
 const protectedPaths = ["/projects"];
 // Routes that should redirect to /projects if already authenticated
 const authPages = ["/login", "/signup"];
 
-async function validateToken(token: string, baseUrl: string): Promise<boolean> {
+// Redis client for direct session validation (no HTTP self-call)
+const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
+let redisClient: ReturnType<typeof createClient> | null = null;
+let redisReady = false;
+
+async function getRedis() {
+  if (redisClient && redisReady) return redisClient;
+  if (redisClient) return null;
   try {
-    const validateUrl = new URL("/api/validate-token", baseUrl);
-    const res = await fetch(validateUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
+    redisClient = createClient({ url: REDIS_URL });
+    redisClient.on("error", () => {
+      redisReady = false;
     });
-    return res.ok;
+    redisClient.on("ready", () => {
+      redisReady = true;
+    });
+    await redisClient.connect();
+    redisReady = true;
+    return redisClient;
   } catch {
-    return false;
+    redisClient = null;
+    return null;
   }
+}
+
+async function validateToken(token: string): Promise<boolean> {
+  // Try direct Redis lookup first
+  const redis = await getRedis();
+  if (redis) {
+    try {
+      const cached = await redis.get(`session:${token}`);
+      if (cached) return true;
+    } catch { /* fall through */ }
+  }
+
+  // Redis miss or down — allow through and let the route handler do auth
+  // This is safe because every protected route has its own auth check
+  return redis ? false : true;
+}
+
+// API routes that are intentionally public (no auth needed)
+const publicApiRoutes = [
+  "/api/validate-token",
+  "/api/mobile-config",
+  "/api/design-data",
+  "/api/sync",
+  "/api/project-data",
+  "/api/projects/community",
+  "/api/login",
+  "/api/signup",
+];
+
+function isPublicApiRoute(pathname: string): boolean {
+  return publicApiRoutes.some(
+    (route) => pathname === route || pathname.startsWith(route + "/")
+  );
 }
 
 export async function middleware(request: NextRequest) {
@@ -37,7 +85,7 @@ export async function middleware(request: NextRequest) {
 
   if (isAuthPage && token) {
     // User has a token, validate it
-    const isValid = await validateToken(token, request.url);
+    const isValid = await validateToken(token);
     if (isValid) {
       // Already logged in — redirect to projects (or redirect param)
       const redirect = request.nextUrl.searchParams.get("redirect") || "/projects";
@@ -45,26 +93,36 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Check if this is a protected route
-  const isProtected = protectedPaths.some(
+  // Check if this is a protected page route
+  const isProtectedPage = protectedPaths.some(
     (path) => pathname === path || pathname.startsWith(path + "/")
   );
 
-  if (!isProtected) {
+  // Check if this is an API route that needs auth
+  const isApiRoute = pathname.startsWith("/api/");
+  const isProtectedApi = isApiRoute && !isPublicApiRoute(pathname);
+
+  if (!isProtectedPage && !isProtectedApi) {
     return NextResponse.next();
   }
 
   if (!token) {
-    // Redirect to login page
+    if (isProtectedApi) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    // Redirect to login page for page routes
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("redirect", pathname);
     return NextResponse.redirect(loginUrl);
   }
 
   // Validate token
-  const isValid = await validateToken(token, request.url);
+  const isValid = await validateToken(token);
 
   if (!isValid) {
+    if (isProtectedApi) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("redirect", pathname);
     return NextResponse.redirect(loginUrl);
@@ -74,5 +132,10 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/projects/:path*", "/login", "/signup"],
+  matcher: [
+    "/projects/:path*",
+    "/login",
+    "/signup",
+    "/api/:path*",
+  ],
 };

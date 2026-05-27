@@ -344,7 +344,7 @@ export default function PenpotEditor({
 
   if (loading) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-[#0a0a0a]">
+      <div className="flex h-full w-full items-center justify-center bg-[#2c2c2c]">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
           <p className="text-sm text-[#a8a6a2]">Loading workspace...</p>
@@ -354,7 +354,7 @@ export default function PenpotEditor({
   }
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-[#0a0a0a]">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-[#2c2c2c]">
       {/* ── Top Header Bar ── */}
       <Header
         projectName={projectName}
@@ -426,7 +426,7 @@ export default function PenpotEditor({
       {commitOrphanDialog && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          <div className="relative w-full max-w-md rounded-2xl border border-white/10 bg-[#0a0a0a] shadow-2xl">
+          <div className="relative w-full max-w-md rounded-2xl border border-white/10 bg-[#2c2c2c] shadow-2xl">
             <div className="flex items-center justify-between border-b border-white/5 px-5 py-4">
               <div>
                 <h2 className="text-base font-semibold text-[#f6f4f0]">Unreachable Screens</h2>
@@ -654,7 +654,7 @@ const Header = memo(function Header({
   };
 
   return (
-    <header className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.08] bg-[#0a0a0a] px-3">
+    <header className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.08] bg-[#2c2c2c] px-3">
       {/* Left: Back + file info */}
       <div className="flex items-center gap-3">
         <button
@@ -911,7 +911,7 @@ const Toolbar = memo(function Toolbar({
   onToggleGrid: () => void;
 }) {
   return (
-    <div className="flex h-10 shrink-0 items-center justify-between border-b border-white/[0.08] bg-[#0a0a0a] px-2">
+    <div className="flex h-10 shrink-0 items-center justify-between border-b border-white/[0.08] bg-[#2c2c2c] px-2">
       <div className="flex items-center gap-0.5">
         {TOOLS.map((tool) => (
           <button
@@ -1113,7 +1113,7 @@ const LeftPanel = memo(function LeftPanel() {
   if (!file) return null;
 
   return (
-    <div className="flex w-56 shrink-0 flex-col border-r border-white/[0.08] bg-[#0a0a0a]">
+    <div className="flex w-56 shrink-0 flex-col border-r border-white/[0.08] bg-[#2c2c2c]">
       {/* Tab switcher */}
       <div className="flex border-b border-white/[0.08]">
         <button
@@ -1406,22 +1406,33 @@ function LayerTree({
 }
 
 function ShapeIcon({ type }: { type: string }) {
-  const cls = "h-3 w-3 shrink-0 text-[#666360]";
+  const size = "h-3.5 w-3.5 shrink-0";
   switch (type) {
-    case "rect":
-      return <svg className={cls} viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>;
-    case "circle":
-      return <svg className={cls} viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>;
-    case "text":
-      return <svg className={cls} viewBox="0 0 16 16"><text x="3" y="12" fontSize="11" fill="currentColor" fontWeight="bold">T</text></svg>;
     case "frame":
-      return <svg className={cls} viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" /><line x1="2" y1="5" x2="14" y2="5" stroke="currentColor" strokeWidth="1" /></svg>;
+      // # hash/grid icon (Penpot frame style)
+      return <svg className={`${size} text-indigo-400`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><line x1="6" y1="2" x2="6" y2="14" /><line x1="10" y1="2" x2="10" y2="14" /><line x1="2" y1="6" x2="14" y2="6" /><line x1="2" y1="10" x2="14" y2="10" /></svg>;
+    case "rect":
+      return <svg className={`${size} text-zinc-400`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="2" width="12" height="12" rx="0.5" /></svg>;
+    case "circle":
+      return <svg className={`${size} text-zinc-400`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="6" /></svg>;
+    case "text":
+      // T letter icon (Penpot text style)
+      return <svg className={`${size} text-zinc-400`} viewBox="0 0 16 16" fill="currentColor"><text x="3.5" y="13" fontSize="13" fontWeight="600" fontFamily="Inter, system-ui, sans-serif">T</text></svg>;
     case "path":
-      return <svg className={cls} viewBox="0 0 16 16"><path d="M4 12 Q8 2 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>;
+    case "svg-raw":
+      // Pen nib / bezier icon
+      return <svg className={`${size} text-zinc-400`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3"><path d="M12 2l2 2-7 7-3 1 1-3 7-7z" /><path d="M10 4l2 2" /></svg>;
     case "image":
-      return <svg className={cls} viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" /><circle cx="6" cy="6" r="1.5" fill="currentColor" /><path d="M2 11l4-3 3 2 3-4 2 3" stroke="currentColor" strokeWidth="1" fill="none" /></svg>;
+      // Landscape icon
+      return <svg className={`${size} text-zinc-400`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3"><rect x="2" y="3" width="12" height="10" rx="1" /><circle cx="5.5" cy="6.5" r="1.5" /><path d="M2 11l3-3 2.5 2 3-4L14 10" strokeLinejoin="round" /></svg>;
+    case "group":
+      // Overlapping squares
+      return <svg className={`${size} text-zinc-400`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3"><rect x="1.5" y="4.5" width="8" height="8" rx="0.5" /><rect x="6.5" y="1.5" width="8" height="8" rx="0.5" opacity="0.5" /></svg>;
+    case "bool":
+      return <svg className={`${size} text-zinc-400`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3"><circle cx="6" cy="8" r="4" /><circle cx="10" cy="8" r="4" /></svg>;
     default:
-      return <svg className={cls} viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="2 1" /></svg>;
+      // Dashed placeholder
+      return <svg className={`${size} text-zinc-600`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="2 1.5"><rect x="2" y="2" width="12" height="12" rx="0.5" /></svg>;
   }
 }
 
@@ -1437,8 +1448,48 @@ const RightPanel = memo(function RightPanel({
   onModeChange: (mode: OptionsMode) => void;
   projectId: string;
 }) {
+  const [panelWidth, setPanelWidth] = useState(optionsMode === "backend" ? 400 : 320);
+  const isDragging = useRef(false);
+  const startX = useRef(0);
+  const startWidth = useRef(0);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    isDragging.current = true;
+    startX.current = e.clientX;
+    startWidth.current = panelWidth;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const handleMouseMove = (ev: MouseEvent) => {
+      if (!isDragging.current) return;
+      const delta = ev.clientX - startX.current;
+      const newWidth = Math.max(260, Math.min(600, startWidth.current + delta));
+      setPanelWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      isDragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  }, [panelWidth]);
+
   return (
-    <div className={`flex ${optionsMode === "backend" ? "w-80" : "w-64"} shrink-0 flex-col border-l border-white/[0.08] bg-[#0a0a0a] transition-all`}>
+    <div
+      className="relative flex shrink-0 flex-col border-l border-white/[0.08] bg-[#2c2c2c]"
+      style={{ width: panelWidth }}
+    >
+      {/* Drag handle */}
+      <div
+        onMouseDown={handleMouseDown}
+        className="absolute left-0 top-0 bottom-0 z-10 w-1 cursor-col-resize transition-colors hover:bg-indigo-500/40"
+      />
+
       {/* Mode tabs */}
       <div className="flex border-b border-white/[0.08]">
         {(["design", "inspect", "prototype", "backend"] as const).map((mode) => (
@@ -1458,13 +1509,16 @@ const RightPanel = memo(function RightPanel({
         ))}
       </div>
 
-      {/* Tab content */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Tab content — scrollable with hidden scrollbar */}
+      <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: "none", msOverflowStyle: "none" } as React.CSSProperties}>
         {optionsMode === "design" && <DesignPanel />}
         {optionsMode === "inspect" && <InspectPanel />}
         {optionsMode === "prototype" && <PrototypePanel />}
         {optionsMode === "backend" && <BackendPanel projectId={projectId} />}
       </div>
+
+      {/* Hide webkit scrollbar via inline style tag */}
+      <style>{`.flex-1.overflow-y-auto::-webkit-scrollbar { display: none; }`}</style>
     </div>
   );
 });
@@ -1481,6 +1535,55 @@ function useSelectedShapes(): PenpotShape[] {
       .map((id) => objects[id])
       .filter(Boolean);
   }, [selected, file, currentPageId]);
+}
+
+// ── Collapsible Section ───────────────────────────────────────
+function CollapsibleSection({
+  title,
+  icon,
+  badge,
+  defaultOpen = true,
+  accentColor,
+  children,
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  badge?: string;
+  defaultOpen?: boolean;
+  accentColor?: string;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border-b border-white/[0.04] last:border-b-0">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left transition-colors hover:bg-white/[0.02]"
+      >
+        {icon && <span className={`shrink-0 ${accentColor || "text-zinc-500"}`}>{icon}</span>}
+        <span className={`text-[11px] font-semibold tracking-wide uppercase ${accentColor || "text-zinc-400"}`}>
+          {title}
+        </span>
+        {badge && (
+          <span className="ml-auto rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[9px] text-zinc-500">
+            {badge}
+          </span>
+        )}
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          className={`${badge ? "" : "ml-auto"} shrink-0 text-zinc-600 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+        >
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+      {open && <div className="px-3.5 pb-3 pt-0.5">{children}</div>}
+    </div>
+  );
 }
 
 // ── Design Panel ──────────────────────────────────────────────
@@ -1519,120 +1622,136 @@ function DesignPanel() {
 
   if (selectedShapes.length === 0) {
     return (
-      <div className="p-3 text-xs text-[#666360]">
-        Select a shape to edit its properties.
+      <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+        <div className="rounded-xl bg-white/[0.03] p-3">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-zinc-600">
+            <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
+          </svg>
+        </div>
+        <div>
+          <p className="text-xs font-medium text-zinc-400">No selection</p>
+          <p className="mt-0.5 text-[11px] text-zinc-600">Click a shape on the canvas to edit</p>
+        </div>
       </div>
     );
   }
 
   if (selectedShapes.length > 1) {
     return (
-      <div className="p-3 text-xs text-[#666360]">
-        {selectedShapes.length} shapes selected
+      <div className="flex flex-col items-center justify-center gap-2 p-8 text-center">
+        <div className="flex -space-x-1.5">
+          {selectedShapes.slice(0, 3).map((s) => (
+            <div key={s.id} className="h-6 w-6 rounded-md border-2 border-[#2c2c2c] bg-indigo-600/20" />
+          ))}
+        </div>
+        <p className="text-xs font-medium text-zinc-400">{selectedShapes.length} shapes selected</p>
       </div>
     );
   }
 
   const shape = selectedShapes[0];
-
-  // ── Relative positioning: compute local coordinates ──────
-  // If the shape has a parent frame/group, show X/Y relative to the parent's
-  // top-left corner (Figma-style local coordinates). Top-level shapes on the
-  // canvas show absolute coordinates.
   const parent =
     shape.parentId && shape.parentId !== ROOT_FRAME_ID
       ? pageObjects[shape.parentId]
       : null;
-
   const localX = parent ? shape.x - parent.x : shape.x;
   const localY = parent ? shape.y - parent.y : shape.y;
-
   const handleLocalXChange = (localVal: number) => {
     const absX = parent ? parent.x + localVal : localVal;
     updateShape(shape.id, { x: absX });
   };
-
   const handleLocalYChange = (localVal: number) => {
     const absY = parent ? parent.y + localVal : localVal;
     updateShape(shape.id, { y: absY });
   };
 
+  const hasBindings = shape.runtimeBindings && Object.values(shape.runtimeBindings).some(Boolean);
+  const bindingCount = hasBindings ? Object.values(shape.runtimeBindings!).filter(Boolean).length : 0;
+
   return (
-    <div className="space-y-3 p-3">
-      {/* Name */}
-      <div>
-        <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#666360]">Name</label>
-        <input
-          value={shape.name}
-          onChange={(e) => updateShape(shape.id, { name: e.target.value })}
-          className="w-full rounded bg-[#0f0f0f] px-2 py-1 text-xs text-[#f6f4f0] outline-none focus:ring-1 focus:ring-indigo-500"
-        />
-      </div>
-
-      {/* Size presets (frames only) */}
-      {shape.type === "frame" && (
-        <SizePresetsDropdown
-          currentWidth={shape.width}
-          currentHeight={shape.height}
-          onApply={(w, h) => updateShape(shape.id, { width: w, height: h })}
-        />
-      )}
-
-      {/* Position (relative to parent frame) */}
-      <div>
-        <label className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wider text-[#666360]">
-          Position
-          {parent && (
-            <span className="normal-case tracking-normal text-zinc-600">
-              (relative to {parent.name || "parent"})
-            </span>
-          )}
-        </label>
-        <div className="grid grid-cols-2 gap-1.5">
-          <PropertyInput label="X" value={localX} onChange={handleLocalXChange} />
-          <PropertyInput label="Y" value={localY} onChange={handleLocalYChange} />
-        </div>
-      </div>
-
-      {/* Size */}
-      <div>
-        <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#666360]">Size</label>
-        <div className="grid grid-cols-2 gap-1.5">
-          <PropertyInput label="W" value={shape.width} onChange={(v) => updateShape(shape.id, { width: v })} />
-          <PropertyInput label="H" value={shape.height} onChange={(v) => updateShape(shape.id, { height: v })} />
-        </div>
-      </div>
-
-      {/* Rotation */}
-      <div>
-        <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#666360]">Rotation</label>
-        <PropertyInput label="°" value={shape.rotation ?? 0} onChange={(v) => updateShape(shape.id, { rotation: v })} />
-      </div>
-
-      {/* Opacity */}
-      <div>
-        <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#666360]">Opacity</label>
+    <div className="divide-y divide-white/[0.04]">
+      {/* ── Shape Header ── */}
+      <div className="px-3.5 py-3">
         <div className="flex items-center gap-2">
+          <ShapeIcon type={shape.type} />
           <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={shape.opacity ?? 1}
-            onChange={(e) => updateShape(shape.id, { opacity: parseFloat(e.target.value) })}
-            className="flex-1"
+            value={shape.name}
+            onChange={(e) => updateShape(shape.id, { name: e.target.value })}
+            className="flex-1 rounded-md bg-white/[0.04] px-2 py-1.5 text-[13px] font-medium text-[#f6f4f0] outline-none transition-colors focus:bg-white/[0.08] focus:ring-1 focus:ring-indigo-500/50"
           />
-          <span className="text-xs text-[#a8a6a2]">{Math.round((shape.opacity ?? 1) * 100)}%</span>
+          <span className="shrink-0 rounded bg-white/[0.06] px-1.5 py-0.5 text-[9px] font-medium uppercase text-zinc-500">
+            {shape.type}
+          </span>
         </div>
       </div>
 
-      {/* Corner radius (for rects) */}
-      {(shape.type === "rect" || shape.type === "frame") && (
-        <div>
-          <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#666360]">Corner Radius</label>
-          <PropertyInput label="R" value={shape.rx ?? 0} onChange={(v) => updateShape(shape.id, { rx: v, ry: v })} />
+      {/* ── Layout ── */}
+      <CollapsibleSection
+        title="Layout"
+        icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 3v18" /></svg>}
+      >
+        {shape.type === "frame" && (
+          <div className="mb-2.5">
+            <SizePresetsDropdown
+              currentWidth={shape.width}
+              currentHeight={shape.height}
+              onApply={(w, h) => updateShape(shape.id, { width: w, height: h })}
+            />
+          </div>
+        )}
+        <div className="space-y-2">
+          <div>
+            <label className="mb-1 flex items-center gap-1 text-[10px] text-zinc-500">
+              Position
+              {parent && <span className="text-zinc-600">· relative to {parent.name || "parent"}</span>}
+            </label>
+            <div className="grid grid-cols-2 gap-1.5">
+              <PropertyInput label="X" value={localX} onChange={handleLocalXChange} />
+              <PropertyInput label="Y" value={localY} onChange={handleLocalYChange} />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-[10px] text-zinc-500">Size</label>
+            <div className="grid grid-cols-2 gap-1.5">
+              <PropertyInput label="W" value={shape.width} onChange={(v) => updateShape(shape.id, { width: v })} />
+              <PropertyInput label="H" value={shape.height} onChange={(v) => updateShape(shape.id, { height: v })} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <div>
+              <label className="mb-1 block text-[10px] text-zinc-500">Rotation</label>
+              <PropertyInput label="°" value={shape.rotation ?? 0} onChange={(v) => updateShape(shape.id, { rotation: v })} />
+            </div>
+            {(shape.type === "rect" || shape.type === "frame") && (
+              <div>
+                <label className="mb-1 block text-[10px] text-zinc-500">Radius</label>
+                <PropertyInput label="R" value={shape.rx ?? 0} onChange={(v) => updateShape(shape.id, { rx: v, ry: v })} />
+              </div>
+            )}
+          </div>
         </div>
-      )}
+      </CollapsibleSection>
+
+      {/* ── Appearance ── */}
+      <CollapsibleSection
+        title="Appearance"
+        icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M12 2a10 10 0 0 1 0 20" fill="currentColor" opacity="0.3" /></svg>}
+        defaultOpen={false}
+      >
+        <div className="space-y-2.5">
+          {/* Opacity */}
+          <div>
+            <label className="mb-1 block text-[10px] text-zinc-500">Opacity</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="range" min="0" max="1" step="0.01"
+                value={shape.opacity ?? 1}
+                onChange={(e) => updateShape(shape.id, { opacity: parseFloat(e.target.value) })}
+                className="flex-1 accent-indigo-500"
+              />
+              <span className="min-w-[32px] text-right text-[11px] text-zinc-400">{Math.round((shape.opacity ?? 1) * 100)}%</span>
+            </div>
+          </div>
 
       {/* Typography (for text shapes) */}
       {shape.type === "text" && (() => {
@@ -1834,83 +1953,75 @@ function DesignPanel() {
         );
       })()}
 
-      {/* Fill */}
-      <div>
-        <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#666360]">Fill</label>
-        {shape.fills && shape.fills.length > 0 ? (
-          shape.fills.map((fill, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <input
-                type="color"
-                value={fill.fillColor || "#000000"}
-                onChange={(e) => {
-                  const fills = [...(shape.fills || [])];
-                  fills[i] = { ...fills[i], fillColor: e.target.value };
-                  updateShape(shape.id, { fills });
-                }}
-                className="h-6 w-6 cursor-pointer rounded border border-white/[0.08] bg-transparent"
-              />
-              <span className="text-xs text-[#a8a6a2]">{fill.fillColor || "none"}</span>
-            </div>
-          ))
-        ) : (
-          <button
-            onClick={() => {
-              updateShape(shape.id, { fills: [{ fillColor: "#B1B2B5", fillOpacity: 1 }] });
-            }}
-            className="text-xs text-[#666360] hover:text-indigo-400"
-          >
-            + Add fill
-          </button>
-        )}
-      </div>
+          {/* Fill */}
+          <div>
+            <label className="mb-1 block text-[10px] text-zinc-500">Fill</label>
+            {shape.fills && shape.fills.length > 0 ? (
+              shape.fills.map((fill, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={fill.fillColor || "#000000"}
+                    onChange={(e) => {
+                      const fills = [...(shape.fills || [])];
+                      fills[i] = { ...fills[i], fillColor: e.target.value };
+                      updateShape(shape.id, { fills });
+                    }}
+                    className="h-7 w-7 cursor-pointer rounded-md border border-white/[0.08] bg-transparent"
+                  />
+                  <span className="text-[11px] font-mono text-zinc-400">{fill.fillColor || "none"}</span>
+                </div>
+              ))
+            ) : (
+              <button
+                onClick={() => updateShape(shape.id, { fills: [{ fillColor: "#B1B2B5", fillOpacity: 1 }] })}
+                className="text-[11px] text-zinc-600 hover:text-indigo-400 transition-colors"
+              >
+                + Add fill
+              </button>
+            )}
+          </div>
 
-      {/* Stroke */}
-      <div>
-        <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#666360]">Stroke</label>
-        {shape.strokes && shape.strokes.length > 0 ? (
-          shape.strokes.map((stroke, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <input
-                type="color"
-                value={stroke.strokeColor || "#000000"}
-                onChange={(e) => {
-                  const strokes = [...(shape.strokes || [])];
-                  strokes[i] = { ...strokes[i], strokeColor: e.target.value };
-                  updateShape(shape.id, { strokes });
-                }}
-                className="h-6 w-6 cursor-pointer rounded border border-white/[0.08] bg-transparent"
-              />
-              <span className="text-xs text-[#a8a6a2]">{stroke.strokeColor}</span>
-            </div>
-          ))
-        ) : (
-          <button
-            onClick={() => {
-              updateShape(shape.id, { strokes: [{ strokeColor: "#000000", strokeWidth: 1, strokeAlignment: "center" }] });
-            }}
-            className="text-xs text-[#666360] hover:text-indigo-400"
-          >
-            + Add stroke
-          </button>
-        )}
-      </div>
+          {/* Stroke */}
+          <div>
+            <label className="mb-1 block text-[10px] text-zinc-500">Stroke</label>
+            {shape.strokes && shape.strokes.length > 0 ? (
+              shape.strokes.map((stroke, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={stroke.strokeColor || "#000000"}
+                    onChange={(e) => {
+                      const strokes = [...(shape.strokes || [])];
+                      strokes[i] = { ...strokes[i], strokeColor: e.target.value };
+                      updateShape(shape.id, { strokes });
+                    }}
+                    className="h-7 w-7 cursor-pointer rounded-md border border-white/[0.08] bg-transparent"
+                  />
+                  <span className="text-[11px] font-mono text-zinc-400">{stroke.strokeColor}</span>
+                </div>
+              ))
+            ) : (
+              <button
+                onClick={() => updateShape(shape.id, { strokes: [{ strokeColor: "#000000", strokeWidth: 1, strokeAlignment: "center" }] })}
+                className="text-[11px] text-zinc-600 hover:text-indigo-400 transition-colors"
+              >
+                + Add stroke
+              </button>
+            )}
+          </div>
+        </div>
+      </CollapsibleSection>
 
-      {/* ── Runtime Bindings ─────────────────────────────── */}
-      <div>
-        <label className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wider text-emerald-400">
-          <span>⚡</span> Bindings
-          {(stateOptions.length > 0 || actionOptions.length > 0 || tableOptions.length > 0) && (
-            <span className="ml-auto font-normal normal-case tracking-normal text-[9px] text-zinc-500">
-              {stateOptions.length > 0 && `${stateOptions.length} vars`}
-              {stateOptions.length > 0 && actionOptions.length > 0 && " · "}
-              {actionOptions.length > 0 && `${actionOptions.length} actions`}
-              {(stateOptions.length > 0 || actionOptions.length > 0) && tableOptions.length > 0 && " · "}
-              {tableOptions.length > 0 && `${tableOptions.length} tables`}
-            </span>
-          )}
-        </label>
-        <div className="space-y-1.5 rounded-lg border border-white/[0.08]/50 bg-[#0f0f0f]/30 p-2">
+      {/* ── Runtime Bindings ── */}
+      <CollapsibleSection
+        title="Bindings"
+        icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>}
+        accentColor="text-emerald-500"
+        badge={bindingCount > 0 ? `${bindingCount}` : undefined}
+        defaultOpen={!!hasBindings}
+      >
+        <div className="space-y-2.5">
           {/* Datalists for autocomplete */}
           <datalist id="dl-state-vars">
             {stateOptions.map((o: any) => <option key={o.value} value={o.value}>{o.value} ({o.type})</option>)}
@@ -1928,7 +2039,7 @@ function DesignPanel() {
           {/* Text Binding */}
           {(shape.type === "text" || shape.type === "rect" || shape.type === "frame") && (
             <div>
-              <label className="text-[10px] text-[#666360]">Text / Content</label>
+              <label className="mb-0.5 block text-[10px] font-medium text-zinc-500">Text / Content</label>
               <input
                 list="dl-state-vars"
                 value={shape.runtimeBindings?.textBind || ""}
@@ -1936,14 +2047,14 @@ function DesignPanel() {
                   runtimeBindings: { ...shape.runtimeBindings, textBind: e.target.value }
                 })}
                 placeholder={stateOptions.length > 0 ? `e.g. ${stateOptions[0].value}` : "$state.variable"}
-                className="w-full rounded bg-[#0a0a0a] px-2 py-1 text-xs text-[#f6f4f0] outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
+                className="w-full rounded-md bg-white/[0.04] px-2.5 py-1.5 text-xs text-[#f6f4f0] outline-none ring-1 ring-white/[0.08] transition-all focus:bg-white/[0.06] focus:ring-emerald-500/50"
               />
             </div>
           )}
 
           {/* Input Binding */}
           <div>
-            <label className="text-[10px] text-[#666360]">Input Bind (2-way)</label>
+            <label className="mb-0.5 block text-[10px] font-medium text-zinc-500">Input Bind <span className="text-zinc-600">(2-way)</span></label>
             <input
               list="dl-state-vars"
               value={shape.runtimeBindings?.inputBind || ""}
@@ -1951,27 +2062,27 @@ function DesignPanel() {
                 runtimeBindings: { ...shape.runtimeBindings, inputBind: e.target.value }
               })}
               placeholder={stateOptions.length > 0 ? `e.g. ${stateOptions[0].value}` : "$form.fieldName"}
-              className="w-full rounded bg-[#0a0a0a] px-2 py-1 text-xs text-[#f6f4f0] outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
+              className="w-full rounded-md bg-white/[0.04] px-2.5 py-1.5 text-xs text-[#f6f4f0] outline-none ring-1 ring-white/[0.08] transition-all focus:bg-white/[0.06] focus:ring-emerald-500/50"
             />
           </div>
 
           {/* onClick Action */}
           <div>
-            <label className="text-[10px] text-[#666360]">On Click (action)</label>
+            <label className="mb-0.5 block text-[10px] font-medium text-zinc-500">On Click <span className="text-zinc-600">(action)</span></label>
             <input
               list="dl-actions"
               value={shape.runtimeBindings?.onClick || ""}
               onChange={(e) => updateShape(shape.id, {
                 runtimeBindings: { ...shape.runtimeBindings, onClick: e.target.value }
               })}
-              placeholder={actionOptions.length > 0 ? `e.g. ${actionOptions[0]}` : "actionName or $expression"}
-              className="w-full rounded bg-[#0a0a0a] px-2 py-1 text-xs text-[#f6f4f0] outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
+              placeholder={actionOptions.length > 0 ? `e.g. ${actionOptions[0]}` : "actionName"}
+              className="w-full rounded-md bg-white/[0.04] px-2.5 py-1.5 text-xs text-[#f6f4f0] outline-none ring-1 ring-white/[0.08] transition-all focus:bg-white/[0.06] focus:ring-emerald-500/50"
             />
           </div>
 
           {/* Visible Bind */}
           <div>
-            <label className="text-[10px] text-[#666360]">Visible When</label>
+            <label className="mb-0.5 block text-[10px] font-medium text-zinc-500">Visible When</label>
             <input
               list="dl-state-vars"
               value={shape.runtimeBindings?.visibleBind || ""}
@@ -1979,60 +2090,77 @@ function DesignPanel() {
                 runtimeBindings: { ...shape.runtimeBindings, visibleBind: e.target.value }
               })}
               placeholder={stateOptions.find((o: any) => o.type === "boolean")?.value || "$isLoggedIn"}
-              className="w-full rounded bg-[#0a0a0a] px-2 py-1 text-xs text-[#f6f4f0] outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
+              className="w-full rounded-md bg-white/[0.04] px-2.5 py-1.5 text-xs text-[#f6f4f0] outline-none ring-1 ring-white/[0.08] transition-all focus:bg-white/[0.06] focus:ring-emerald-500/50"
             />
           </div>
 
-          {/* Data Source (for frames/groups acting as lists) */}
+          {/* Data Source + Repeat + On Mount (for frames/groups) */}
           {(shape.type === "frame" || shape.type === "group") && (
-            <>
-              <div>
-                <label className="text-[10px] text-[#666360]">Data Source (table)</label>
-                <input
-                  list="dl-tables"
-                  value={shape.runtimeBindings?.dataSource || ""}
-                  onChange={(e) => updateShape(shape.id, {
-                    runtimeBindings: { ...shape.runtimeBindings, dataSource: e.target.value }
-                  })}
-                  placeholder={tableOptions.length > 0 ? `e.g. ${tableOptions[0]}` : "todos"}
-                  className="w-full rounded bg-[#0a0a0a] px-2 py-1 text-xs text-[#f6f4f0] outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-[#666360]">Repeat For / As</label>
-                <div className="flex gap-1">
+            <div className="mt-1 border-t border-white/[0.04] pt-2.5">
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Data & Lifecycle</p>
+              <div className="space-y-2">
+                <div>
+                  <label className="mb-0.5 block text-[10px] font-medium text-zinc-500">Data Source <span className="text-zinc-600">(table)</span></label>
                   <input
-                    list="dl-array-state"
-                    value={shape.runtimeBindings?.repeatFor || ""}
+                    list="dl-tables"
+                    value={shape.runtimeBindings?.dataSource || ""}
                     onChange={(e) => updateShape(shape.id, {
-                      runtimeBindings: { ...shape.runtimeBindings, repeatFor: e.target.value }
+                      runtimeBindings: { ...shape.runtimeBindings, dataSource: e.target.value }
                     })}
-                    placeholder={arrayStateOptions.length > 0 ? `e.g. ${arrayStateOptions[0].value}` : "$todos"}
-                    className="flex-1 rounded bg-[#0a0a0a] px-2 py-1 text-xs text-[#f6f4f0] outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
-                  />
-                  <input
-                    value={shape.runtimeBindings?.repeatAs || ""}
-                    onChange={(e) => updateShape(shape.id, {
-                      runtimeBindings: { ...shape.runtimeBindings, repeatAs: e.target.value }
-                    })}
-                    placeholder="item"
-                    className="w-16 rounded bg-[#0a0a0a] px-2 py-1 text-xs text-[#f6f4f0] outline-none ring-1 ring-zinc-700 focus:ring-emerald-500"
+                    placeholder={tableOptions.length > 0 ? `e.g. ${tableOptions[0]}` : "todos"}
+                    className="w-full rounded-md bg-white/[0.04] px-2.5 py-1.5 text-xs text-[#f6f4f0] outline-none ring-1 ring-white/[0.08] transition-all focus:bg-white/[0.06] focus:ring-emerald-500/50"
                   />
                 </div>
+                <div>
+                  <label className="mb-0.5 block text-[10px] font-medium text-zinc-500">Repeat For / As</label>
+                  <div className="flex gap-1.5">
+                    <input
+                      list="dl-array-state"
+                      value={shape.runtimeBindings?.repeatFor || ""}
+                      onChange={(e) => updateShape(shape.id, {
+                        runtimeBindings: { ...shape.runtimeBindings, repeatFor: e.target.value }
+                      })}
+                      placeholder={arrayStateOptions.length > 0 ? `e.g. ${arrayStateOptions[0].value}` : "$todos"}
+                      className="flex-1 rounded-md bg-white/[0.04] px-2.5 py-1.5 text-xs text-[#f6f4f0] outline-none ring-1 ring-white/[0.08] transition-all focus:bg-white/[0.06] focus:ring-emerald-500/50"
+                    />
+                    <input
+                      value={shape.runtimeBindings?.repeatAs || ""}
+                      onChange={(e) => updateShape(shape.id, {
+                        runtimeBindings: { ...shape.runtimeBindings, repeatAs: e.target.value }
+                      })}
+                      placeholder="item"
+                      className="w-16 rounded-md bg-white/[0.04] px-2 py-1.5 text-xs text-[#f6f4f0] outline-none ring-1 ring-white/[0.08] transition-all focus:bg-white/[0.06] focus:ring-emerald-500/50"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-0.5 block text-[10px] font-medium text-zinc-500">On Mount <span className="text-zinc-600">(action)</span></label>
+                  <input
+                    list="dl-actions"
+                    value={shape.runtimeBindings?.onMount || ""}
+                    onChange={(e) => updateShape(shape.id, {
+                      runtimeBindings: { ...shape.runtimeBindings, onMount: e.target.value }
+                    })}
+                    placeholder={actionOptions.length > 0 ? `e.g. ${actionOptions[0]}` : "loadMessages"}
+                    className="w-full rounded-md bg-white/[0.04] px-2.5 py-1.5 text-xs text-[#f6f4f0] outline-none ring-1 ring-white/[0.08] transition-all focus:bg-white/[0.06] focus:ring-emerald-500/50"
+                  />
+                  <p className="mt-0.5 text-[9px] text-zinc-600">Runs when this screen mounts</p>
+                </div>
               </div>
-            </>
+            </div>
           )}
 
-          {shape.runtimeBindings && Object.values(shape.runtimeBindings).some(Boolean) && (
+          {hasBindings && (
             <button
               onClick={() => updateShape(shape.id, { runtimeBindings: undefined })}
-              className="text-[10px] text-red-400 hover:text-red-300"
+              className="mt-1 flex w-full items-center justify-center gap-1 rounded-md bg-red-500/10 px-2 py-1.5 text-[10px] font-medium text-red-400 transition-colors hover:bg-red-500/20"
             >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
               Clear all bindings
             </button>
           )}
         </div>
-      </div>
+      </CollapsibleSection>
     </div>
   );
 }
@@ -2465,7 +2593,7 @@ function AddInteractionForm({
 
           {/* Overlay options */}
           {IS_OVERLAY_ACTION.has(actionType) && (
-            <div className="space-y-1 rounded bg-[#0a0a0a] p-1.5">
+            <div className="space-y-1 rounded bg-[#2c2c2c] p-1.5">
               <label className="text-[9px] uppercase tracking-widest text-zinc-600">Overlay Options</label>
               <select
                 value={overlayPosType}
@@ -2702,10 +2830,10 @@ function SizePresetsDropdown({
 
       {/* Dropdown */}
       {open && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-[70vh] overflow-y-auto rounded-lg border border-white/[0.08] bg-[#0a0a0a] py-1 shadow-xl">
+        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-[70vh] overflow-y-auto rounded-lg border border-white/[0.08] bg-[#2c2c2c] py-1 shadow-xl">
           {DEVICE_PRESETS.map((group) => (
             <div key={group.label}>
-              <div className="sticky top-0 bg-[#0a0a0a] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#666360]">
+              <div className="sticky top-0 bg-[#2c2c2c] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#666360]">
                 {group.label}
               </div>
               {group.presets.map((preset) => {
@@ -2744,8 +2872,8 @@ function PropertyInput({
   onChange: (v: number) => void;
 }) {
   return (
-    <div className="flex items-center rounded bg-[#0f0f0f] px-2 py-1">
-      <span className="mr-1 text-[10px] text-[#666360]">{label}</span>
+    <div className="flex items-center rounded-md bg-white/[0.04] px-2.5 py-1.5 ring-1 ring-white/[0.06] transition-all focus-within:bg-white/[0.06] focus-within:ring-indigo-500/40">
+      <span className="mr-1.5 text-[10px] font-medium text-zinc-500">{label}</span>
       <input
         type="number"
         value={Math.round(value * 100) / 100}

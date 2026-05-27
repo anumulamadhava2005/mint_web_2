@@ -541,7 +541,10 @@ function generateReactPageComponent(
     const imports: string[] = [];
     if (pageHasNav) imports.push(`import { useNavigate } from "react-router-dom";`);
     if (pageHasOverlay && hasOverlays) imports.push(`import { useOverlay } from "../components/OverlayProvider";`);
-    imports.push(`import { useCallback } from "react";`);
+    const hasOnMount = !!frame.bindings?.onMount;
+    const reactHooks = ["useCallback"];
+    if (hasOnMount) reactHooks.push("useEffect");
+    imports.push(`import { ${reactHooks.join(", ")} } from "react";`);
     if (hasRuntimeBindings) imports.push(`import { useMint } from "../lib/mint-runtime";`);
 
     const hooks: string[] = [];
@@ -554,6 +557,9 @@ function generateReactPageComponent(
     }
     if (hasRuntimeBindings) {
       hooks.push(`  const { state, setState, actions, db } = useMint();`);
+    }
+    if (hasOnMount) {
+      hooks.push(`  useEffect(() => {\n    if (actions.${frame.bindings!.onMount}) {\n      actions.${frame.bindings!.onMount}();\n    }\n  }, [actions]);`);
     }
 
     return `${imports.join("\n")}

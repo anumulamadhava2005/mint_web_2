@@ -42,84 +42,68 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
     const project = projRes.rows[0];
 
-    // Files
-    const filesRes = await safeQuery(
-      `SELECT id, name, revn, created_at, modified_at
-       FROM files
-       WHERE project_id = $1 AND deleted_at IS NULL
-       ORDER BY modified_at DESC`,
-      [projectId]
-    );
-
-    // File changes count per file
-    const changesRes = await safeQuery(
-      `SELECT fc.file_id, COUNT(*) as change_count, MAX(fc.created_at) as last_change
-       FROM file_changes fc
-       JOIN files f ON fc.file_id = f.id
-       WHERE f.project_id = $1 AND f.deleted_at IS NULL
-       GROUP BY fc.file_id`,
-      [projectId]
-    );
-
-    // Total changes count
-    const totalChangesRes = await safeQuery(
-      `SELECT COUNT(*) as total
-       FROM file_changes fc
-       JOIN files f ON fc.file_id = f.id
-       WHERE f.project_id = $1 AND f.deleted_at IS NULL`,
-      [projectId]
-    );
-
-    // Comment threads
-    const threadsRes = await safeQuery(
-      `SELECT ct.id, ct.content, ct.resolved, ct.created_at, u.email as author_email
-       FROM comment_threads ct
-       JOIN files f ON ct.file_id = f.id
-       JOIN users u ON ct.owner_id = u.id
-       WHERE f.project_id = $1 AND f.deleted_at IS NULL
-       ORDER BY ct.created_at DESC
-       LIMIT 20`,
-      [projectId]
-    );
-
-    // Project commits
-    const commitsRes = await safeQuery(
-      `SELECT pc.id, pc.version, pc.message, pc.created_at, u.email as committed_by_email
-       FROM project_commits pc
-       LEFT JOIN users u ON pc.committed_by = u.id
-       WHERE pc.project_id = $1
-       ORDER BY pc.version DESC
-       LIMIT 20`,
-      [projectId]
-    );
-
-    // Collab sessions
-    const collabRes = await safeQuery(
-      `SELECT id, started_at, ended_at, active_users, total_operations
-       FROM collab_sessions
-       WHERE project_id = $1
-       ORDER BY started_at DESC
-       LIMIT 10`,
-      [projectId]
-    );
-
-    // Share links
-    const shareRes = await safeQuery(
-      `SELECT sl.id, sl.pages, sl.flags, sl.created_at, u.email as owner_email
-       FROM share_links sl
-       JOIN files f ON sl.file_id = f.id
-       JOIN users u ON sl.owner_id = u.id
-       WHERE f.project_id = $1 AND f.deleted_at IS NULL
-       ORDER BY sl.created_at DESC`,
-      [projectId]
-    );
+    // Run all independent queries in parallel
+    const [filesRes, changesRes, threadsRes, commitsRes, collabRes, shareRes, schemaRes] = await Promise.all([
+      safeQuery(
+        `SELECT id, name, revn, created_at, modified_at
+         FROM files
+         WHERE project_id = $1 AND deleted_at IS NULL
+         ORDER BY modified_at DESC`,
+        [projectId]
+      ),
+      safeQuery(
+        `SELECT fc.file_id, COUNT(*) as change_count, MAX(fc.created_at) as last_change
+         FROM file_changes fc
+         JOIN files f ON fc.file_id = f.id
+         WHERE f.project_id = $1 AND f.deleted_at IS NULL
+         GROUP BY fc.file_id`,
+        [projectId]
+      ),
+      safeQuery(
+        `SELECT ct.id, ct.content, ct.resolved, ct.created_at, u.email as author_email
+         FROM comment_threads ct
+         JOIN files f ON ct.file_id = f.id
+         JOIN users u ON ct.owner_id = u.id
+         WHERE f.project_id = $1 AND f.deleted_at IS NULL
+         ORDER BY ct.created_at DESC
+         LIMIT 20`,
+        [projectId]
+      ),
+      safeQuery(
+        `SELECT pc.id, pc.version, pc.message, pc.created_at, u.email as committed_by_email
+         FROM project_commits pc
+         LEFT JOIN users u ON pc.committed_by = u.id
+         WHERE pc.project_id = $1
+         ORDER BY pc.version DESC
+         LIMIT 20`,
+        [projectId]
+      ),
+      safeQuery(
+        `SELECT id, started_at, ended_at, active_users, total_operations
+         FROM collab_sessions
+         WHERE project_id = $1
+         ORDER BY started_at DESC
+         LIMIT 10`,
+        [projectId]
+      ),
+      safeQuery(
+        `SELECT sl.id, sl.pages, sl.flags, sl.created_at, u.email as owner_email
+         FROM share_links sl
+         JOIN files f ON sl.file_id = f.id
+         JOIN users u ON sl.owner_id = u.id
+         WHERE f.project_id = $1 AND f.deleted_at IS NULL
+         ORDER BY sl.created_at DESC
+         LIMIT 20`,
+        [projectId]
+      ),
+      safeQuery(
+        `SELECT schema_json, updated_at FROM runtime_schemas WHERE project_id = $1`,
+        [projectId]
+      ),
+    ]);
 
     // Runtime schema
     let runtimeSchema = null;
-    const schemaRes = await safeQuery(
-      `SELECT schema_json, updated_at FROM runtime_schemas WHERE project_id = $1`,
-      [projectId]
-    );
     if (schemaRes.rows.length) {
       const raw = schemaRes.rows[0].schema_json;
       runtimeSchema = {
@@ -128,21 +112,31 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       };
     }
 
-    // Runtime table data — fetch rows from namespaced tables
-    // The saved schema is an AppSchema; database tables are at schema.database.tables
+    // Runtime table data — parallelize all table queries
     const dbTables = runtimeSchema?.schema?.database?.tables || [];
     const runtimeTablesData: Record<string, { rows: any[]; rowCount: number }> = {};
     if (dbTables.length > 0) {
       const prefix = `mint_proj_${projectId.replace(/[^a-zA-Z0-9_]/g, "")}_`;
-      for (const table of dbTables as any[]) {
-        const dataRes = await safeQuery(
-          `SELECT * FROM "${prefix}${table.name}" ORDER BY "created_at" DESC LIMIT 100`
-        );
-        runtimeTablesData[table.name] = {
-          rows: dataRes.rows,
-          rowCount: dataRes.rows.length,
+      const tableQueries = (dbTables as any[])
+        .map((table: any) => {
+          const safeName = (table.name || "").replace(/[^a-zA-Z0-9_]/g, "");
+          if (!safeName) return null;
+          return {
+            name: table.name,
+            promise: safeQuery(
+              `SELECT * FROM "${prefix}${safeName}" ORDER BY "created_at" DESC LIMIT 100`
+            ),
+          };
+        })
+        .filter(Boolean) as { name: string; promise: Promise<any> }[];
+
+      const results = await Promise.all(tableQueries.map((q) => q.promise));
+      tableQueries.forEach((q, i) => {
+        runtimeTablesData[q.name] = {
+          rows: results[i].rows,
+          rowCount: results[i].rows.length,
         };
-      }
+      });
     }
 
     // Build changes map
@@ -162,7 +156,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       project,
       stats: {
         fileCount: filesRes.rows.length,
-        totalRevisions: parseInt(totalChangesRes.rows[0]?.total, 10) || 0,
+        totalRevisions: changesRes.rows.reduce(
+          (sum: number, r: any) => sum + (parseInt(r.change_count, 10) || 0), 0
+        ),
         commitCount: commitsRes.rows.length,
         commentThreads: threadsRes.rows.length,
         collabSessions: collabRes.rows.length,

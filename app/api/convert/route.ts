@@ -10,6 +10,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import crypto from "crypto";
+import { deflateRawSync } from "zlib";
 
 const execAsync = util.promisify(exec);
 
@@ -339,11 +340,18 @@ module.exports = defineConfig([
 export async function GET() {
   const frameworks = getAvailableFrameworks();
 
-  return NextResponse.json({
-    success: true,
-    frameworks,
-    documentation: "/api/convert/docs",
-  });
+  return NextResponse.json(
+    {
+      success: true,
+      frameworks,
+      documentation: "/api/convert/docs",
+    },
+    {
+      headers: {
+        "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400",
+      },
+    }
+  );
 }
 
 // ── ZIP Generation ────────────────────────────────────────────
@@ -360,26 +368,33 @@ async function generateZip(
   let offset = 0;
 
   for (const file of files) {
-    const fileName = encoder.encode(file.path);
-    const content =
+    const safePath = file.path.replace(/\.\.\//g, "").replace(/^\/+/, "");
+    const fileName = encoder.encode(safePath);
+    const rawContent =
       file.type === "text"
         ? encoder.encode(file.content as string)
         : (file.content as Uint8Array);
 
-    // Local file header
-    const localHeader = createLocalFileHeader(fileName, content);
+    // PERF-07: DEFLATE compression (level 6)
+    const compressed = deflateRawSync(rawContent, { level: 6 });
+    const fileCrc = crc32(rawContent);
+
+    // Local file header (method 8 = DEFLATE)
+    const localHeader = createLocalFileHeader(fileName, rawContent.length, compressed.length, fileCrc);
     parts.push(localHeader);
-    parts.push(content);
+    parts.push(compressed);
 
     // Central directory entry
     const centralEntry = createCentralDirectoryEntry(
       fileName,
-      content,
+      rawContent.length,
+      compressed.length,
+      fileCrc,
       offset
     );
     centralDirectory.push(centralEntry);
 
-    offset += localHeader.length + content.length;
+    offset += localHeader.length + compressed.length;
   }
 
   // Add central directory
@@ -411,7 +426,9 @@ async function generateZip(
 
 function createLocalFileHeader(
   fileName: Uint8Array,
-  content: Uint8Array
+  uncompressedSize: number,
+  compressedSize: number,
+  fileCrc: number,
 ): Uint8Array {
   const header = new Uint8Array(30 + fileName.length);
   const view = new DataView(header.buffer);
@@ -422,17 +439,17 @@ function createLocalFileHeader(
   view.setUint16(4, 20, true);
   // Flags
   view.setUint16(6, 0, true);
-  // Compression method (0 = store)
-  view.setUint16(8, 0, true);
+  // Compression method (8 = DEFLATE)
+  view.setUint16(8, 8, true);
   // Mod time/date
   view.setUint16(10, 0, true);
   view.setUint16(12, 0, true);
-  // CRC32 (simplified - 0 for now)
-  view.setUint32(14, crc32(content), true);
+  // CRC32
+  view.setUint32(14, fileCrc, true);
   // Compressed size
-  view.setUint32(18, content.length, true);
+  view.setUint32(18, compressedSize, true);
   // Uncompressed size
-  view.setUint32(22, content.length, true);
+  view.setUint32(22, uncompressedSize, true);
   // File name length
   view.setUint16(26, fileName.length, true);
   // Extra field length
@@ -445,7 +462,9 @@ function createLocalFileHeader(
 
 function createCentralDirectoryEntry(
   fileName: Uint8Array,
-  content: Uint8Array,
+  uncompressedSize: number,
+  compressedSize: number,
+  fileCrc: number,
   offset: number
 ): Uint8Array {
   const entry = new Uint8Array(46 + fileName.length);
@@ -459,17 +478,17 @@ function createCentralDirectoryEntry(
   view.setUint16(6, 20, true);
   // Flags
   view.setUint16(8, 0, true);
-  // Compression method
-  view.setUint16(10, 0, true);
+  // Compression method (8 = DEFLATE)
+  view.setUint16(10, 8, true);
   // Mod time/date
   view.setUint16(12, 0, true);
   view.setUint16(14, 0, true);
   // CRC32
-  view.setUint32(16, crc32(content), true);
+  view.setUint32(16, fileCrc, true);
   // Compressed size
-  view.setUint32(20, content.length, true);
+  view.setUint32(20, compressedSize, true);
   // Uncompressed size
-  view.setUint32(24, content.length, true);
+  view.setUint32(24, uncompressedSize, true);
   // File name length
   view.setUint16(28, fileName.length, true);
   // Extra field length

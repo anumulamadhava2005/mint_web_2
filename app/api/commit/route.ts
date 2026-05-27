@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { findUserByToken } from "@/lib/auth";
 import db from "@/lib/db";
-import { convertDesign } from "@/lib/convert";
+import { runConvertWorker, getQueueDepth } from "@/lib/convertWorker";
 import type { TargetFramework } from "@/lib/convert/types";
 
 const VALID_FRAMEWORKS: TargetFramework[] = [
@@ -79,8 +79,16 @@ export async function POST(req: Request) {
       }
     }
 
-    // Run code conversion with the nodes sent by the client
-    const conversionResult = await convertDesign({
+    // Back-pressure: reject if too many conversions queued
+    if (getQueueDepth() > 10) {
+      return NextResponse.json(
+        { error: "Server busy, please retry shortly" },
+        { status: 503 }
+      );
+    }
+
+    // Run code conversion via concurrency-limited worker queue
+    const conversionResult = await runConvertWorker({
       target: targetFramework as TargetFramework,
       fileName: fileName.replace(/\s+/g, "-").toLowerCase(),
       nodes,
@@ -90,7 +98,7 @@ export async function POST(req: Request) {
         generateTypeScript: true,
         cssFramework: "tailwind",
         includeComments: true,
-        enableLiveSync: false, // sync files are only in the initial ZIP
+        enableLiveSync: false,
         projectId,
         runtimeSchema: effectiveRuntimeSchema || undefined,
       },
@@ -182,6 +190,12 @@ export async function POST(req: Request) {
       [projectId, nextVersion, JSON.stringify(commitData), user.id, body.message || ""]
     );
 
+    // Fire-and-forget audit log
+    db.query(
+      `INSERT INTO audit_log (actor_id, action, resource, metadata) VALUES ($1, $2, $3, $4)`,
+      [user.id, "commit", `project:${projectId}`, JSON.stringify({ version: nextVersion, framework: targetFramework, fileCount: changedFiles.length })]
+    ).catch(console.error);
+
     return NextResponse.json({
       version: nextVersion,
       framework: targetFramework,
@@ -192,6 +206,11 @@ export async function POST(req: Request) {
       committedAt: new Date().toISOString(),
     }, { status: 201 });
   } catch (e: any) {
+    // Fire-and-forget audit log
+    db.query(
+      `INSERT INTO audit_log (actor_id, action, resource, metadata) VALUES ($1, $2, $3, $4)`,
+      [null, "commit_error", `project:unknown`, JSON.stringify({ error: e.message })]
+    ).catch(console.error);
     console.error("POST /api/commit error:", e);
     return NextResponse.json({ error: e.message || "Internal error" }, { status: 500 });
   }

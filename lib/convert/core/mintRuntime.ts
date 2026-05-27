@@ -175,17 +175,8 @@ export function generateMintRuntimeProvider(
     L("");
   }
 
-  // ── Initial data loaders (useEffect for fetch actions named "load*") ──
-  const loadActions = fetchActionNames.filter((n) => /^load/i.test(n));
-  if (loadActions.length > 0) {
-    L("  // ── Initial data loading ──────────────────────────────");
-    L("  useEffect(() => {");
-    for (const n of loadActions) {
-      L("    " + n + "Ref.current();");
-    }
-    L("  }, []);");
-    L("");
-  }
+  // NOTE: load* actions are NOT auto-fired on provider mount.
+  // Use the onMount binding on individual screen frames instead.
 
   L("  const actions: MintActions = {");
   if (actions.length > 0) {

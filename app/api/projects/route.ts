@@ -44,7 +44,8 @@ export async function GET(req: Request) {
        FROM projects p
        JOIN users u ON u.id = p.owner_id
        WHERE p.owner_id = $1
-       ORDER BY p.created_at DESC`,
+       ORDER BY p.created_at DESC
+       LIMIT 100`,
       [user.id]
     );
 

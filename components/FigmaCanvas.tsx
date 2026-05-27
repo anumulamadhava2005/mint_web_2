@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useEffect, useState, useCallback } from "react";
+import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import {
   MousePointer2,
   Square,
@@ -241,27 +241,31 @@ export default function FigmaCanvas({
     Array<{ id: string; email: string; color: string }>
   >([]);
 
-  // Derived
+  // Derived (memoized to avoid recalculating on every render tick)
   const zoomPct = Math.round(camera.zoom * 100);
-  const pageShapes = shapes.filter((s) => s.pageId === currentPageId);
-  const sortedShapes = [...pageShapes].sort((a, b) => a.zIndex - b.zIndex);
-  const selectedShapes = sortedShapes.filter((s) => selectedIds.has(s.id));
+  const pageShapes = useMemo(
+    () => shapes.filter((s) => s.pageId === currentPageId),
+    [shapes, currentPageId]
+  );
+  const sortedShapes = useMemo(
+    () => [...pageShapes].sort((a, b) => a.zIndex - b.zIndex),
+    [pageShapes]
+  );
+  const selectedShapes = useMemo(
+    () => sortedShapes.filter((s) => selectedIds.has(s.id)),
+    [sortedShapes, selectedIds]
+  );
   const freePages = 3 - pages.length;
 
   // Collaboration
   const getUserToken = () => {
-    if (typeof window === "undefined") return "anonymous";
+    if (typeof window === "undefined") return "";
     const cookies = document.cookie.split(";");
     for (const c of cookies) {
       const [n, v] = c.trim().split("=");
       if (n === "token") return v;
     }
-    let t = localStorage.getItem("collab_token");
-    if (!t) {
-      t = `user_${Math.random().toString(36).substr(2, 9)}`;
-      localStorage.setItem("collab_token", t);
-    }
-    return t;
+    return "";
   };
 
   const collaboration = useCollaboration({

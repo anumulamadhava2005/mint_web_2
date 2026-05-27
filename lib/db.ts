@@ -1,24 +1,79 @@
 import { PoolClient } from "pg";
 
-const pool = {
-  query: async (text: string, params?: any[]) => {
-    try {
-        const bridgeUrl = process.env.DB_PROXY_URL || "https://api.mintit.pro/api/mint-db";
-        const res = await fetch(bridgeUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, params }),
-        cache: "no-store",
-      });
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error("HTTP " + res.status + ": " + errText);
+const ALLOWED_DB_HOSTS = ["api.mintit.pro", "localhost", "127.0.0.1"];
+
+const bridgeUrl = process.env.DB_PROXY_URL || "https://api.mintit.pro/api/mint-db";
+try {
+  const parsed = new URL(bridgeUrl);
+  if (!ALLOWED_DB_HOSTS.includes(parsed.hostname)) {
+    throw new Error(`DB_PROXY_URL hostname not allowed: ${parsed.hostname}`);
+  }
+  if (process.env.NODE_ENV === "production" && parsed.protocol !== "https:") {
+    throw new Error("DB_PROXY_URL must use HTTPS in production");
+  }
+} catch (e: any) {
+  if (e.message.includes("not allowed") || e.message.includes("HTTPS")) throw e;
+  throw new Error(`Invalid DB_PROXY_URL: ${bridgeUrl}`);
+}
+
+class CircuitBreaker {
+  private failures = 0;
+  private state: "closed" | "open" | "half-open" = "closed";
+  private nextRetry = 0;
+
+  constructor(
+    private threshold = 5,
+    private cooldownMs = 30_000,
+  ) {}
+
+  async execute<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.state === "open") {
+      if (Date.now() < this.nextRetry) {
+        throw new Error("Circuit breaker is open — DB proxy unavailable");
       }
-      return res.json();
+      this.state = "half-open";
+    }
+
+    try {
+      const result = await fn();
+      this.failures = 0;
+      this.state = "closed";
+      return result;
     } catch (e) {
-      console.error("DB Bridge Proxy Error:", e);
+      this.failures++;
+      if (this.failures >= this.threshold) {
+        this.state = "open";
+        this.nextRetry = Date.now() + this.cooldownMs;
+        console.error(`Circuit breaker OPEN after ${this.failures} failures, cooldown ${this.cooldownMs}ms`);
+      }
       throw e;
     }
+  }
+}
+
+const dbCircuit = new CircuitBreaker();
+
+const pool = {
+  query: async (text: string, params?: any[]) => {
+    return dbCircuit.execute(async () => {
+      try {
+        const res = await fetch(bridgeUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, params }),
+          cache: "no-store",
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error("HTTP " + res.status + ": " + errText);
+        }
+        return res.json();
+      } catch (e) {
+        console.error("DB Bridge Proxy Error:", e);
+        throw e;
+      }
+    });
   },
   on: (event: string, cb: any) => {},
   connect: async () => ({

@@ -13,6 +13,8 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { findUserByToken } from "../../../../lib/auth";
 import db from "../../../../lib/db";
 
 // Allowed SQL operations for security
@@ -46,6 +48,33 @@ export async function POST(
       return NextResponse.json({ error: "Missing projectId" }, { status: 400 });
     }
 
+    // Auth check
+    const cookieStore = await cookies();
+    const tokenFromCookie = cookieStore.get("token")?.value;
+    const authHeader = req.headers.get("authorization");
+    const tokenFromHeader = authHeader?.startsWith("Bearer ")
+      ? authHeader.slice(7)
+      : null;
+    const token = tokenFromCookie || tokenFromHeader;
+
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const user = await findUserByToken(token);
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Verify project ownership or public access
+    const projCheck = await db.query(
+      "SELECT id FROM projects WHERE id = $1 AND (owner_id = $2 OR is_public = true)",
+      [projectId, user.id]
+    );
+    if (!projCheck.rows?.length) {
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    }
+
     const body = await req.json();
     const { sql, params: queryParams } = body;
 
@@ -77,7 +106,9 @@ export async function POST(
     // All tables are prefixed with the project ID to provide isolation
     const namespacedSQL = namespaceQuery(sql, projectId);
 
-    const result = await db.query(namespacedSQL, queryParams || []);
+    // SD-03: Enforce 5s timeout on user-provided queries
+    const safeSql = `SET statement_timeout = '5000'; ${namespacedSQL}`;
+    const result = await db.query(safeSql, queryParams || []);
 
     return NextResponse.json({
       rows: result.rows || [],
@@ -95,51 +126,57 @@ export async function POST(
 /**
  * Namespace table references in SQL to isolate per-project.
  *
- * Strategy: Only prefix quoted identifiers that appear in table-position
- * contexts (after FROM, INTO, UPDATE, JOIN, ON, REFERENCES, TABLE, INDEX ON).
- * Column names inside parentheses are left untouched.
+ * Strategy: Prefix both quoted and unquoted identifiers that appear in
+ * table-position contexts (after FROM, INTO, UPDATE, JOIN, ON, REFERENCES,
+ * TABLE, INDEX ON, EXISTS). Column names inside parentheses are left untouched.
  */
 function namespaceQuery(sql: string, projectId: string): string {
   const prefix = `mint_proj_${projectId.replace(/[^a-zA-Z0-9_]/g, "")}_`;
 
-  // These keywords are immediately followed by a table name
   const tableKeywords = [
     "FROM",
     "JOIN",
     "UPDATE",
     "REFERENCES",
     "TABLE",
-    "EXISTS",       // CREATE TABLE IF NOT EXISTS "name"
+    "EXISTS",
   ];
 
-  // INTO is special: INSERT INTO "table" ("col1", "col2") — only first is table
-  // We handle it by matching INTO "name" specifically followed by ( or whitespace
+  let result = sql;
 
-  // Phase 1: Replace INSERT INTO "table"
-  let result = sql.replace(
-    /\bINTO\s+"([a-zA-Z][a-zA-Z0-9_]*)"/gi,
-    (match, name) => {
+  // Phase 1: Replace INSERT INTO "table" or INSERT INTO table
+  result = result.replace(
+    /\bINTO\s+(?:"([a-zA-Z][a-zA-Z0-9_]*)"|([a-zA-Z][a-zA-Z0-9_]*))/gi,
+    (match, quoted, unquoted) => {
+      const name = quoted || unquoted;
       if (name.startsWith("_") || name.startsWith("pg_") || name.startsWith("mint_")) return match;
-      return `INTO "${prefix}${name}"`;
+      const prefixedName = `"${prefix}${name}"`;
+      return match.replace(quoted ? `"${name}"` : name, prefixedName);
     }
   );
 
-  // Phase 2: Replace after table-position keywords
+  // Phase 2: Replace after table-position keywords (quoted and unquoted)
   for (const kw of tableKeywords) {
-    const regex = new RegExp(`\\b${kw}\\s+"([a-zA-Z][a-zA-Z0-9_]*)"`, "gi");
-    result = result.replace(regex, (match, name) => {
+    const regex = new RegExp(
+      `\\b${kw}\\s+(?:"([a-zA-Z][a-zA-Z0-9_]*)"|([a-zA-Z][a-zA-Z0-9_]*))`,
+      "gi"
+    );
+    result = result.replace(regex, (match, quoted, unquoted) => {
+      const name = quoted || unquoted;
       if (name.startsWith("_") || name.startsWith("pg_") || name.startsWith("mint_")) return match;
-      return match.replace(`"${name}"`, `"${prefix}${name}"`);
+      const prefixedName = `"${prefix}${name}"`;
+      return match.replace(quoted ? `"${name}"` : name, prefixedName);
     });
   }
 
-  // Phase 3: Replace ON "table" (for triggers/indexes but NOT ON "column")
-  // Pattern: INDEX ... ON "table"  or  TRIGGER ... ON "table"
+  // Phase 3: Replace ON "table" or ON table (for triggers/indexes)
   result = result.replace(
-    /\bON\s+"([a-zA-Z][a-zA-Z0-9_]*)"/gi,
-    (match, name) => {
+    /\bON\s+(?:"([a-zA-Z][a-zA-Z0-9_]*)"|([a-zA-Z][a-zA-Z0-9_]*))/gi,
+    (match, quoted, unquoted) => {
+      const name = quoted || unquoted;
       if (name.startsWith("_") || name.startsWith("pg_") || name.startsWith("mint_")) return match;
-      return `ON "${prefix}${name}"`;
+      const prefixedName = `"${prefix}${name}"`;
+      return match.replace(quoted ? `"${name}"` : name, prefixedName);
     }
   );
 

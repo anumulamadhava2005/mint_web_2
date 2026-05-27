@@ -4,9 +4,9 @@
 // GET /api/project-data/[projectId] — returns the latest commit
 //     data (files, framework, version) for a given project.
 //
-// Intentionally unauthenticated — projectId (UUID) acts as the
-// access token. The connector in converted projects calls this
-// to get the code files that the_god will write to disk.
+// Only accessible for public projects. projectId (UUID) identifies
+// the project. The connector in converted projects calls this
+// to get the code files that will be written to disk.
 // ═══════════════════════════════════════════════════════════════
 
 import { NextResponse } from "next/server";
@@ -20,6 +20,15 @@ export async function GET(
     const { projectId } = await params;
     if (!projectId) {
       return NextResponse.json({ error: "projectId required" }, { status: 400 });
+    }
+
+    // Verify project exists and is public
+    const projCheck = await db.query(
+      "SELECT is_public FROM projects WHERE id = $1",
+      [projectId]
+    );
+    if (!projCheck.rows?.length || !projCheck.rows[0].is_public) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
     const { searchParams } = new URL(req.url);

@@ -8,11 +8,12 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { createClient } from "redis";
+import { z } from "zod";
 
 const httpServer = createServer();
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+    origin: [process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"],
     credentials: true,
   },
   transports: ["websocket", "polling"],
@@ -24,9 +25,11 @@ const io = new Server(httpServer, {
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 const pubClient = createClient({ url: REDIS_URL });
 const subClient = pubClient.duplicate();
+// Dedicated Redis client for presence/cache operations
+const cacheClient = createClient({ url: REDIS_URL });
 
 let redisConnected = false;
-Promise.all([pubClient.connect(), subClient.connect()])
+Promise.all([pubClient.connect(), subClient.connect(), cacheClient.connect()])
   .then(() => {
     io.adapter(createAdapter(pubClient, subClient));
     redisConnected = true;
@@ -35,6 +38,31 @@ Promise.all([pubClient.connect(), subClient.connect()])
   .catch((err) => {
     console.warn("⚠️  Redis not available, running without adapter:", err.message);
   });
+
+// ── Zod schemas for payload validation ────────────────────────
+const FileChangeSchema = z.object({
+  fileId: z.string().min(1),
+  changes: z.any().optional(),
+  revn: z.number().int().optional(),
+  sessionId: z.string().optional(),
+});
+
+const OperationSchema = z.object({
+  type: z.string().min(1),
+}).passthrough();
+
+const ConfigUpdateSchema = z.object({
+  projectId: z.string().min(1),
+  version: z.number().int().optional(),
+  config: z.any().optional(),
+});
+
+const CodeUpdateSchema = z.object({
+  projectId: z.string().min(1),
+  version: z.number().int().optional(),
+  framework: z.string().optional(),
+  files: z.array(z.any()).optional(),
+});
 
 // ── Types ─────────────────────────────────────────────────────
 interface UserPresence {
@@ -54,9 +82,15 @@ interface FileSession {
   version: number;
 }
 
-// ── In-memory state ───────────────────────────────────────────
-const fileSessions = new Map<string, FileSession>(); // file_id -> session
+// ── In-memory state (local cache — Redis is source of truth for presence) ──
+const fileSessions = new Map<string, FileSession>();
 const userFiles = new Map<string, string>(); // socket_id -> file_id
+const subscribeRateLimit = new Map<string, { count: number; resetAt: number }>();
+const SUBSCRIBE_MAX = 10;
+const SUBSCRIBE_WINDOW_MS = 60_000;
+const MAX_ROOM_SIZE = parseInt(process.env.WS_MAX_ROOM_SIZE || "50", 10);
+const CURSOR_THROTTLE_MS = 16;
+const lastCursorEmit = new Map<string, number>();
 
 // Utility: Generate unique color for user
 function generateUserColor(userId: string): string {
@@ -66,6 +100,72 @@ function generateUserColor(userId: string): string {
   ];
   const hash = userId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
   return colors[hash % colors.length];
+}
+
+// ── Redis presence helpers ────────────────────────────────────
+async function setPresence(fileId: string, userId: string, presence: UserPresence): Promise<void> {
+  if (!redisConnected) return;
+  try {
+    await cacheClient.hSet(`presence:${fileId}`, userId, JSON.stringify(presence));
+    await cacheClient.expire(`presence:${fileId}`, 3600);
+  } catch { /* non-fatal */ }
+}
+
+async function removePresence(fileId: string, userId: string): Promise<void> {
+  if (!redisConnected) return;
+  try {
+    await cacheClient.hDel(`presence:${fileId}`, userId);
+  } catch { /* non-fatal */ }
+}
+
+async function getPresenceAll(fileId: string): Promise<UserPresence[]> {
+  if (!redisConnected) return [];
+  try {
+    const data = await cacheClient.hGetAll(`presence:${fileId}`);
+    return Object.values(data).map((v) => JSON.parse(v));
+  } catch {
+    return [];
+  }
+}
+
+async function getPresenceCount(fileId: string): Promise<number> {
+  if (!redisConnected) return 0;
+  try {
+    return await cacheClient.hLen(`presence:${fileId}`);
+  } catch {
+    return 0;
+  }
+}
+
+// ── Token validation helper (SD-05: direct Redis lookup first) ──
+async function validateSocketToken(token: string): Promise<{ valid: boolean; user?: { id: string; email: string } }> {
+  // Try Redis session cache directly — avoids HTTP round-trip to Next.js
+  if (redisConnected) {
+    try {
+      const cached = await cacheClient.get(`session:${token}`);
+      if (cached) {
+        const user = JSON.parse(cached);
+        return { valid: true, user };
+      }
+    } catch { /* fall through to HTTP */ }
+  }
+
+  // Fallback: HTTP validation (cold start / Redis miss)
+  try {
+    const authRes = await fetch(
+      `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/validate-token`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      }
+    );
+    if (!authRes.ok) return { valid: false };
+    const data = await authRes.json();
+    return { valid: true, user: data.user };
+  } catch {
+    return { valid: false };
+  }
 }
 
 // ── Connection handler (Penpot-style message types) ───────────
@@ -78,36 +178,49 @@ io.on("connection", (socket) => {
   // ── Subscribe to file (replaces join_session) ───────────
   // Message types mirror: :subscribe-file, :unsubscribe-file
   socket.on("subscribe-file", async ({ fileId, userId, email, token }) => {
-    if (!fileId || !userId) {
-      socket.emit("error", { message: "fileId and userId required" });
+    // Rate limit subscribe attempts per socket
+    const now = Date.now();
+    const rl = subscribeRateLimit.get(socket.id);
+    if (rl && rl.resetAt > now) {
+      rl.count++;
+      if (rl.count > SUBSCRIBE_MAX) {
+        socket.emit("error", { message: "Rate limit exceeded" });
+        socket.disconnect(true);
+        return;
+      }
+    } else {
+      subscribeRateLimit.set(socket.id, { count: 1, resetAt: now + SUBSCRIBE_WINDOW_MS });
+    }
+
+    if (!fileId || !userId || !token) {
+      socket.emit("error", { message: "fileId, userId, and token required" });
       return;
     }
 
-    // Validate token if provided (basic auth check)
-    if (token) {
-      try {
-        const authRes = await fetch(
-          `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/validate-token`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ token }),
-          }
-        );
-        if (!authRes.ok) {
-          socket.emit("error", { message: "Invalid auth token" });
-          return;
-        }
-      } catch {
-        // If validation service is down, allow connection (graceful fallback)
-        console.warn("Token validation failed, allowing connection");
-      }
+    // Validate token — fail closed
+    const authResult = await validateSocketToken(token);
+    if (!authResult.valid) {
+      socket.emit("error", { message: "Invalid auth token" });
+      return;
+    }
+
+    // Verify the claimed userId matches the token's actual user
+    if (authResult.user && authResult.user.id !== userId) {
+      socket.emit("error", { message: "Token/userId mismatch" });
+      return;
     }
 
     currentUserId = userId;
-    currentUserEmail = email || "anonymous";
+    currentUserEmail = authResult.user?.email || email || "anonymous";
 
-    // Create or get file session
+    // Check room size limit via Redis
+    const roomSize = await getPresenceCount(fileId);
+    if (roomSize >= MAX_ROOM_SIZE) {
+      socket.emit("error", { message: `Room full (max ${MAX_ROOM_SIZE} participants)` });
+      return;
+    }
+
+    // Create or get local file session
     if (!fileSessions.has(fileId)) {
       fileSessions.set(fileId, {
         fileId,
@@ -133,11 +246,15 @@ io.on("connection", (socket) => {
     session.users.set(userId, presence);
     userFiles.set(socket.id, fileId);
 
+    // Store presence in Redis
+    await setPresence(fileId, userId, presence);
+
     // Join socket room for this file
     socket.join(`file:${fileId}`);
 
-    // Send current participants to the new user
-    const participants = Array.from(session.users.values()).map((u) => ({
+    // Send current participants from Redis
+    const allPresence = await getPresenceAll(fileId);
+    const participants = allPresence.map((u) => ({
       id: u.id,
       email: u.email,
       color: u.color,
@@ -168,7 +285,11 @@ io.on("connection", (socket) => {
 
   // ── File change broadcast (from update-file) ────────────
   // When a client commits changes via HTTP, it also broadcasts here
-  socket.on("file-change", ({ fileId, changes, revn, sessionId }) => {
+  socket.on("file-change", (data) => {
+    const parsed = FileChangeSchema.safeParse(data);
+    if (!parsed.success) return;
+
+    const { fileId, changes, revn, sessionId } = parsed.data;
     if (!fileId) return;
 
     const session = fileSessions.get(fileId);
@@ -186,7 +307,11 @@ io.on("connection", (socket) => {
   });
 
   // ── Legacy operation support (shape_add, etc.) ──────────
-  socket.on("operation", (operation: any) => {
+  socket.on("operation", (data: any) => {
+    const parsed = OperationSchema.safeParse(data);
+    if (!parsed.success) return;
+
+    const operation = parsed.data;
     const fileId = userFiles.get(socket.id);
     if (!fileId || !currentUserId) return;
 
@@ -205,9 +330,14 @@ io.on("connection", (socket) => {
     io.to(`file:${fileId}`).emit("operation_broadcast", enrichedOp);
   });
 
-  // ── Pointer/cursor update ───────────────────────────────
+  // ── Pointer/cursor update (PERF-09: throttled to 16ms) ──
   // Message type: :pointer-update
   socket.on("pointer-update", ({ x, y, pageId }) => {
+    const now = Date.now();
+    const last = lastCursorEmit.get(socket.id) || 0;
+    if (now - last < CURSOR_THROTTLE_MS) return;
+    lastCursorEmit.set(socket.id, now);
+
     const fileId = userFiles.get(socket.id);
     if (!fileId || !currentUserId) return;
 
@@ -268,6 +398,11 @@ io.on("connection", (socket) => {
   });
 
   socket.on("cursor_move", ({ x, y }) => {
+    const now = Date.now();
+    const last = lastCursorEmit.get(socket.id) || 0;
+    if (now - last < CURSOR_THROTTLE_MS) return;
+    lastCursorEmit.set(socket.id, now);
+
     const fileId = userFiles.get(socket.id);
     if (!fileId || !currentUserId) return;
     socket.to(`file:${fileId}`).emit("cursor_update", {
@@ -289,11 +424,19 @@ io.on("connection", (socket) => {
 
   // ── Project subscription (for mobile preview / live update) ─
   // Preview clients subscribe to project-level config updates
-  socket.on("subscribe-project", ({ projectId }) => {
-    if (!projectId) {
-      socket.emit("error", { message: "projectId required" });
+  socket.on("subscribe-project", async ({ projectId, token }) => {
+    if (!projectId || !token) {
+      socket.emit("error", { message: "projectId and token required" });
       return;
     }
+
+    // Validate token — fail closed
+    const authResult = await validateSocketToken(token);
+    if (!authResult.valid) {
+      socket.emit("error", { message: "Invalid auth token" });
+      return;
+    }
+
     socket.join(`project:${projectId}`);
     socket.emit("project-subscribed", { projectId });
     console.log(`📱 Preview client subscribed to project ${projectId}`);
@@ -307,7 +450,11 @@ io.on("connection", (socket) => {
   });
 
   // Editor broadcasts config-update after a successful commit
-  socket.on("config-update", ({ projectId, version, config }) => {
+  socket.on("config-update", (data) => {
+    const parsed = ConfigUpdateSchema.safeParse(data);
+    if (!parsed.success) return;
+
+    const { projectId, version, config } = parsed.data;
     if (!projectId) return;
     // Broadcast to all preview clients watching this project
     socket.to(`project:${projectId}`).emit("config-update", {
@@ -319,7 +466,11 @@ io.on("connection", (socket) => {
   });
 
   // Editor broadcasts code-update with generated files for live sync daemons
-  socket.on("code-update", ({ projectId, version, framework, files }) => {
+  socket.on("code-update", (data) => {
+    const parsed = CodeUpdateSchema.safeParse(data);
+    if (!parsed.success) return;
+
+    const { projectId, version, framework, files } = parsed.data;
     if (!projectId) return;
     socket.to(`project:${projectId}`).emit("code-update", {
       projectId,
@@ -338,6 +489,8 @@ io.on("connection", (socket) => {
   // ── Disconnect ──────────────────────────────────────────
   socket.on("disconnect", () => {
     console.log("🔌 Client disconnected:", socket.id);
+    subscribeRateLimit.delete(socket.id);
+    lastCursorEmit.delete(socket.id);
     const fileId = userFiles.get(socket.id);
     if (fileId) {
       leaveFile(socket, fileId);
@@ -361,6 +514,9 @@ function leaveFile(socket: any, fileId: string) {
   if (userId) {
     session.users.delete(userId);
 
+    // Remove from Redis presence
+    removePresence(fileId, userId);
+
     // Notify others: :leave-file / :disconnect
     socket.to(`file:${fileId}`).emit("leave-file", { profileId: userId });
     socket.to(`file:${fileId}`).emit("user_left", { user_id: userId });
@@ -381,14 +537,39 @@ httpServer.listen(PORT, () => {
   console.log(`🚀 WebSocket server running on port ${PORT}`);
 });
 
-// Graceful shutdown
-process.on("SIGTERM", () => {
-  console.log("SIGTERM received, closing server...");
-  httpServer.close(() => {
+// Graceful shutdown — drain connections before exiting
+function gracefulShutdown(signal: string) {
+  console.log(`${signal} received, draining connections...`);
+
+  // Stop accepting new connections
+  httpServer.close();
+
+  // Notify all connected clients
+  io.emit("server-shutting-down", { message: "Server restarting, please reconnect" });
+
+  // Give clients 10s to finish in-flight operations
+  const forceTimeout = setTimeout(() => {
+    console.log("Force shutdown after grace period");
     if (redisConnected) {
-      pubClient.quit();
-      subClient.quit();
+      pubClient.quit().catch(() => {});
+      subClient.quit().catch(() => {});
+      cacheClient.quit().catch(() => {});
+    }
+    process.exit(0);
+  }, 10_000);
+
+  // Disconnect all sockets gracefully
+  io.close(() => {
+    clearTimeout(forceTimeout);
+    console.log("All connections drained");
+    if (redisConnected) {
+      pubClient.quit().catch(() => {});
+      subClient.quit().catch(() => {});
+      cacheClient.quit().catch(() => {});
     }
     process.exit(0);
   });
-});
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));

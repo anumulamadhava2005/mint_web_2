@@ -43,6 +43,11 @@ export async function GET(req: Request) {
         : row.config_json,
       message: row.message,
       committedAt: row.created_at,
+    }, {
+      headers: {
+        "Cache-Control": "public, max-age=10, stale-while-revalidate=60",
+        "ETag": `"v${row.version}"`,
+      },
     });
   } catch (e) {
     console.error("GET /api/mobile-config error:", e);

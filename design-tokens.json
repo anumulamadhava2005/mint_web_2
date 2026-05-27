@@ -1,0 +1,134 @@
+{
+  "$schema": "https://design-tokens.github.io/community-group/format/",
+  "color": {
+    "background": {
+      "base": { "$value": "#0c0c0c", "$type": "color", "$description": "Page background — landing, auth, dashboard" },
+      "canvas": { "$value": "#1a1a1a", "$type": "color", "$description": "Editor canvas area — 2 stops above base for figure/ground separation" },
+      "surface": { "$value": "#242424", "$type": "color", "$description": "Panels, sidebars, cards" },
+      "elevated": { "$value": "#2e2e2e", "$type": "color", "$description": "Dropdowns, tooltips, popovers" },
+      "overlay": { "$value": "rgba(0,0,0,0.65)", "$type": "color", "$description": "Modal backdrops, dialogs" }
+    },
+    "text": {
+      "primary": { "$value": "#ececec", "$type": "color", "$description": "Headings, primary labels, active states — 11.2:1 on surface" },
+      "secondary": { "$value": "#a0a0a0", "$type": "color", "$description": "Body text, descriptions, meta — 5.8:1 on surface" },
+      "tertiary": { "$value": "#6e6e6e", "$type": "color", "$description": "Placeholders, decorative labels — 3.2:1 on surface (never sole info carrier)" },
+      "disabled": { "$value": "#4a4a4a", "$type": "color", "$description": "Disabled controls — combined with opacity + icon" }
+    },
+    "semantic": {
+      "info": { "$value": "#60a5fa", "$type": "color", "$description": "Informational states, links, community — 5.3:1 on surface" },
+      "success": { "$value": "#4ade80", "$type": "color", "$description": "Completed, saved, connected — 6.9:1 on surface" },
+      "warning": { "$value": "#fbbf24", "$type": "color", "$description": "Caution, orphan frames, saving — 8.7:1 on surface" },
+      "error": { "$value": "#f87171", "$type": "color", "$description": "Errors, destructive actions — 5.1:1 on surface" },
+      "focus": { "$value": "#a78bfa", "$type": "color", "$description": "Focus rings, keyboard navigation — 4.8:1 on surface" },
+      "inverse": { "$value": "#ececec", "$type": "color", "$description": "Light text on dark, dark text on light" }
+    },
+    "brand": {
+      "primary": { "$value": "#a78bfa", "$type": "color", "$description": "Violet-400 — active tool, selected states, primary CTAs in editor, commit actions" },
+      "support": { "$value": "#f0f0f0", "$type": "color", "$description": "Near-white — marketing CTAs, high-contrast action targets" }
+    },
+    "border": {
+      "subtle": { "$value": "rgba(255,255,255,0.06)", "$type": "color", "$description": "Default card/panel borders" },
+      "moderate": { "$value": "rgba(255,255,255,0.1)", "$type": "color", "$description": "Input default borders, dividers" },
+      "strong": { "$value": "rgba(255,255,255,0.15)", "$type": "color", "$description": "Hover borders, active panel edges" }
+    }
+  },
+  "typography": {
+    "fontFamily": {
+      "sans": { "$value": "Inter, system-ui, -apple-system, sans-serif", "$type": "fontFamily", "$description": "Primary typeface — geometric sans, high legibility at small sizes" },
+      "mono": { "$value": "Geist Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, monospace", "$type": "fontFamily", "$description": "Code, URLs, keyboard shortcuts, table data" }
+    },
+    "display": {
+      "fontSize": { "$value": "3rem", "$type": "dimension" },
+      "fontWeight": { "$value": 700, "$type": "number" },
+      "lineHeight": { "$value": 1.1, "$type": "number" },
+      "letterSpacing": { "$value": "-0.02em", "$type": "dimension" }
+    },
+    "heading1": {
+      "fontSize": { "$value": "1.75rem", "$type": "dimension" },
+      "fontWeight": { "$value": 600, "$type": "number" },
+      "lineHeight": { "$value": 1.25, "$type": "number" },
+      "letterSpacing": { "$value": "-0.015em", "$type": "dimension" }
+    },
+    "heading2": {
+      "fontSize": { "$value": "1.25rem", "$type": "dimension" },
+      "fontWeight": { "$value": 600, "$type": "number" },
+      "lineHeight": { "$value": 1.3, "$type": "number" },
+      "letterSpacing": { "$value": "-0.01em", "$type": "dimension" }
+    },
+    "body": {
+      "fontSize": { "$value": "0.875rem", "$type": "dimension" },
+      "fontWeight": { "$value": 400, "$type": "number" },
+      "lineHeight": { "$value": 1.6, "$type": "number" },
+      "letterSpacing": { "$value": "0", "$type": "dimension" }
+    },
+    "caption": {
+      "fontSize": { "$value": "0.75rem", "$type": "dimension" },
+      "fontWeight": { "$value": 500, "$type": "number" },
+      "lineHeight": { "$value": 1.5, "$type": "number" },
+      "letterSpacing": { "$value": "0.01em", "$type": "dimension" }
+    },
+    "micro": {
+      "fontSize": { "$value": "0.6875rem", "$type": "dimension" },
+      "fontWeight": { "$value": 500, "$type": "number" },
+      "lineHeight": { "$value": 1.4, "$type": "number" },
+      "letterSpacing": { "$value": "0.02em", "$type": "dimension" }
+    }
+  },
+  "spacing": {
+    "1": { "$value": "4px", "$type": "dimension", "$description": "Icon-to-label gap, micro padding" },
+    "2": { "$value": "8px", "$type": "dimension", "$description": "Inline element gaps, compact padding" },
+    "3": { "$value": "12px", "$type": "dimension", "$description": "Input padding, list item padding" },
+    "4": { "$value": "16px", "$type": "dimension", "$description": "Section padding, card padding (compact)" },
+    "5": { "$value": "24px", "$type": "dimension", "$description": "Card padding (comfortable), section gaps" },
+    "6": { "$value": "32px", "$type": "dimension", "$description": "Section margins, panel gutters" },
+    "8": { "$value": "48px", "$type": "dimension", "$description": "Page section spacing" },
+    "12": { "$value": "80px", "$type": "dimension", "$description": "Landing page section breathing room" }
+  },
+  "borderRadius": {
+    "sm": { "$value": "4px", "$type": "dimension", "$description": "Tags, badges, small pills" },
+    "md": { "$value": "8px", "$type": "dimension", "$description": "Buttons, inputs, toolbar items" },
+    "lg": { "$value": "12px", "$type": "dimension", "$description": "Cards, panels, dialogs" },
+    "full": { "$value": "9999px", "$type": "dimension", "$description": "Pill buttons, avatars, status dots" }
+  },
+  "shadow": {
+    "flat": { "$value": "none", "$type": "shadow", "$description": "Canvas, panel backgrounds, inline elements" },
+    "raised": { "$value": "0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3)", "$type": "shadow", "$description": "Cards, dropdowns, toolbar groups" },
+    "floating": { "$value": "0 8px 30px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3)", "$type": "shadow", "$description": "Dialogs, modals, toasts, popovers" }
+  },
+  "motion": {
+    "duration": {
+      "immediate": { "$value": "100ms", "$type": "duration", "$description": "Button press, toggle, checkbox" },
+      "responsive": { "$value": "200ms", "$type": "duration", "$description": "Panel open/close, tab switch, hover" },
+      "transitional": { "$value": "400ms", "$type": "duration", "$description": "Dialog enter/exit, page transition, toast" }
+    },
+    "easing": {
+      "default": { "$value": "cubic-bezier(0.4, 0, 0.2, 1)", "$type": "cubicBezier", "$description": "General purpose easing" },
+      "energetic": { "$value": "cubic-bezier(0.16, 1, 0.3, 1)", "$type": "cubicBezier", "$description": "Entrances, expansions, celebrations" },
+      "exit": { "$value": "cubic-bezier(0.4, 0, 1, 1)", "$type": "cubicBezier", "$description": "Exits, collapses, dismissals" }
+    }
+  },
+  "layout": {
+    "grid": {
+      "sm": {
+        "columns": { "$value": 4, "$type": "number" },
+        "gutter": { "$value": "16px", "$type": "dimension" },
+        "margin": { "$value": "16px", "$type": "dimension" }
+      },
+      "md": {
+        "columns": { "$value": 8, "$type": "number" },
+        "gutter": { "$value": "24px", "$type": "dimension" },
+        "margin": { "$value": "32px", "$type": "dimension" }
+      },
+      "lg": {
+        "columns": { "$value": 12, "$type": "number" },
+        "gutter": { "$value": "24px", "$type": "dimension" },
+        "margin": { "$value": "48px", "$type": "dimension" }
+      }
+    },
+    "breakpoint": {
+      "sm": { "$value": "640px", "$type": "dimension" },
+      "md": { "$value": "1024px", "$type": "dimension" },
+      "lg": { "$value": "1440px", "$type": "dimension" }
+    }
+  }
+}

@@ -328,6 +328,7 @@ export interface PenpotShape {
     inputBind?: string;      // two-way bind for input fields: "$form.email"
     repeatFor?: string;      // "$items" — repeat this shape for each item
     repeatAs?: string;       // "item" — variable name for each iteration
+    onMount?: string;        // action name to call when this screen mounts
     style?: Record<string, string>; // dynamic style bindings
   };
 }

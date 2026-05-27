@@ -7,16 +7,18 @@
 // GET /api/design-data/[projectId]?since=N — returns data only
 //     if there's a version newer than N (204 otherwise).
 //
-// Intentionally unauthenticated — projectId (UUID) acts as the
-// access token.  The production mobile app polls this endpoint
+// Only accessible for public projects. projectId (UUID) identifies
+// the project. The production mobile app polls this endpoint
 // to receive design updates without an app-store release.
 // ═══════════════════════════════════════════════════════════════
 
 import { NextResponse } from "next/server";
 import db from "@/lib/db";
+import { cacheable, TTL } from "@/lib/cache";
+import crypto from "crypto";
 
 const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": process.env.NEXT_PUBLIC_APP_URL || "https://mintweb.mintit.pro",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
@@ -33,6 +35,15 @@ export async function GET(
     const { projectId } = await params;
     if (!projectId) {
       return NextResponse.json({ error: "projectId required" }, { status: 400, headers: CORS_HEADERS });
+    }
+
+    // Verify project exists and is public
+    const projCheck = await db.query(
+      "SELECT is_public FROM projects WHERE id = $1",
+      [projectId]
+    );
+    if (!projCheck.rows?.length || !projCheck.rows[0].is_public) {
+      return NextResponse.json({ error: "Not found" }, { status: 404, headers: CORS_HEADERS });
     }
 
     const { searchParams } = new URL(req.url);
@@ -69,7 +80,13 @@ export async function GET(
         framework: data.framework,
         designData: data.designData,
         committedAt: row.created_at,
-      }, { headers: CORS_HEADERS });
+      }, {
+        headers: {
+          ...CORS_HEADERS,
+          "Cache-Control": "public, max-age=10, stale-while-revalidate=30",
+          "ETag": `"v${row.version}"`,
+        },
+      });
     }
 
     // ── Latest commit ──────────────────────────────────────────
@@ -101,7 +118,13 @@ export async function GET(
       framework: data.framework,
       designData: data.designData || null,
       committedAt: row.created_at,
-    }, { headers: CORS_HEADERS });
+    }, {
+      headers: {
+        ...CORS_HEADERS,
+        "Cache-Control": "public, max-age=10, stale-while-revalidate=30",
+        "ETag": `"v${row.version}"`,
+      },
+    });
   } catch (e: any) {
     console.error("GET /api/design-data error:", e);
     return NextResponse.json({ error: "Internal error" }, { status: 500, headers: CORS_HEADERS });

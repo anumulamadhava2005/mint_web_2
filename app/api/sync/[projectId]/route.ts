@@ -4,8 +4,8 @@
 // GET /api/sync/[projectId]?since=N — returns latest commit if newer
 //     than version N, or the latest commit if no "since" param.
 //
-// This is intentionally unauthenticated — projectId (UUID) acts
-// as the token. The sync daemon in the converted project polls
+// Only accessible for public projects. projectId (UUID) identifies
+// the project. The sync daemon in the converted project polls
 // this endpoint to detect new commits.
 // ═══════════════════════════════════════════════════════════════
 
@@ -25,19 +25,21 @@ export async function GET(
     const { searchParams } = new URL(req.url);
     const since = searchParams.get("since");
 
-    // If "since" is provided, only return if there's a newer version
+    // PERF-06: Single JOIN instead of 2 sequential queries
     if (since) {
       const sinceVersion = parseInt(since, 10);
       const res = await db.query(
-        `SELECT id, version, config_json, created_at
-         FROM project_commits
-         WHERE project_id = $1 AND version > $2
-         ORDER BY version DESC LIMIT 1`,
+        `SELECT pc.id, pc.version, pc.config_json, pc.created_at
+         FROM project_commits pc
+         JOIN projects p ON pc.project_id = p.id
+         WHERE pc.project_id = $1 AND p.is_public = true
+           AND pc.version > $2
+         ORDER BY pc.version DESC LIMIT 1`,
         [projectId, sinceVersion]
       );
 
       if (res.rows.length === 0) {
-        // No new version — return 204 No Content (fast path)
+        // Either project not public or no new version — return 204
         return new NextResponse(null, { status: 204 });
       }
 
@@ -46,21 +48,28 @@ export async function GET(
         ? JSON.parse(row.config_json)
         : row.config_json;
 
+      // PERF-12: Strip full file content — return metadata only
+      const files = (data.files || []).map((f: any) => ({
+        path: f.path,
+        type: f.type,
+      }));
+
       return NextResponse.json({
         version: row.version,
         framework: data.framework,
         fileCount: data.fileCount,
-        files: data.files,
+        files,
         committedAt: row.created_at,
       });
     }
 
-    // No "since" — return the latest commit
+    // No "since" — return the latest commit (single JOIN)
     const res = await db.query(
-      `SELECT id, version, config_json, created_at
-       FROM project_commits
-       WHERE project_id = $1
-       ORDER BY version DESC LIMIT 1`,
+      `SELECT pc.id, pc.version, pc.config_json, pc.created_at
+       FROM project_commits pc
+       JOIN projects p ON pc.project_id = p.id
+       WHERE pc.project_id = $1 AND p.is_public = true
+       ORDER BY pc.version DESC LIMIT 1`,
       [projectId]
     );
 
@@ -73,11 +82,17 @@ export async function GET(
       ? JSON.parse(row.config_json)
       : row.config_json;
 
+    // PERF-12: Strip full file content — return metadata only
+    const files = (data.files || []).map((f: any) => ({
+      path: f.path,
+      type: f.type,
+    }));
+
     return NextResponse.json({
       version: row.version,
       framework: data.framework,
       fileCount: data.fileCount,
-      files: data.files,
+      files,
       committedAt: row.created_at,
     });
   } catch (e: any) {

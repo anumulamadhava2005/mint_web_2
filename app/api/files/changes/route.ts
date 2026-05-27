@@ -10,6 +10,8 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { findUserByToken } from "@/lib/auth";
 import db from "@/lib/db";
+import crypto from "crypto";
+import { cacheGet, cacheSet } from "@/lib/cache";
 
 // POST — submit changes (the main collaboration endpoint)
 export async function POST(req: Request) {
@@ -36,6 +38,15 @@ export async function POST(req: Request) {
       );
       const currentRevn = fileRes.rows.length ? parseInt(fileRes.rows[0].revn, 10) : 0;
       return NextResponse.json({ revn: currentRevn, laggedChanges: [] });
+    }
+
+    // Dedup: hash incoming changes and compare with last stored hash
+    const changesJson = JSON.stringify(changes);
+    const changesHash = crypto.createHash("sha256").update(changesJson).digest("hex");
+    const dedupKey = `changes:${fileId}`;
+    const lastHash = await cacheGet<string>(dedupKey);
+    if (lastHash === changesHash) {
+      return new NextResponse(null, { status: 204 });
     }
 
     // Use a transaction for atomicity
@@ -93,7 +104,7 @@ export async function POST(req: Request) {
       await client.query(
         `INSERT INTO file_changes (file_id, session_id, revn, data, changes)
          VALUES ($1, $2, $3, $4, $5)`,
-        [fileId, sessionId || null, newRevn, JSON.stringify(fileData), JSON.stringify(changes)]
+        [fileId, sessionId || null, newRevn, null, JSON.stringify(changes)]
       );
 
       // 6. Update the file's revn and data
@@ -107,6 +118,9 @@ export async function POST(req: Request) {
         laggedChanges,
       };
     });
+
+    // Store new hash for future dedup
+    await cacheSet(dedupKey, changesHash, 300);
 
     return NextResponse.json(result);
   } catch (e: any) {

@@ -975,7 +975,7 @@ function SVGViewportInner({ fileId }: ViewportProps) {
           y={local.vbox.y}
           width={local.vbox.width}
           height={local.vbox.height}
-          fill="#E8E9EA"
+          fill="#1e1e1e"
         />
 
         {/* Grid */}
