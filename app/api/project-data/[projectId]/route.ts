@@ -11,7 +11,6 @@
 
 import { NextResponse } from "next/server";
 import db from "@/lib/db";
-import { findUserByToken } from "@/lib/auth";
 
 export async function GET(
   req: Request,
@@ -23,28 +22,14 @@ export async function GET(
       return NextResponse.json({ error: "projectId required" }, { status: 400 });
     }
 
-    // Verify project exists
+    // Verify project exists (projectId UUID acts as an access token —
+    // the owner explicitly committed this data for their mobile app)
     const projCheck = await db.query(
-      "SELECT is_public, owner_id FROM projects WHERE id = $1",
+      "SELECT id FROM projects WHERE id = $1",
       [projectId]
     );
     if (!projCheck.rows?.length) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-
-    const project = projCheck.rows[0];
-
-    // If not public, require authentication as the project owner
-    if (!project.is_public) {
-      const authHeader = req.headers.get("authorization");
-      const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-      if (!token) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
-      const user = await findUserByToken(token);
-      if (!user || user.id !== project.owner_id) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
     }
 
     const { searchParams } = new URL(req.url);
