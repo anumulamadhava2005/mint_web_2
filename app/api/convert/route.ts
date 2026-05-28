@@ -106,6 +106,18 @@ export async function POST(request: Request) {
       );
     }
 
+    // Extract auth token from cookie to embed in exported code
+    // This allows the generated connector/SDUI to authenticate against private project APIs
+    const cookieHeader = request.headers.get("cookie") || "";
+    const tokenMatch = cookieHeader.match(/(?:^|;\s*)token=([^;]+)/);
+    const authToken = tokenMatch ? tokenMatch[1] : undefined;
+
+    // Inject auth token into options
+    const finalOptions = {
+      ...conversionRequest.options,
+      ...(authToken ? { authToken } : {}),
+    };
+
     // Perform conversion
     const result = await convertDesign({
       target: conversionRequest.target as TargetFramework,
@@ -119,7 +131,7 @@ export async function POST(request: Request) {
         height: conversionRequest.referenceFrame.height,
       } : undefined,
       interactions: conversionRequest.interactions,
-      options: conversionRequest.options,
+      options: finalOptions,
     });
 
     if (!result.success) {

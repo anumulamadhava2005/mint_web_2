@@ -604,6 +604,7 @@ function generateMintLiveProvider(
 ): string {
   const apiOrigin = process.env.NEXT_PUBLIC_APP_URL || "https://mintweb.mintit.pro";
   const projectId = options.projectId || "unknown";
+  const authToken = options.authToken || "";
 
   return `"use client";
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
@@ -611,8 +612,14 @@ import { useMint } from "./mint-runtime";
 
 const API_ORIGIN = "${apiOrigin}";
 const PROJECT_ID = "${projectId}";
+const AUTH_TOKEN = "${authToken}";
 const POLL_INTERVAL = 5000;
 const CACHE_KEY = "@mint_web_design";
+
+function authHeaders(): Record<string, string> {
+  if (!AUTH_TOKEN) return {};
+  return { Authorization: \`Bearer \${AUTH_TOKEN}\` };
+}
 
 interface DesignData {
   nodes: any[];
@@ -678,7 +685,7 @@ export function MintLiveProvider({ children }: { children: React.ReactNode }) {
     const poll = async () => {
       try {
         const url = API_ORIGIN + "/api/design-data/" + PROJECT_ID + "?since=" + lastVersionRef.current;
-        const res = await fetch(url);
+        const res = await fetch(url, { headers: authHeaders() });
         if (res.status === 204 || !res.ok) return;
         const data = await res.json();
         if (data.designData && data.version > lastVersionRef.current) {

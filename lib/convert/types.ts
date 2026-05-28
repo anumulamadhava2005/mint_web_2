@@ -495,6 +495,8 @@ export interface ConversionOptions {
   fileKey?: string;
   projectId?: string;
   userId?: string;
+  /** Auth token for private project API access (injected server-side) */
+  authToken?: string;
   // Runtime schema (state, actions, database, workflows)
   runtimeSchema?: {
     globalState?: Array<{ id: string; name: string; type: string; defaultValue: any }>;

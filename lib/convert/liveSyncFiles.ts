@@ -23,18 +23,19 @@ export function generateLiveSyncFiles(
   const userId = options.userId || "unknown";
   // The editor runs on NEXT_PUBLIC_APP_URL or defaults to the production URL
   const editorOrigin = process.env.NEXT_PUBLIC_APP_URL || "https://mintweb.mintit.pro";
+  const authToken = options.authToken || "";
 
   // ─── 1. Default Home Page ──────────────────────────────────
   const homePage = generateHomePage();
 
   // ─── 2. Connector ──────────────────────────────────────────
-  const connector = generateConnector(editorOrigin, projectId, userId);
+  const connector = generateConnector(editorOrigin, projectId, userId, authToken);
 
   // ─── 3. The God ────────────────────────────────────────────
   const theGod = generateTheGod();
 
   // ─── 4. Config file ────────────────────────────────────────
-  const configFile = generateConfig(editorOrigin, projectId, userId);
+  const configFile = generateConfig(editorOrigin, projectId, userId, authToken);
 
   return [homePage, connector, theGod, configFile];
 }
@@ -261,7 +262,8 @@ function generateHomePage(): GeneratedFile {
 function generateConnector(
   editorOrigin: string,
   projectId: string,
-  userId: string
+  userId: string,
+  authToken: string
 ): GeneratedFile {
   const script = `#!/usr/bin/env node
 // ═══════════════════════════════════════════════════════════════
@@ -287,6 +289,7 @@ let config = {
   editorOrigin: "${editorOrigin}",
   projectId: "${projectId}",
   userId: "${userId}",
+  authToken: "${authToken}",
   pollInterval: 2000,
 };
 
@@ -338,8 +341,10 @@ async function poll() {
   isPolling = true;
 
   try {
-    const url = \`\${config.editorOrigin}/api/project-data/\${config.projectId}?since=\${lastVersion}&user_id=\${config.userId}\`;
-    const res = await fetch(url);
+    const url = \`\${config.editorOrigin}/api/project-data/\${config.projectId}?since=\${lastVersion}\`;
+    const headers = {};
+    if (config.authToken) headers["Authorization"] = \`Bearer \${config.authToken}\`;
+    const res = await fetch(url, { headers });
 
     if (res.status === 204) {
       // No new version
@@ -395,7 +400,9 @@ console.log("");
 // Fetch the current latest version first (so we don't re-apply old commits)
 try {
   const url = \`\${config.editorOrigin}/api/project-data/\${config.projectId}\`;
-  const res = await fetch(url);
+  const headers = {};
+  if (config.authToken) headers["Authorization"] = \`Bearer \${config.authToken}\`;
+  const res = await fetch(url, { headers });
   if (res.ok) {
     const data = await res.json();
     if (data.version) {
@@ -534,13 +541,15 @@ export function processProjectData(data, rootDir) {
 function generateConfig(
   editorOrigin: string,
   projectId: string,
-  userId: string
+  userId: string,
+  authToken: string
 ): GeneratedFile {
   const config = JSON.stringify(
     {
       editorOrigin,
       projectId,
       userId,
+      authToken,
       pollInterval: 2000,
     },
     null,

@@ -1199,6 +1199,7 @@ function generateSDUIFiles(
   // In production the app should point at the deployed Mint server.
   // Users must replace this URL before publishing to the Play Store.
   const apiOrigin = process.env.NEXT_PUBLIC_APP_URL || "https://mintweb.mintit.pro";
+  const authToken = options.authToken || "";
 
   // ── 1. mint.config.ts ───────────────────────────────────────
   files.push({
@@ -1226,6 +1227,9 @@ export const MINT_CONFIG = {
 
   /** User identifier (set at conversion time) */
   userId: "${userId}",
+
+  /** Auth token for private project access */
+  authToken: "${authToken}",
 
   /** Polling interval in milliseconds (default 3 seconds) */
   pollInterval: 3000,
@@ -1273,6 +1277,7 @@ export interface MintConnectorConfig {
   apiOrigin: string;
   projectId: string;
   pollInterval: number;
+  authToken?: string;
 }
 
 type UpdateCallback = (data: DesignDataResponse) => void;
@@ -1321,7 +1326,9 @@ export class MintConnector {
   async fetchLatest(): Promise<DesignDataResponse | null> {
     try {
       const url = \`\${this.config.apiOrigin}/api/design-data/\${this.config.projectId}\`;
-      const res = await fetch(url);
+      const headers: Record<string, string> = {};
+      if (this.config.authToken) headers["Authorization"] = \`Bearer \${this.config.authToken}\`;
+      const res = await fetch(url, { headers });
       if (!res.ok) return null;
       return (await res.json()) as DesignDataResponse;
     } catch {
@@ -1334,7 +1341,9 @@ export class MintConnector {
     this.isPolling = true;
     try {
       const url = \`\${this.config.apiOrigin}/api/design-data/\${this.config.projectId}?since=\${this.lastVersion}\`;
-      const res = await fetch(url);
+      const headers: Record<string, string> = {};
+      if (this.config.authToken) headers["Authorization"] = \`Bearer \${this.config.authToken}\`;
+      const res = await fetch(url, { headers });
       if (res.status === 204) {
         // No new version
         return;
@@ -1448,6 +1457,7 @@ export function MintLiveProvider({ children }: { children: ReactNode }) {
       apiOrigin: MINT_CONFIG.apiOrigin,
       projectId: MINT_CONFIG.projectId,
       pollInterval: MINT_CONFIG.pollInterval,
+      authToken: MINT_CONFIG.authToken || undefined,
     })
   );
 
