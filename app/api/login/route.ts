@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { findUserByEmail, verifyPassword, issueTokenForUser } from "../../../lib/auth";
+import { findUserByEmail, verifyPassword, issueTokenForUser, dummyVerifyPassword } from "../../../lib/auth";
 import db from "../../../lib/db";
 import { cacheGet, cacheSet } from "../../../lib/cache";
 
@@ -18,7 +18,8 @@ async function checkRateLimit(ip: string): Promise<{ allowed: boolean }> {
 
 export async function POST(req: Request) {
   try {
-    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    const forwardedFor = req.headers.get("x-forwarded-for");
+    const ip = forwardedFor?.split(",").map(s => s.trim()).filter(Boolean).at(-1) || "unknown";
 
     const { allowed } = await checkRateLimit(ip);
     if (!allowed) {
@@ -38,7 +39,11 @@ export async function POST(req: Request) {
     }
 
     const user = await findUserByEmail(email);
-    if (!user) return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+    if (!user) {
+      // ATK-12: Run dummy hash so response time is identical to real verification
+      dummyVerifyPassword(password);
+      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+    }
 
     const result = verifyPassword(password, user.password_hash, user.salt);
     if (!result.valid) return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });

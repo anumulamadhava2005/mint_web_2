@@ -1,15 +1,15 @@
 // ═══════════════════════════════════════════════════════════════
-// Project Data API — Public endpoint for the connector to fetch
+// Project Data API — Endpoint for the connector to fetch code
 //
 // GET /api/project-data/[projectId] — returns the latest commit
 //     data (files, framework, version) for a given project.
 //
-// Only accessible for public projects. projectId (UUID) identifies
-// the project. The connector in converted projects calls this
-// to get the code files that will be written to disk.
+// Requires authentication. Private projects are only accessible
+// to the owner. Public projects are accessible to any authed user.
 // ═══════════════════════════════════════════════════════════════
 
 import { NextResponse } from "next/server";
+import { findUserByToken } from "@/lib/auth";
 import db from "@/lib/db";
 
 export async function GET(
@@ -22,11 +22,30 @@ export async function GET(
       return NextResponse.json({ error: "projectId required" }, { status: 400 });
     }
 
-    // Verify project exists (projectId UUID acts as an access token —
-    // the owner explicitly committed this data for their mobile app)
+    // Authenticate: cookie or Authorization header
+    const cookieHeader = req.headers.get("cookie") || "";
+    const tokenMatch = cookieHeader.match(/(?:^|;\s*)token=([^;]+)/);
+    const tokenFromCookie = tokenMatch ? tokenMatch[1] : null;
+    const authHeader = req.headers.get("authorization");
+    const tokenFromHeader = authHeader?.startsWith("Bearer ")
+      ? authHeader.slice(7)
+      : null;
+    const token = tokenFromCookie || tokenFromHeader;
+
+    if (!token) {
+      // Return 404 to prevent enumeration (not 401)
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    const user = await findUserByToken(token);
+    if (!user) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    // Verify project ownership OR public access
     const projCheck = await db.query(
-      "SELECT id FROM projects WHERE id = $1",
-      [projectId]
+      "SELECT id FROM projects WHERE id = $1 AND (owner_id = $2 OR is_public = true)",
+      [projectId, user.id]
     );
     if (!projCheck.rows?.length) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });

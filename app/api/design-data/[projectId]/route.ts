@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════
-// Design Data API — Public endpoint for the RN/Flutter runtime
+// Design Data API — Endpoint for the RN/Flutter runtime
 //
 // GET /api/design-data/[projectId]       — returns the latest
 //     raw design nodes + interactions for runtime rendering.
@@ -7,12 +7,12 @@
 // GET /api/design-data/[projectId]?since=N — returns data only
 //     if there's a version newer than N (204 otherwise).
 //
-// Only accessible for public projects. projectId (UUID) identifies
-// the project. The production mobile app polls this endpoint
-// to receive design updates without an app-store release.
+// Requires authentication. Private projects are only accessible
+// to the owner. Public projects are accessible to any authed user.
 // ═══════════════════════════════════════════════════════════════
 
 import { NextResponse } from "next/server";
+import { findUserByToken } from "@/lib/auth";
 import db from "@/lib/db";
 import { cacheable, TTL } from "@/lib/cache";
 import crypto from "crypto";
@@ -20,7 +20,7 @@ import crypto from "crypto";
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": process.env.NEXT_PUBLIC_APP_URL || "https://mintweb.mintit.pro",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
 export async function OPTIONS() {
@@ -34,14 +34,33 @@ export async function GET(
   try {
     const { projectId } = await params;
     if (!projectId) {
-      return NextResponse.json({ error: "projectId required" }, { status: 400, headers: CORS_HEADERS });
+      return NextResponse.json({ error: "Not found" }, { status: 404, headers: CORS_HEADERS });
     }
 
-    // Verify project exists (projectId UUID acts as an access token —
-    // the owner explicitly committed this data for their mobile app)
+    // Authenticate: cookie or Authorization header
+    const cookieHeader = req.headers.get("cookie") || "";
+    const tokenMatch = cookieHeader.match(/(?:^|;\s*)token=([^;]+)/);
+    const tokenFromCookie = tokenMatch ? tokenMatch[1] : null;
+    const authHeader = req.headers.get("authorization");
+    const tokenFromHeader = authHeader?.startsWith("Bearer ")
+      ? authHeader.slice(7)
+      : null;
+    const token = tokenFromCookie || tokenFromHeader;
+
+    if (!token) {
+      // Return 404 to prevent enumeration
+      return NextResponse.json({ error: "Not found" }, { status: 404, headers: CORS_HEADERS });
+    }
+
+    const user = await findUserByToken(token);
+    if (!user) {
+      return NextResponse.json({ error: "Not found" }, { status: 404, headers: CORS_HEADERS });
+    }
+
+    // Verify project ownership OR public access
     const projCheck = await db.query(
-      "SELECT id FROM projects WHERE id = $1",
-      [projectId]
+      "SELECT id FROM projects WHERE id = $1 AND (owner_id = $2 OR is_public = true)",
+      [projectId, user.id]
     );
     if (!projCheck.rows?.length) {
       return NextResponse.json({ error: "Not found" }, { status: 404, headers: CORS_HEADERS });

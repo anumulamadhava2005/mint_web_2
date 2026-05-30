@@ -8,7 +8,9 @@ export async function GET(req: Request) {
     const search = searchParams.get("search") || "";
 
     let query = `
-      SELECT p.id, p.name, p.description, p.thumbnail_url, p.likes, p.views, p.created_at, p.updated_at, p.is_public, u.email as owner_email
+      SELECT p.id, p.name, p.description, p.thumbnail_url, p.likes, p.views,
+             p.created_at, p.updated_at, p.is_public,
+             SPLIT_PART(u.email, '@', 1) as owner_display_name
       FROM projects p
       JOIN users u ON u.id = p.owner_id
       WHERE p.is_public = true
@@ -16,7 +18,7 @@ export async function GET(req: Request) {
     const params: any[] = [];
 
     if (search) {
-      query += ` AND (p.name ILIKE $1 OR p.description ILIKE $1 OR u.email ILIKE $1)`;
+      query += ` AND (p.name ILIKE $1 OR p.description ILIKE $1)`;
       params.push(`%${search}%`);
     }
 

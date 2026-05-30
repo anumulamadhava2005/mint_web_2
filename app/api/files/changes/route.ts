@@ -14,16 +14,30 @@ import crypto from "crypto";
 import { cacheGet, cacheSet } from "@/lib/cache";
 
 // POST — submit changes (the main collaboration endpoint)
+// Security (ATK-22): Authentication is ALWAYS required.
+// allow_public_edit only broadens which authenticated users can write,
+// it must never permit unauthenticated writes.
 export async function POST(req: Request) {
   try {
     const cookieStore = await cookies();
-    const token = cookieStore.get("token")?.value;
+    const tokenFromCookie = cookieStore.get("token")?.value;
+    const authHeader = req.headers.get("authorization");
+    const tokenFromHeader = authHeader?.startsWith("Bearer ")
+      ? authHeader.slice(7)
+      : null;
+    const token = tokenFromCookie || tokenFromHeader;
     if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const user = await findUserByToken(token);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const body = await req.json();
+    // ATK-24: Enforce body size limit to prevent resource exhaustion
+    const MAX_BODY_BYTES = 512 * 1024; // 512KB
+    const raw = await req.text();
+    if (raw.length > MAX_BODY_BYTES) {
+      return NextResponse.json({ error: "Payload too large" }, { status: 413 });
+    }
+    const body = JSON.parse(raw);
     const { fileId, sessionId, revn, changes } = body;
 
     if (!fileId || !changes || !Array.isArray(changes)) {

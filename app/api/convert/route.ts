@@ -4,15 +4,11 @@
 // ═══════════════════════════════════════════════════════════════
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { exec } from "child_process";
-import util from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import crypto from "crypto";
 import { deflateRawSync } from "zlib";
-
-const execAsync = util.promisify(exec);
 
 import {
   convertDesign,
@@ -106,16 +102,10 @@ export async function POST(request: Request) {
       );
     }
 
-    // Extract auth token from cookie to embed in exported code
-    // This allows the generated connector/SDUI to authenticate against private project APIs
-    const cookieHeader = request.headers.get("cookie") || "";
-    const tokenMatch = cookieHeader.match(/(?:^|;\s*)token=([^;]+)/);
-    const authToken = tokenMatch ? tokenMatch[1] : undefined;
-
-    // Inject auth token into options
+    // Security: NEVER embed session tokens in exported code.
+    // Exported apps must use their own auth mechanism (e.g. project UUID).
     const finalOptions = {
       ...conversionRequest.options,
-      ...(authToken ? { authToken } : {}),
     };
 
     // Perform conversion

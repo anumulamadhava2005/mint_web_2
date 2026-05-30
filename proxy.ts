@@ -3,7 +3,6 @@ import type { NextRequest } from "next/server";
 import { createClient } from "redis";
 
 // SD-13: Use Node.js runtime so we can use the redis npm package
-export const runtime = "nodejs";
 
 // Routes that require authentication
 const protectedPaths = ["/projects"];
@@ -45,9 +44,11 @@ async function validateToken(token: string): Promise<boolean> {
     } catch { /* fall through */ }
   }
 
-  // Redis miss or down — allow through and let the route handler do auth
-  // This is safe because every protected route has its own auth check
-  return redis ? false : true;
+  // Redis miss or down — fail CLOSED.
+  // Return false so the middleware rejects at the gate.
+  // Each route handler has its own auth check as a second layer,
+  // but the middleware must never allow unauthenticated access.
+  return false;
 }
 
 // API routes that are intentionally public (no auth needed)
@@ -68,7 +69,7 @@ function isPublicApiRoute(pathname: string): boolean {
   );
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Check for token in cookie or Authorization header
@@ -87,9 +88,13 @@ export async function middleware(request: NextRequest) {
     // User has a token, validate it
     const isValid = await validateToken(token);
     if (isValid) {
-      // Already logged in — redirect to projects (or redirect param)
-      const redirect = request.nextUrl.searchParams.get("redirect") || "/projects";
-      return NextResponse.redirect(new URL(redirect, request.url));
+      // Already logged in — redirect to projects (or safe redirect param)
+      const rawRedirect = request.nextUrl.searchParams.get("redirect");
+      // Only allow relative paths — block absolute URLs and protocol-relative URLs
+      const safeRedirect = rawRedirect?.startsWith("/") && !rawRedirect.startsWith("//")
+        ? rawRedirect
+        : "/projects";
+      return NextResponse.redirect(new URL(safeRedirect, request.url));
     }
   }
 

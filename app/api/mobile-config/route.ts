@@ -3,6 +3,10 @@
 //
 // GET /api/mobile-config?projectId=... — latest committed config
 // No auth required (designed for mobile app consumption)
+//
+// Security: Never return generated source files (config_json.files).
+// Only return metadata needed for SDUI: framework, version,
+// runtimeSchema, designData.
 // ═══════════════════════════════════════════════════════════════
 
 import { NextResponse } from "next/server";
@@ -15,6 +19,18 @@ export async function GET(req: Request) {
 
     if (!projectId) {
       return NextResponse.json({ error: "projectId required" }, { status: 400 });
+    }
+
+    // Only serve public projects
+    const projCheck = await db.query(
+      "SELECT id FROM projects WHERE id = $1 AND is_public = true",
+      [projectId]
+    );
+    if (!projCheck.rows?.length) {
+      return NextResponse.json(
+        { error: "Project not found" },
+        { status: 404 }
+      );
     }
 
     // Get the latest committed config
@@ -35,12 +51,16 @@ export async function GET(req: Request) {
     }
 
     const row = res.rows[0];
+    const config = typeof row.config_json === "string"
+      ? JSON.parse(row.config_json)
+      : row.config_json;
 
+    // Strip sensitive data — never return generated source files
     return NextResponse.json({
+      projectId,
       version: row.version,
-      config: typeof row.config_json === "string"
-        ? JSON.parse(row.config_json)
-        : row.config_json,
+      framework: config.framework || null,
+      runtimeSchema: config.designData?.runtimeSchema || null,
       message: row.message,
       committedAt: row.created_at,
     }, {

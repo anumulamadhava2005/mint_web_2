@@ -299,7 +299,7 @@ export function generateMintRuntimeProvider(
   L('        const route = \"/\" + String(config.value).toLowerCase().replace(/\\s+/g, \"-\");');
   L("        window.location.href = route;");
   L("      }");
-  L('      if (config.also) handleAlso(config.also, allActions);');
+  L('      if (config.also) handleAlso(config.also, allActions, setState, stateRef, dbQueryFn);');
   L("    };");
   L("  }");
   L("");
@@ -326,7 +326,7 @@ export function generateMintRuntimeProvider(
   L("    return async (...args: any[]) => {");
   L("      try {");
   L('        if (config.onSuccess) handleOnSuccess(config.onSuccess, undefined, setState, stateRef, allActions);');
-  L('        if (config.also) handleAlso(config.also, allActions);');
+  L('        if (config.also) await handleAlso(config.also, allActions, setState, stateRef, dbQueryFn);');
   L("      } catch (err) {");
   L('        console.error("Dynamic action " + name + " failed:", err);');
   L("      }");
@@ -369,14 +369,55 @@ export function generateMintRuntimeProvider(
   L('  }');
   L("}");
   L("");
-  L("function handleAlso(expr: string, allActions: Record<string, (...a: any[]) => void>) {");
+  L("async function handleAlso(expr: string, allActions: Record<string, (...a: any[]) => void>, setState: (k: string, v: any) => void, stateRef: any, dbQueryFn: (sql: string, params?: any[]) => Promise<any>) {");
   L('  if (!expr) return;');
   L('  var stmts = expr.split(";").map(function(l: string) { return l.trim(); }).filter(Boolean);');
   L('  for (var i = 0; i < stmts.length; i++) {');
   L('    var stmt = stmts[i];');
+  L('    var setMatch = stmt.match(/^SET\\s+\\$(\\w[\\w.]*)\\s*=\\s*(.+)$/);');
+  L('    if (setMatch) {');
+  L('      var key = setMatch[1];');
+  L('      var rawVal = setMatch[2].trim();');
+  L('      var val: any = rawVal;');
+  L('      // Handle dbQuery(...) calls');
+  L('      var dbMatch = rawVal.match(/^dbQuery\\((.+)\\)$/);');
+  L('      if (dbMatch) {');
+  L('        try {');
+  L('          var inner = dbMatch[1];');
+  L('          // Parse SQL string and params array');
+  L("          var sqlMatch = inner.match(/^['\"](.+?)['\"]\\s*,\\s*\\[(.*)\\]$/);");
+  L('          if (sqlMatch) {');
+  L('            var sql = sqlMatch[1];');
+  L('            var paramStrs = sqlMatch[2].split(",").map(function(s: string) { return s.trim(); }).filter(Boolean);');
+  L('            var params = paramStrs.map(function(p: string) {');
+  L('              if (p.startsWith("$")) return getNestedValue(stateRef.current, p.slice(1));');
+  L("              if ((p[0] === \"'\" && p[p.length-1] === \"'\") || (p[0] === '\"' && p[p.length-1] === '\"')) return p.slice(1, -1);");
+  L('              if (!isNaN(Number(p))) return Number(p);');
+  L('              return p;');
+  L('            });');
+  L('            val = await dbQueryFn(sql, params);');
+  L('          }');
+  L('        } catch (err) {');
+  L('          console.error("handleAlso dbQuery failed:", err);');
+  L('          continue;');
+  L('        }');
+  L('      }');
+  L('      else {');
+  L('        var rv = rawVal.replace(/^\\$/, "");');
+  L('        if (rawVal.startsWith("$")) val = getNestedValue(stateRef.current, rv);');
+  L(`        else if (rawVal === '""' || rawVal === "''") val = "";`);
+  L('        else if (rawVal === "[]") val = [];');
+  L('        else if (rawVal === "true") val = true;');
+  L('        else if (rawVal === "false") val = false;');
+  L('        else if (!isNaN(Number(rawVal))) val = Number(rawVal);');
+  L("        else if ((rawVal[0] === \"'\" && rawVal[rawVal.length-1] === \"'\") || (rawVal[0] === '\"' && rawVal[rawVal.length-1] === '\"')) val = rawVal.slice(1, -1);");
+  L('      }');
+  L('      setState(key, val);');
+  L('      continue;');
+  L('    }');
   L('    var callMatch = stmt.match(/^CALL\\s+(\\w+)/);');
   L('    if (callMatch && allActions[callMatch[1]]) {');
-  L('      setTimeout(function() { allActions[callMatch[1]](); }, 0);');
+  L('      try { await allActions[callMatch[1]](); } catch (e) { console.error("CALL " + callMatch[1] + " failed:", e); }');
   L('    }');
   L('  }');
   L("}");
@@ -514,6 +555,8 @@ function buildActionFunction(
 function parseActionExpr(expr: string): string {
   let val = expr.trim();
   val = val.replace(/\$result/g, "result");
+  // Replace $varName refs with stateRef.current.varName
+  // BUT skip $1, $2, etc. (SQL positional parameters) — they start with a digit
   val = val.replace(/\$([a-zA-Z_][a-zA-Z0-9_.]*)/g, "stateRef.current.$1");
   return val;
 }

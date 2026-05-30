@@ -46,19 +46,60 @@ export const TTL = {
   COMMIT_VERSION: 10, // 10s — latest commit version (sync polling)
 } as const;
 
+// ── In-memory fallback for rate limiting when Redis is down (ATK-11) ──
+const memoryRateStore = new Map<string, { value: number; expiresAt: number }>();
+
+// Periodic cleanup of expired entries (every 60s)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of memoryRateStore) {
+    if (entry.expiresAt <= now) memoryRateStore.delete(key);
+  }
+}, 60_000);
+
+function isRateLimitKey(key: string): boolean {
+  return key.startsWith("ratelimit:");
+}
+
+function memoryGet<T>(key: string): T | null {
+  const entry = memoryRateStore.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    memoryRateStore.delete(key);
+    return null;
+  }
+  return entry.value as T;
+}
+
+function memorySet(key: string, value: number, ttlSeconds: number): void {
+  memoryRateStore.set(key, {
+    value,
+    expiresAt: Date.now() + ttlSeconds * 1000,
+  });
+}
+
 export async function cacheGet<T>(key: string): Promise<T | null> {
   const redis = await getClient();
-  if (!redis) return null;
+  if (!redis) {
+    // Fallback: use in-memory store for rate limit keys
+    if (isRateLimitKey(key)) return memoryGet<T>(key);
+    return null;
+  }
   try {
     const val = await redis.get(key);
     if (!val) return null;
     return JSON.parse(val) as T;
   } catch {
+    if (isRateLimitKey(key)) return memoryGet<T>(key);
     return null;
   }
 }
 
 export async function cacheSet(key: string, value: unknown, ttlSeconds: number): Promise<void> {
+  // Always update in-memory store for rate limit keys as backup
+  if (isRateLimitKey(key) && typeof value === "number") {
+    memorySet(key, value, ttlSeconds);
+  }
   const redis = await getClient();
   if (!redis) return;
   try {

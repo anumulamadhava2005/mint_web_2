@@ -23,6 +23,12 @@ function hashPassword(password: string, salt: string) {
   return hashPasswordWithCost(password, salt, 65536);
 }
 
+// Constant-time dummy hash for timing-safe user enumeration prevention (ATK-12)
+const DUMMY_SALT = "0000000000000000000000000000000000000000000000000000000000000000";
+export function dummyVerifyPassword(password: string): void {
+  hashPasswordWithCost(password, DUMMY_SALT, 65536);
+}
+
 export function verifyPassword(
   password: string,
   storedHash: string,

@@ -17,24 +17,37 @@ import { cookies } from "next/headers";
 import { findUserByToken } from "../../../../lib/auth";
 import db from "../../../../lib/db";
 
-// Allowed SQL operations for security
+// Allowed SQL operations — strictly DML only
 const ALLOWED_PREFIXES = [
-  "SELECT", "INSERT", "UPDATE", "DELETE",
-  "CREATE TABLE", "CREATE INDEX", "CREATE UNIQUE INDEX",
-  "CREATE OR REPLACE FUNCTION", "CREATE TRIGGER",
-  "DROP TRIGGER", "ALTER TABLE", "CREATE POLICY",
-  "DO $$",
+  "SELECT",
+  "INSERT",
+  "UPDATE",
+  "DELETE",
 ];
 
-// Blocked patterns for security
+// Blocked patterns for security — defense in depth
 const BLOCKED_PATTERNS = [
-  /;\s*(DROP\s+DATABASE|DROP\s+SCHEMA)/i,
-  /;\s*TRUNCATE\s/i,
-  /pg_sleep/i,
-  /information_schema/i,
-  /pg_catalog/i,
-  /COPY\s/i,
+  // DDL operations
+  /\bCREATE\b/i,
+  /\bALTER\b/i,
+  /\bDROP\b/i,
+  /\bTRUNCATE\b/i,
+  // PL/pgSQL execution
+  /\bDO\s*\$/i,
+  /\bDO\s+\$\$/i,
+  // System catalog access
+  /\binformation_schema\b/i,
+  /\bpg_catalog\b/i,
+  /\bpg_sleep\b/i,
+  // File I/O
+  /\bCOPY\s/i,
   /\\copy/i,
+  // Resource exhaustion
+  /\bgenerate_series\b/i,
+  // Subquery table escapes — block FROM/JOIN inside parentheses
+  /\(\s*SELECT\b/i,
+  // Multi-statement injection
+  /;\s*\S/,
 ];
 
 export async function POST(
@@ -82,7 +95,7 @@ export async function POST(
       return NextResponse.json({ error: "Missing SQL query" }, { status: 400 });
     }
 
-    // Security: validate SQL
+    // Security: validate SQL — only DML allowed
     const trimmed = sql.trim().toUpperCase();
     const isAllowed = ALLOWED_PREFIXES.some((p) => trimmed.startsWith(p));
     if (!isAllowed) {
@@ -107,8 +120,11 @@ export async function POST(
     const namespacedSQL = namespaceQuery(sql, projectId);
 
     // SD-03: Enforce 5s timeout on user-provided queries
-    const safeSql = `SET statement_timeout = '5000'; ${namespacedSQL}`;
-    const result = await db.query(safeSql, queryParams || []);
+    // Use a transaction so both statements share the same connection
+    const result = await db.transaction(async (client) => {
+      await client.query("SET statement_timeout = '5000'");
+      return client.query(namespacedSQL, queryParams || []);
+    });
 
     return NextResponse.json({
       rows: result.rows || [],
@@ -117,8 +133,8 @@ export async function POST(
   } catch (e) {
     console.error("[MintDB] Query error:", e);
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Query failed" },
-      { status: 500 }
+      { error: "Query failed" },
+      { status: 400 }
     );
   }
 }

@@ -168,6 +168,68 @@ async function validateSocketToken(token: string): Promise<{ valid: boolean; use
   }
 }
 
+// ── Project ownership verification (ATK-16/17 fix) ──────────
+const DB_BRIDGE = process.env.DB_PROXY_URL || "https://api.mintit.pro/api/mint-db";
+
+async function verifyProjectAccess(projectId: string, userId: string): Promise<boolean> {
+  try {
+    const res = await fetch(DB_BRIDGE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: "SELECT id FROM projects WHERE id = $1 AND (owner_id = $2 OR allow_public_edit = true)",
+        params: [projectId, userId],
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.rows && data.rows.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+// Read-only access check (owner OR public project)
+async function verifyProjectReadAccess(projectId: string, userId: string): Promise<boolean> {
+  try {
+    const res = await fetch(DB_BRIDGE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: "SELECT id FROM projects WHERE id = $1 AND (owner_id = $2 OR is_public = true)",
+        params: [projectId, userId],
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.rows && data.rows.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+// Lookup projectId for a fileId via DB bridge
+async function lookupProjectIdForFile(fileId: string): Promise<string | null> {
+  try {
+    const res = await fetch(DB_BRIDGE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: "SELECT project_id FROM files WHERE id = $1 AND deleted_at IS NULL LIMIT 1",
+        params: [fileId],
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.rows?.[0]?.project_id || null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Connection handler (Penpot-style message types) ───────────
 io.on("connection", (socket) => {
   console.log("🔌 Client connected:", socket.id);
@@ -284,13 +346,17 @@ io.on("connection", (socket) => {
   });
 
   // ── File change broadcast (from update-file) ────────────
-  // When a client commits changes via HTTP, it also broadcasts here
+  // Security (ATK-17): verify sender is subscribed to this file's room
   socket.on("file-change", (data) => {
     const parsed = FileChangeSchema.safeParse(data);
     if (!parsed.success) return;
 
     const { fileId, changes, revn, sessionId } = parsed.data;
-    if (!fileId) return;
+    if (!fileId || !currentUserId) return;
+
+    // Only allow broadcast if sender is subscribed to this file
+    const subscribedFileId = userFiles.get(socket.id);
+    if (subscribedFileId !== fileId) return; // silently drop
 
     const session = fileSessions.get(fileId);
     if (session) {
@@ -386,15 +452,10 @@ io.on("connection", (socket) => {
     if (user) user.viewport = { x, y, zoom };
   });
 
-  // ── Legacy events (backward compatible) ─────────────────
-  socket.on("join_session", ({ project_id, token }) => {
-    socket.emit("session_joined", {
-      session_id: `session:${project_id}`,
-      user: { id: currentUserId || socket.id, email: "user", color: "#4ECDC4" },
-      shapes: [],
-      participants: [],
-      version: 0,
-    });
+  // ── Legacy events (removed for security — ATK-18) ───────
+  // join_session was unauthenticated; use subscribe-file instead
+  socket.on("join_session", () => {
+    socket.emit("error", { message: "join_session is deprecated. Use subscribe-file." });
   });
 
   socket.on("cursor_move", ({ x, y }) => {
@@ -423,7 +484,7 @@ io.on("connection", (socket) => {
   socket.on("viewport_change", (_data: any) => {});
 
   // ── Project subscription (for mobile preview / live update) ─
-  // Preview clients subscribe to project-level config updates
+  // Security (ATK-19): verify project ownership or is_public before joining
   socket.on("subscribe-project", async ({ projectId, token }) => {
     if (!projectId || !token) {
       socket.emit("error", { message: "projectId and token required" });
@@ -434,6 +495,19 @@ io.on("connection", (socket) => {
     const authResult = await validateSocketToken(token);
     if (!authResult.valid) {
       socket.emit("error", { message: "Invalid auth token" });
+      return;
+    }
+
+    const userId = authResult.user?.id;
+    if (!userId) {
+      socket.emit("error", { message: "Invalid auth token" });
+      return;
+    }
+
+    // Verify user owns the project or project is public
+    const hasAccess = await verifyProjectReadAccess(projectId, userId);
+    if (!hasAccess) {
+      socket.emit("error", { message: "Project not found" });
       return;
     }
 
@@ -450,12 +524,18 @@ io.on("connection", (socket) => {
   });
 
   // Editor broadcasts config-update after a successful commit
-  socket.on("config-update", (data) => {
+  // Security: verify sender owns the project before broadcasting
+  socket.on("config-update", async (data) => {
     const parsed = ConfigUpdateSchema.safeParse(data);
     if (!parsed.success) return;
 
     const { projectId, version, config } = parsed.data;
-    if (!projectId) return;
+    if (!projectId || !currentUserId) return;
+
+    // Verify ownership — silently drop on failure
+    const hasAccess = await verifyProjectAccess(projectId, currentUserId);
+    if (!hasAccess) return;
+
     // Broadcast to all preview clients watching this project
     socket.to(`project:${projectId}`).emit("config-update", {
       projectId,
@@ -466,12 +546,18 @@ io.on("connection", (socket) => {
   });
 
   // Editor broadcasts code-update with generated files for live sync daemons
-  socket.on("code-update", (data) => {
+  // Security: verify sender owns the project before broadcasting
+  socket.on("code-update", async (data) => {
     const parsed = CodeUpdateSchema.safeParse(data);
     if (!parsed.success) return;
 
     const { projectId, version, framework, files } = parsed.data;
-    if (!projectId) return;
+    if (!projectId || !currentUserId) return;
+
+    // Verify ownership — silently drop on failure
+    const hasAccess = await verifyProjectAccess(projectId, currentUserId);
+    if (!hasAccess) return;
+
     socket.to(`project:${projectId}`).emit("code-update", {
       projectId,
       version,
