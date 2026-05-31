@@ -38,9 +38,7 @@ function LoginInner() {
         return;
       }
 
-      // Store token in cookie
-      document.cookie = `token=${data.token}; path=/; max-age=${60 * 60 * 24 * 7}`; // 7 days
-
+      // Server sets httpOnly cookie via Set-Cookie header
       router.replace(redirect);
     } catch {
       setError("Network error");

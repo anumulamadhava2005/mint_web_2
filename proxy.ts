@@ -34,6 +34,22 @@ async function getRedis() {
   }
 }
 
+// Lightweight DB query for middleware — avoids importing lib/db which triggers
+// heavy schema migrations at module scope.
+const DB_BRIDGE_URL = process.env.DB_PROXY_URL || "https://api.mintit.pro/api/mint-db";
+
+async function dbQuery(text: string, params?: any[]): Promise<{ rows: any[] }> {
+  const res = await fetch(DB_BRIDGE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, params }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!res.ok) throw new Error(`DB bridge error: ${res.status}`);
+  return res.json();
+}
+
 async function validateToken(token: string): Promise<boolean> {
   // Try direct Redis lookup first
   const redis = await getRedis();
@@ -41,13 +57,24 @@ async function validateToken(token: string): Promise<boolean> {
     try {
       const cached = await redis.get(`session:${token}`);
       if (cached) return true;
-    } catch { /* fall through */ }
+    } catch { /* fall through to DB */ }
   }
 
-  // Redis miss or down — fail CLOSED.
-  // Return false so the middleware rejects at the gate.
-  // Each route handler has its own auth check as a second layer,
-  // but the middleware must never allow unauthenticated access.
+  // Redis miss — fall back to PostgreSQL session table via DB bridge
+  try {
+    const res = await dbQuery(
+      "SELECT 1 FROM sessions WHERE token = $1 AND expires_at > now() LIMIT 1",
+      [token]
+    );
+    if (res.rows && res.rows.length > 0) {
+      // Cache in Redis for future requests (5 min TTL)
+      if (redis) {
+        redis.set(`session:${token}`, "1", { EX: 300 }).catch(() => {});
+      }
+      return true;
+    }
+  } catch { /* DB error — fail closed */ }
+
   return false;
 }
 

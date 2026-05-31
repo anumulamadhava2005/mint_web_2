@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import db from "./db";
+import { cacheSet, TTL } from "./cache";
 
 export type User = {
   id: string;
@@ -94,6 +95,8 @@ export async function issueTokenForUser(userId: string) {
     "INSERT INTO sessions (token, user_id, expires_at) VALUES ($1, $2, $3)",
     [token, userId, expiresAt]
   );
+  // Cache session in Redis so middleware validates instantly
+  cacheSet(`session:${token}`, "1", TTL.SESSION).catch(() => {});
   // Probabilistic cleanup: ~5% of token creations purge expired sessions
   if (Math.random() < 0.05) {
     db.query("DELETE FROM sessions WHERE expires_at < now()").catch(() => {});
