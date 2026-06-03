@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "mint — Runtime-driven application infrastructure",
+  title: "Mint",
   description:
-    "Ship configuration, not deployments. mint is a runtime engine that interprets application schemas — screens, workflows, navigation, and data bindings — so your team can evolve production behavior without redeploying frontend code.",
+    "Update production app behavior in real-time without redeploying. Evolve screens, state, database bindings, and workflows instantly with Mint's runtime engine.",
 };
 
 export default function RootLayout({

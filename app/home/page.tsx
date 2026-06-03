@@ -26,12 +26,15 @@ function FAQ({ q, a }: { q: string; a: string }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="border-b border-white/[0.06]">
-      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between py-5 text-left cursor-pointer group">
-        <span className="text-[15px] font-medium text-[#e0deda] pr-8 group-hover:text-white transition-colors">{q}</span>
-        <ChevronDown size={16} className={`text-[#666] shrink-0 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
+      <button 
+        onClick={() => setOpen(!open)} 
+        className="w-full flex items-center justify-between py-5 text-left cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white rounded"
+      >
+        <span className="text-[15px] font-semibold text-[#f5f5f7] pr-8 group-hover:text-white transition-colors">{q}</span>
+        <ChevronDown size={16} className={`text-[#888] shrink-0 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
       </button>
       <div className={`overflow-hidden transition-all duration-200 ${open ? "max-h-[400px] pb-5" : "max-h-0"}`}>
-        <p className="text-[14px] text-[#888] leading-relaxed">{a}</p>
+        <p className="text-[15px] text-[#a3a3a6] leading-[1.65]">{a}</p>
       </div>
     </div>
   );
@@ -97,44 +100,86 @@ export default function HomePage() {
 
       {/* NAV */}
       <nav className={`fixed top-0 inset-x-0 z-50 flex items-center justify-between px-6 md:px-10 py-4 transition-all duration-300 ${scrolled ? "bg-[#09090b]/90 backdrop-blur-xl border-b border-white/[0.05]" : "bg-transparent"}`}>
-        <Link href="/" className="flex items-center gap-2.5">
-          <Image src={MLogo} alt="mint" width={26} height={26} className="rounded-[5px]" />
+        <Link href="/" className="flex items-center gap-2.5 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white rounded" aria-label="Mint Home">
+          <Image src={MLogo} alt="Mint brand logo" width={26} height={26} className="rounded-[5px]" />
           <span className="text-[15px] font-semibold tracking-tight">mint</span>
         </Link>
         <div className="hidden md:flex items-center gap-7">
-          <Link href="/docs" className="text-[13px] text-[#888] hover:text-white transition-colors">Docs</Link>
-          <Link href="/login" className="text-[13px] text-[#888] hover:text-white transition-colors">Log in</Link>
-          <Link href="/signup" className="text-[13px] font-medium bg-white text-black px-4 py-1.5 rounded-full hover:bg-[#e0deda] transition-colors">Join Waitlist</Link>
+          <Link href="/docs" className="text-[13px] text-[#888] hover:text-white transition-colors py-2 px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white rounded">Docs</Link>
+          <Link href="/login" className="text-[13px] text-[#888] hover:text-white transition-colors py-2 px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white rounded">Log in</Link>
+          <Link href="/signup" className="text-[13px] font-medium bg-white text-black px-4 py-2 rounded-full hover:bg-[#e0deda] transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">Join Waitlist</Link>
         </div>
-        <Link href="/signup" className="md:hidden text-[13px] font-medium bg-white text-black px-4 py-1.5 rounded-full">Waitlist</Link>
+        <Link href="/signup" className="md:hidden text-[13px] font-medium bg-white text-black px-4 py-2 rounded-full active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">Waitlist</Link>
       </nav>
 
       {/* ── HERO ── */}
-      <section className="pt-32 pb-20 md:pt-44 md:pb-28 px-6">
+      <section className="pt-36 pb-20 md:pt-48 md:pb-28 px-6">
         <div className="max-w-3xl mx-auto">
-          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4 }} className="text-[13px] text-[#555] mb-6 tracking-wide">
+          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4 }} className="text-[13px] text-[#777] uppercase tracking-[0.2em] mb-6">
             Runtime-driven application infrastructure
           </motion.p>
 
-          <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.05 }} className="text-[clamp(2rem,6vw,4rem)] font-semibold tracking-[-0.03em] leading-[1.1] mb-6">
-            Applications that evolve<br />
-            <span className="text-[#555]">after deployment.</span>
+          <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.05 }} className="text-[clamp(2rem,6vw,3.75rem)] font-semibold tracking-[-0.03em] leading-[1.1] mb-6 text-[#f5f5f7]">
+            Update production app behavior instantly.<br />
+            <span className="text-[#555]">Without redeployments.</span>
           </motion.h1>
 
-          <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.12 }} className="text-[17px] text-[#888] leading-relaxed mb-8 max-w-xl">
-            Mint is a runtime engine that interprets application schemas — screens, workflows, state, and data bindings — so your team can update production behavior without redeploying code. Design the schema visually, or write it by hand. The runtime handles rendering, orchestration, and delivery across every platform.
+          <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.12 }} className="text-[16px] md:text-[18px] text-[#a3a3a6] leading-relaxed mb-8 max-w-xl">
+            Mint is a runtime engine that interprets application schemas — screens, workflows, state, and data bindings — so your team can update production behavior in real time. Design visually or write schemas by hand; the runtime handles instant native rendering and live delivery.
           </motion.p>
 
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.2 }} className="flex flex-wrap gap-3">
-            <Link href="/signup" className="inline-flex items-center gap-2 bg-white text-black px-6 py-3 rounded-full text-[14px] font-semibold hover:bg-[#e0deda] transition-colors active:scale-[0.97]">
-              Join the Waiting List <ArrowRight size={15} />
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.2 }} className="flex flex-col sm:flex-row sm:items-center gap-4 mb-4">
+            <Link href="/signup" className="inline-flex items-center justify-center gap-2 bg-white text-black px-7 py-3.5 rounded-full text-[15px] font-semibold hover:bg-[#e0deda] transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+              Get Early Access — Join the Waitlist Now! <ArrowRight size={15} />
             </Link>
-            <Link href="/docs" className="inline-flex items-center gap-2 border border-white/[0.1] px-6 py-3 rounded-full text-[14px] text-[#888] hover:text-white hover:border-white/[0.2] transition-all">
+            <Link href="/docs" className="inline-flex items-center justify-center gap-2 border border-white/[0.08] bg-white/[0.02] px-7 py-3.5 rounded-full text-[15px] text-[#888] hover:text-white hover:border-white/[0.15] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
               Documentation <ArrowUpRight size={15} />
             </Link>
           </motion.div>
+
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5, delay: 0.3 }} className="text-[12px] text-[#555] font-mono flex items-center gap-2">
+            Join developers waiting for early access.
+          </motion.div>
         </div>
       </section>
+
+      {/* ── THE PROBLEM ── */}
+      <section className="py-24 md:py-32 px-6">
+        <div ref={r1} className="reveal-target max-w-3xl mx-auto">
+          <p className="text-[12px] text-[#777] uppercase tracking-[0.2em] mb-4">The problem</p>
+          <h2 className="text-2xl md:text-[32px] font-semibold tracking-tight mb-4 text-[#f5f5f7]">Deployment is the bottleneck.</h2>
+          <p className="text-[16px] text-[#a3a3a6] leading-[1.65] mb-8 max-w-xl">
+            A button label change. A workflow tweak. A new onboarding step. Each one triggers the same pipeline: code change → PR → build → test → deploy → validate. Most of these aren&apos;t code problems. They&apos;re configuration problems trapped in code.
+          </p>
+
+          <div className="bg-[#0f0f11] border border-white/[0.05] rounded-xl p-6 md:p-8 mb-8 font-mono text-[14.5px] text-[#9b9ba0] leading-[1.65]">
+            <span className="text-[#555] block mb-4">// Think about last month. Your team shipped:</span>
+            <div className="flex flex-col gap-2 mb-6 text-[14.5px]">
+              <div>• <span className="text-[#e0deda]">12 copy and layout updates</span></div>
+              <div>• <span className="text-[#e0deda]">4 onboarding tweaks</span></div>
+              <div>• <span className="text-[#e0deda]">8 backend workflow changes</span></div>
+            </div>
+            <p>
+              Every single one required a code commit, a pull request, manual QA, a deployment pipeline run, and cross-team coordination. That&apos;s dozens of developer hours and CPU cycles spent on updates that contained zero new engineering logic.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-white/[0.04] rounded-xl overflow-hidden border border-white/[0.04]">
+            {[
+              ["Slow iteration", "Text changes require full CI/CD runs. Teams wait hours to validate what should take seconds."],
+              ["Coupled releases", "Layout, logic, and content ship together. Changing a workflow means redeploying the frontend."],
+              ["Platform fragility", "iOS, Android, and web each need separate deploys synced manually. Drift is inevitable."],
+            ].map(([t, d]) => (
+              <div key={t} className="bg-[#0d0d0f] p-6">
+                <h3 className="text-[14.5px] font-semibold text-[#f5f5f7] mb-2">{t}</h3>
+                <p className="text-[14.5px] text-[#88888c] leading-[1.65]">{d}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <div className="h-px mx-10 md:mx-24 bg-white/[0.04]" />
 
       {/* ── WHAT HAPPENS WHEN YOU PUSH ── */}
       <section className="px-6 pb-24 md:pb-32">
@@ -180,38 +225,12 @@ export default function HomePage() {
 
       <div className="h-px mx-10 md:mx-24 bg-white/[0.04]" />
 
-      {/* ── THE PROBLEM ── */}
-      <section className="py-24 md:py-32 px-6">
-        <div ref={r1} className="reveal-target max-w-3xl mx-auto">
-          <p className="text-[12px] text-[#555] uppercase tracking-[0.2em] mb-4">The problem</p>
-          <h2 className="text-2xl md:text-[32px] font-semibold tracking-tight mb-4">Deployment is the bottleneck.</h2>
-          <p className="text-[15px] text-[#888] leading-relaxed mb-10 max-w-xl">
-            A button label change. A workflow tweak. A new onboarding step. Each one triggers the same pipeline: code change → PR → build → test → deploy → validate. Most of these aren&apos;t code problems. They&apos;re configuration problems trapped in code.
-          </p>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-white/[0.04] rounded-xl overflow-hidden border border-white/[0.04]">
-            {[
-              ["Slow iteration", "Text changes require full CI/CD runs. Teams wait hours to validate what should take seconds."],
-              ["Coupled releases", "Layout, logic, and content ship together. Changing a workflow means redeploying the frontend."],
-              ["Platform fragility", "iOS, Android, and web each need separate deploys synced manually. Drift is inevitable."],
-            ].map(([t, d]) => (
-              <div key={t} className="bg-[#0d0d0f] p-6">
-                <h3 className="text-[14px] font-medium text-[#e0deda] mb-2">{t}</h3>
-                <p className="text-[13px] text-[#666] leading-relaxed">{d}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <div className="h-px mx-10 md:mx-24 bg-white/[0.04]" />
-
       {/* ── HOW MINT WORKS ── */}
       <section className="py-24 md:py-32 px-6">
         <div ref={r2} className="reveal-target max-w-3xl mx-auto">
-          <p className="text-[12px] text-[#555] uppercase tracking-[0.2em] mb-4">How it works</p>
-          <h2 className="text-2xl md:text-[32px] font-semibold tracking-tight mb-4">Schema in, application out.</h2>
-          <p className="text-[15px] text-[#888] leading-relaxed mb-10 max-w-xl">
+          <p className="text-[12px] text-[#777] uppercase tracking-[0.2em] mb-4">How it works</p>
+          <h2 className="text-2xl md:text-[32px] font-semibold tracking-tight mb-4 text-[#f5f5f7]">Schema in, application out.</h2>
+          <p className="text-[16px] text-[#a3a3a6] leading-[1.65] mb-10 max-w-xl">
             Your application is defined as a structured schema — screens, components, data bindings, workflows, navigation. The mint runtime interprets it on every platform, for every user. Update the schema, and every connected client reflects the change in milliseconds.
           </p>
 
@@ -223,10 +242,10 @@ export default function HomePage() {
               ["Instant delivery", "Every connected client receives the update. iOS, Android, web — simultaneously. No app store review. No downtime. Sub-50ms propagation."],
             ].map(([title, desc], i) => (
               <div key={i} className="flex gap-5 py-6 border-b border-white/[0.04] last:border-b-0">
-                <span className="text-[13px] font-mono text-[#444] mt-0.5 shrink-0 w-6">{String(i + 1).padStart(2, "0")}</span>
+                <span className="text-[14.5px] font-mono text-[#555] mt-0.5 shrink-0 w-6">{String(i + 1).padStart(2, "0")}</span>
                 <div>
-                  <h3 className="text-[15px] font-medium text-[#e0deda] mb-1.5">{title}</h3>
-                  <p className="text-[13px] text-[#777] leading-relaxed">{desc}</p>
+                  <h3 className="text-[15.5px] font-semibold text-[#f5f5f7] mb-1.5">{title}</h3>
+                  <p className="text-[14.5px] text-[#88888c] leading-[1.65]">{desc}</p>
                 </div>
               </div>
             ))}
@@ -239,8 +258,8 @@ export default function HomePage() {
       {/* ── PLATFORM CAPABILITIES ── */}
       <section className="py-24 md:py-32 px-6">
         <div ref={r3} className="reveal-target max-w-3xl mx-auto">
-          <p className="text-[12px] text-[#555] uppercase tracking-[0.2em] mb-4">Platform</p>
-          <h2 className="text-2xl md:text-[32px] font-semibold tracking-tight mb-10">What the runtime handles.</h2>
+          <p className="text-[12px] text-[#777] uppercase tracking-[0.2em] mb-4">Platform</p>
+          <h2 className="text-2xl md:text-[32px] font-semibold tracking-tight mb-10 text-[#f5f5f7]">What the runtime handles.</h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-white/[0.04] rounded-xl overflow-hidden border border-white/[0.04]">
             {[
@@ -254,8 +273,8 @@ export default function HomePage() {
               ["Code generation", "Export the schema as production source code — React, Next.js, Vue, Svelte, React Native, or Flutter. You own the output."],
             ].map(([t, d]) => (
               <div key={t} className="bg-[#0d0d0f] p-6">
-                <h3 className="text-[14px] font-medium text-[#e0deda] mb-2">{t}</h3>
-                <p className="text-[13px] text-[#666] leading-relaxed">{d}</p>
+                <h3 className="text-[14.5px] font-semibold text-[#f5f5f7] mb-2">{t}</h3>
+                <p className="text-[14.5px] text-[#88888c] leading-[1.65]">{d}</p>
               </div>
             ))}
           </div>
@@ -267,15 +286,15 @@ export default function HomePage() {
       {/* ── FOR DEVELOPERS ── */}
       <section className="py-24 md:py-32 px-6">
         <div ref={r4} className="reveal-target max-w-3xl mx-auto">
-          <p className="text-[12px] text-[#555] uppercase tracking-[0.2em] mb-4">For developers</p>
-          <h2 className="text-2xl md:text-[32px] font-semibold tracking-tight mb-4">You own the components. We run the runtime.</h2>
-          <p className="text-[15px] text-[#888] leading-relaxed mb-10 max-w-xl">
+          <p className="text-[12px] text-[#777] uppercase tracking-[0.2em] mb-4">For developers</p>
+          <h2 className="text-2xl md:text-[32px] font-semibold tracking-tight mb-4 text-[#f5f5f7]">You own the components. We run the runtime.</h2>
+          <p className="text-[16px] text-[#a3a3a6] leading-[1.65] mb-10 max-w-xl">
             Mint doesn&apos;t replace your engineering team. It separates what changes frequently (screens, workflows, content) from what doesn&apos;t (component implementations, business logic, infrastructure).
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-white/[0.04] rounded-xl overflow-hidden border border-white/[0.04] mb-8">
             <div className="bg-[#0f0f11] p-5">
-              <div className="text-[11px] text-[#555] uppercase tracking-[0.15em] mb-4">Traditional workflow</div>
+              <div className="text-[11px] text-[#777] uppercase tracking-[0.15em] mb-4 font-semibold">Traditional workflow</div>
               <div className="font-mono text-[13px] leading-[2] text-[#555]">
                 <div>modify code</div>
                 <div>→ open pull request</div>
@@ -289,13 +308,13 @@ export default function HomePage() {
               </div>
             </div>
             <div className="bg-[#0f0f11] p-5">
-              <div className="text-[11px] text-emerald-500/60 uppercase tracking-[0.15em] mb-4">With mint</div>
-              <div className="font-mono text-[13px] leading-[2] text-[#999]">
+              <div className="text-[11px] text-emerald-500/70 uppercase tracking-[0.15em] mb-4 font-semibold">With mint</div>
+              <div className="font-mono text-[13px] leading-[2] text-[#9b9ba0]">
                 <div>update screen / workflow / state</div>
                 <div>→ publish</div>
-                <div className="mt-2 text-emerald-500/70">done. 38ms.</div>
+                <div className="mt-2 text-emerald-500/80">done. 38ms.</div>
                 <div className="mt-4 text-[#555]">Rollback?</div>
-                <div className="text-[#999]">→ one click. instant.</div>
+                <div className="text-[#9b9ba0]">→ one click. instant.</div>
               </div>
             </div>
           </div>
@@ -310,8 +329,8 @@ export default function HomePage() {
               <div key={i} className="flex gap-4 py-5 border-b border-white/[0.04] last:border-b-0">
                 <span className="text-emerald-500/60 mt-0.5 shrink-0 text-[14px]">✓</span>
                 <div>
-                  <h4 className="text-[14px] font-medium text-[#e0deda] mb-1">{t}</h4>
-                  <p className="text-[13px] text-[#777] leading-relaxed">{d}</p>
+                  <h4 className="text-[15.5px] font-semibold text-[#f5f5f7] mb-1">{t}</h4>
+                  <p className="text-[14.5px] text-[#88888c] leading-[1.65]">{d}</p>
                 </div>
               </div>
             ))}
@@ -324,8 +343,8 @@ export default function HomePage() {
       {/* ── FAQ ── */}
       <section className="py-24 md:py-32 px-6">
         <div ref={r5} className="reveal-target max-w-2xl mx-auto">
-          <p className="text-[12px] text-[#555] uppercase tracking-[0.2em] mb-4">FAQ</p>
-          <h2 className="text-2xl md:text-[32px] font-semibold tracking-tight mb-10">Questions.</h2>
+          <p className="text-[12px] text-[#777] uppercase tracking-[0.2em] mb-4">FAQ</p>
+          <h2 className="text-2xl md:text-[32px] font-semibold tracking-tight mb-10 text-[#f5f5f7]">Questions.</h2>
 
           <FAQ q="Is this another no-code app builder?" a="No. Mint is a runtime engine. The visual editor is one way to author schemas — you can also write them by hand. The core product is the runtime that interprets those schemas across platforms, handles state, executes workflows, and delivers updates without redeployment." />
           <FAQ q="How is this different from FlutterFlow / Bubble / Retool?" a="Those are app builders — they generate or host applications. Mint is infrastructure. Your application runs on your stack, with your components, in your deployment. The runtime sits alongside your code and handles the parts that change frequently. You control everything else." />
@@ -342,16 +361,21 @@ export default function HomePage() {
       {/* ── CTA ── */}
       <section className="py-28 md:py-36 px-6">
         <div ref={r6} className="reveal-target max-w-2xl mx-auto text-center">
-          <h2 className="text-3xl md:text-[40px] font-semibold tracking-tight mb-5 leading-[1.15]">
+          <h2 className="text-3xl md:text-[40px] font-semibold tracking-tight mb-5 leading-[1.15] text-[#f5f5f7]">
             Ship configuration,<br />
             <span className="text-[#555]">not deployments.</span>
           </h2>
-          <p className="text-[16px] text-[#888] mb-8 max-w-md mx-auto leading-relaxed">
+          <p className="text-[16px] text-[#a3a3a6] mb-8 max-w-md mx-auto leading-[1.65]">
             Join the waitlist. We&apos;ll let you in when your spot opens.
           </p>
-          <Link href="/signup" className="inline-flex items-center gap-2 bg-white text-black px-7 py-3.5 rounded-full text-[14px] font-semibold hover:bg-[#e0deda] transition-colors active:scale-[0.97]">
-            Join the Waiting List <ArrowRight size={15} />
-          </Link>
+          <div className="flex flex-col items-center gap-4">
+            <Link href="/signup" className="inline-flex items-center gap-2 bg-white text-black px-7 py-3.5 rounded-full text-[15px] font-semibold hover:bg-[#e0deda] transition-all active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+              Get Early Access — Join the Waitlist Now! <ArrowRight size={15} />
+            </Link>
+            <div className="text-[12px] text-[#555] font-mono">
+              No credit card required. Cancel anytime.
+            </div>
+          </div>
         </div>
       </section>
 
@@ -359,13 +383,13 @@ export default function HomePage() {
       <footer className="border-t border-white/[0.04] py-8 px-6">
         <div className="max-w-3xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <Image src={MLogo} alt="mint" width={18} height={18} className="rounded-[3px]" />
+            <Image src={MLogo} alt="Mint logo" width={18} height={18} className="rounded-[3px]" />
             <span className="text-[12px] text-[#555]">© {new Date().getFullYear()} mint</span>
           </div>
           <div className="flex items-center gap-5">
-            <Link href="/docs" className="text-[12px] text-[#555] hover:text-white transition-colors">Docs</Link>
-            <Link href="/login" className="text-[12px] text-[#555] hover:text-white transition-colors">Log in</Link>
-            <Link href="/signup" className="text-[12px] text-[#555] hover:text-white transition-colors">Waitlist</Link>
+            <Link href="/docs" className="text-[12px] text-[#555] hover:text-white transition-colors py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white rounded">Docs</Link>
+            <Link href="/login" className="text-[12px] text-[#555] hover:text-white transition-colors py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white rounded">Log in</Link>
+            <Link href="/signup" className="text-[12px] text-[#555] hover:text-white transition-colors py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white rounded">Waitlist</Link>
           </div>
         </div>
       </footer>
