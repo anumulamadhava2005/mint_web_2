@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createUser } from "../../../lib/auth";
 import { cacheGet, cacheSet } from "../../../lib/cache";
+import db from "../../../lib/db";
 
 const MAX_ATTEMPTS = 5;
 const WINDOW_SECONDS = 15 * 60; // 15 minutes
@@ -29,7 +30,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { email, password } = body ?? {};
+    const { email, password, fullname, company, team_size } = body ?? {};
     if (!email || !password) {
       return NextResponse.json({ error: "Email and password required" }, { status: 400 });
     }
@@ -42,6 +43,33 @@ export async function POST(req: Request) {
     }
 
     const user = await createUser(email, password);
+
+    // Save onboarding fields if provided
+    const updates: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+
+    if (fullname && typeof fullname === "string") {
+      updates.push(`fullname = $${idx++}`);
+      values.push(fullname.trim().slice(0, 200));
+    }
+    if (company && typeof company === "string") {
+      updates.push(`company = $${idx++}`);
+      values.push(company.trim().slice(0, 200));
+    }
+    if (team_size && typeof team_size === "string") {
+      updates.push(`team_size = $${idx++}`);
+      values.push(team_size.trim().slice(0, 20));
+    }
+
+    if (updates.length > 0) {
+      values.push(user.id);
+      await db.query(
+        `UPDATE users SET ${updates.join(", ")} WHERE id = $${idx}`,
+        values
+      );
+    }
+
     return NextResponse.json({ ok: true, user }, { status: 201 });
   } catch (err: any) {
     // Do not leak whether email exists — return generic error for all failures

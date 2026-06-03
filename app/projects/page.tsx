@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ProjectsContent from "@/components/ProjectsContent";
 import CommunityContent from "@/components/CommunityContent";
-import { Grid2X2, LogOut, MessageSquareMore, Search, Sparkles } from "lucide-react";
+import { Grid2X2, LogOut, MessageSquareMore, Search, Sparkles, UserCircle } from "lucide-react";
 
 type ActiveTab = "recents" | "community";
 
@@ -121,7 +121,17 @@ export default function Projects() {
               </div>
             </div>
 
-            <div className="mt-auto pt-8 pb-2">
+            <div className="mt-auto pt-8 pb-2 flex flex-col gap-1">
+              <button
+                onClick={() => router.push("/profile")}
+                type="button"
+                className="group flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm font-medium text-[#a8a6a2] transition-all hover:bg-white/[0.04] hover:text-[#d7d6d2]"
+              >
+                <span className="flex items-center gap-3">
+                  <UserCircle size={16} />
+                  Profile
+                </span>
+              </button>
               <button
                 onClick={handleLogout}
                 type="button"
