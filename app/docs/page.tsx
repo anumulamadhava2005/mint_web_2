@@ -4,390 +4,520 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import MLogo from "@/app/M.png";
-import { 
-  Menu, 
-  X, 
-  LayoutDashboard, 
-  GitBranch, 
-  Database, 
-  Download, 
-  Lightbulb, 
-  PenTool, 
-  Cpu, 
-  Box, 
-  Server, 
-  Repeat, 
-  Code, 
-  Zap, 
-  ArrowRight, 
-  AlertTriangle, 
-  LogIn,
-  TerminalSquare
+import {
+  LayoutDashboard, GitBranch, Database, Download, Lightbulb,
+  PenTool, Cpu, Box, Server, Repeat, Code, Zap, ArrowRight,
+  AlertTriangle, LogIn, TerminalSquare, Smartphone, Monitor,
+  Layers, Package, Play, Settings, Users, FileCode, Rocket,
+  ChevronRight, Hash, Workflow, MousePointer, Type, Image as ImageIcon,
+  Square, Circle, Minus, Copy, Scissors, RotateCcw, RotateCw,
+  ZoomIn, Lock, Unlock, Eye, EyeOff, AlignLeft, Columns,
+  Palette
 } from "lucide-react";
 
+const sections = [
+  { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "getting-started", label: "Getting Started", icon: Rocket },
+  { id: "editor", label: "Editor", icon: PenTool },
+  { id: "backend", label: "Backend", icon: Cpu },
+  { id: "export", label: "Export & Build", icon: Download },
+  { id: "sync", label: "Live Sync", icon: Repeat },
+  { id: "collab", label: "Collaboration", icon: Users },
+  { id: "shortcuts", label: "Shortcuts", icon: Zap },
+];
+
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return <h2 className="text-[26px] font-semibold tracking-tight text-[#f6f4f0] mb-3">{children}</h2>;
+}
+
+function SectionSub({ children }: { children: React.ReactNode }) {
+  return <p className="text-[15px] text-[#a8a6a2] leading-relaxed mb-7">{children}</p>;
+}
+
+function SubHeading({ children }: { children: React.ReactNode }) {
+  return <h3 className="text-[17px] font-medium text-[#f6f4f0] mt-8 mb-3">{children}</h3>;
+}
+
+function Tip({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="border-l-[3px] border-blue-500/50 bg-blue-500/[0.06] rounded-r-lg px-4 py-3 my-5 text-[14px] leading-relaxed text-[#e0deda]">
+      <strong className="font-semibold">{title}</strong> {children}
+    </div>
+  );
+}
+
+function Warning({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="border-l-[3px] border-amber-500/50 bg-amber-500/[0.06] rounded-r-lg px-4 py-3 my-5 text-[14px] leading-relaxed text-[#e0deda]">
+      <strong className="font-semibold">{title}</strong> {children}
+    </div>
+  );
+}
+
+function CodeBlock({ children }: { children: string }) {
+  return (
+    <pre className="bg-white/[0.03] border border-white/[0.06] rounded-lg px-4 py-3 my-3 font-mono text-[13px] leading-[1.7] text-[#e0deda] whitespace-pre-wrap overflow-x-auto">
+      {children}
+    </pre>
+  );
+}
+
+function StepList({ steps }: { steps: { title: string; desc: React.ReactNode }[] }) {
+  return (
+    <div className="flex flex-col gap-0">
+      {steps.map((s, i) => (
+        <div key={i} className="flex gap-4 py-4 border-b border-white/[0.04] last:border-b-0">
+          <div className="w-[28px] h-[28px] rounded-full bg-blue-500/10 text-blue-400 text-[13px] font-semibold flex items-center justify-center flex-shrink-0 mt-0.5">
+            {i + 1}
+          </div>
+          <div>
+            <h4 className="text-[15px] font-medium text-[#f6f4f0] mb-1">{s.title}</h4>
+            <div className="text-[14px] text-[#a8a6a2] leading-relaxed">{s.desc}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Card({ icon: Icon, title, children }: { icon: any; title: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-5">
+      <Icon size={22} className="text-blue-400 mb-3" />
+      <h3 className="text-[15px] font-medium text-[#f6f4f0] mb-2">{title}</h3>
+      <p className="text-[13px] text-[#a8a6a2] leading-relaxed">{children}</p>
+    </div>
+  );
+}
+
+function PropRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between items-center py-2.5 border-b border-white/[0.04] last:border-b-0 text-[13px]">
+      <span className="text-[#a8a6a2]">{label}</span>
+      <code className="font-mono text-[12px] text-[#e0deda]">{value}</code>
+    </div>
+  );
+}
+
+function FrameworkGrid() {
+  const fws = [
+    { name: "React", icon: Code, desc: "JSX/TSX components with hooks" },
+    { name: "Next.js", icon: Server, desc: "App Router pages and layouts" },
+    { name: "Vue", icon: Layers, desc: "Single File Components (.vue)" },
+    { name: "Svelte", icon: Zap, desc: "Svelte components (.svelte)" },
+    { name: "React Native", icon: Smartphone, desc: "Expo Router mobile app" },
+    { name: "Flutter", icon: Palette, desc: "Dart widgets and screens" },
+  ];
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 my-4">
+      {fws.map(f => (
+        <div key={f.name} className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-4 flex items-start gap-3">
+          <f.icon size={18} className="text-blue-400 mt-0.5 flex-shrink-0" />
+          <div>
+            <div className="text-[14px] font-medium text-[#f6f4f0]">{f.name}</div>
+            <div className="text-[12px] text-[#a8a6a2] mt-0.5">{f.desc}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 export default function DocsPage() {
   const [activeTab, setActiveTab] = useState("overview");
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-[#f6f4f0] antialiased selection:bg-white/20 selection:text-white">
-      {/* ── NAVBAR ── */}
-      <nav className="fixed top-0 inset-x-0 z-50 bg-[#0a0a0a]/90 backdrop-blur-xl border-b border-white/[0.06] shadow-sm">
+    <div className="min-h-screen bg-[#0a0a0a] text-[#f6f4f0] antialiased selection:bg-white/20">
+      <nav className="fixed top-0 inset-x-0 z-50 bg-[#0a0a0a]/90 backdrop-blur-xl border-b border-white/[0.06]">
         <div className="flex items-center justify-between px-6 lg:px-10 py-4 max-w-[1600px] mx-auto">
-          <div className="flex items-center gap-8">
-            <Link href="/" className="flex items-center gap-3 group">
-              <Image src={MLogo} alt="mint" width={28} height={28} className="rounded-[6px] transition-transform group-hover:scale-110" />
-              <span className="text-lg font-semibold tracking-tight">mint <span className="text-white/40 font-normal">Docs</span></span>
-            </Link>
-          </div>
-          
-          <div className="flex items-center gap-4">
-            <div className="hidden lg:flex items-center gap-4">
-              <Link href="/login" className="text-[13px] font-medium text-[#a8a6a2] hover:text-[#f6f4f0] transition-colors">Platform</Link>
-              <Link href="/signup" className="text-[13px] font-semibold bg-[#f6f4f0] text-[#0a0a0a] px-4 py-1.5 rounded-full hover:bg-white transition-all">Get Started</Link>
-            </div>
+          <Link href="/home" className="flex items-center gap-3 group">
+            <Image src={MLogo} alt="mint" width={28} height={28} className="rounded-[6px]" />
+            <span className="text-lg font-semibold tracking-tight">mint <span className="text-white/40 font-normal">Docs</span></span>
+          </Link>
+          <div className="hidden lg:flex items-center gap-4">
+            <Link href="/login" className="text-[13px] font-medium text-[#a8a6a2] hover:text-[#f6f4f0] transition-colors">Platform</Link>
+            <Link href="/signup" className="text-[13px] font-semibold bg-[#f6f4f0] text-[#0a0a0a] px-4 py-1.5 rounded-full hover:bg-white transition-all">Get Started</Link>
           </div>
         </div>
       </nav>
 
       <div className="max-w-[1600px] mx-auto pt-[90px] px-6 lg:px-10 pb-32">
-        <style dangerouslySetInnerHTML={{ __html: `
-          .docs-wrap {
-            --font-sans: inherit;
-            --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-            --color-background-primary: rgba(255,255,255,0.02);
-            --color-background-secondary: rgba(255,255,255,0.04);
-            --color-background-info: rgba(59, 130, 246, 0.1);
-            --color-background-success: rgba(16, 185, 129, 0.1);
-            --color-background-warning: rgba(245, 158, 11, 0.1);
-            --color-background-danger: rgba(239, 68, 68, 0.1);
-            
-            --color-border-primary: rgba(255,255,255,0.2);
-            --color-border-secondary: rgba(255,255,255,0.1);
-            --color-border-tertiary: rgba(255,255,255,0.05);
-            --color-border-info: rgba(59, 130, 246, 0.5);
-            
-            --color-text-primary: #f6f4f0;
-            --color-text-secondary: #a8a6a2;
-            --color-text-tertiary: #737373;
-            
-            --color-text-info: #60a5fa;
-            --color-text-success: #34d399;
-            --color-text-warning: #fbbf24;
-            --color-text-danger: #f87171;
-            
-            --border-radius-md: 6px;
-            --border-radius-lg: 12px;
-          }
-          
-          .docs-wrap * {box-sizing:border-box;margin:0;padding:0}
-          .docs-wrap {padding:0 0 2rem; max-width: 800px; margin: 0 auto;}
-          .docs-nav {display:flex;gap:6px;flex-wrap:wrap;margin-bottom:32px;padding-bottom:16px;border-bottom:0.5px solid var(--color-border-tertiary)}
-          .docs-nav button {font-size:13px;padding:8px 16px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);cursor:pointer;transition:all .15s; display: flex; align-items: center; gap: 8px;}
-          .docs-nav button.active, .docs-nav button:hover {background:var(--color-background-secondary);color:var(--color-text-primary)}
-          .docs-nav button.active {border-color:var(--color-border-primary);color:var(--color-text-primary);font-weight:500}
-          
-          .docs-section {display:none}
-          .docs-section.show {display:block}
-          
-          .docs-wrap h2 {font-size:28px;font-weight:600;margin-bottom:12px;color:var(--color-text-primary)}
-          .docs-wrap .sub {font-size:16px;color:var(--color-text-secondary);margin-bottom:28px;line-height:1.6}
-          
-          .docs-cards {display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:24px}
-          .docs-card {background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:20px}
-          .docs-card .icon {color:var(--color-text-info);margin-bottom:12px}
-          .docs-card h3 {font-size:16px;font-weight:500;margin-bottom:8px; color: var(--color-text-primary)}
-          .docs-card p {font-size:14px;color:var(--color-text-secondary);line-height:1.6}
-          
-          .docs-steps {counter-reset:s;display:flex;flex-direction:column;gap:0}
-          .docs-step {display:flex;gap:16px;padding:20px 0;border-bottom:0.5px solid var(--color-border-tertiary)}
-          .docs-step:last-child {border-bottom:none}
-          .docs-step-num {counter-increment:s;min-width:30px;height:30px;border-radius:50%;background:var(--color-background-info);color:var(--color-text-info);font-size:14px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
-          .docs-step-num::before {content:counter(s)}
-          .docs-step-body h4 {font-size:16px;font-weight:500;margin-bottom:6px; color: var(--color-text-primary)}
-          .docs-step-body p {font-size:14px;color:var(--color-text-secondary);line-height:1.6}
-          .docs-step-body code {font-family:var(--font-mono);font-size:13px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:4px;padding:2px 6px; color: var(--color-text-primary)}
-          
-          .docs-block {background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:16px;margin:12px 0;font-family:var(--font-mono);font-size:13px;line-height:1.7;color:var(--color-text-primary);white-space:pre-wrap;overflow-x:auto}
-          
-          .docs-tag {display:inline-block;font-size:12px;padding:2px 8px;border-radius:var(--border-radius-md);margin-right:6px;font-weight:500}
-          .docs-tag-blue {background:var(--color-background-info);color:var(--color-text-info)}
-          .docs-tag-green {background:var(--color-background-success);color:var(--color-text-success)}
-          .docs-tag-amber {background:var(--color-background-warning);color:var(--color-text-warning)}
-          .docs-tag-red {background:var(--color-background-danger);color:var(--color-text-danger)}
-          
-          .docs-tip {border-left:3px solid var(--color-border-info);padding:14px 18px;background:var(--color-background-info);border-radius:0 var(--border-radius-md) var(--border-radius-md) 0;margin:16px 0;font-size:14px;line-height:1.6;color:var(--color-text-primary)}
-          .docs-tip strong {font-weight:600}
-          
-          .docs-row2 {display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
-          
-          .docs-action-card {background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:20px;margin-bottom:16px}
-          .docs-action-card .head {display:flex;align-items:center;gap:10px;margin-bottom:12px}
-          .docs-action-card .head .docs-tag {margin:0}
-          .docs-action-card h4 {font-size:16px;font-weight:500;margin:0; color: var(--color-text-primary)}
-          .docs-action-card p {font-size:14px;color:var(--color-text-secondary);margin-bottom:12px;line-height:1.6}
-          
-          .docs-prop-row {display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:0.5px solid var(--color-border-tertiary);font-size:13px}
-          .docs-prop-row:last-child {border:none}
-          .docs-prop-key {color:var(--color-text-secondary)}
-          .docs-prop-val {font-family:var(--font-mono);font-size:12px;color:var(--color-text-primary)}
-          
-          .docs-flow-node {background:var(--color-background-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:10px 14px;font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:8px; color: var(--color-text-primary)}
-          .docs-flow-row {display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:12px 0}
-          .docs-arrow {color:var(--color-text-tertiary);font-size:16px}
-          
-          @media(max-width:480px) {
-            .docs-row2 {grid-template-columns:1fr}
-            .docs-nav button {font-size:12px;padding:6px 10px}
-          }
-        `}} />
-
-        <div className="docs-wrap">
-          <div className="docs-nav">
-            <button className={activeTab === 'overview' ? 'active' : ''} onClick={() => setActiveTab('overview')}>
-              <LayoutDashboard size={16} /> Overview
-            </button>
-            <button className={activeTab === 'design' ? 'active' : ''} onClick={() => setActiveTab('design')}>
-              <PenTool size={16} /> Design
-            </button>
-            <button className={activeTab === 'runtime' ? 'active' : ''} onClick={() => setActiveTab('runtime')}>
-              <Cpu size={16} /> Runtime
-            </button>
-            <button className={activeTab === 'flows' ? 'active' : ''} onClick={() => setActiveTab('flows')}>
-              <GitBranch size={16} /> Flows
-            </button>
-            <button className={activeTab === 'database' ? 'active' : ''} onClick={() => setActiveTab('database')}>
-              <Database size={16} /> Database
-            </button>
-            <button className={activeTab === 'export' ? 'active' : ''} onClick={() => setActiveTab('export')}>
-              <Download size={16} /> Export & Sync
-            </button>
-            <button className={activeTab === 'tips' ? 'active' : ''} onClick={() => setActiveTab('tips')}>
-              <Lightbulb size={16} /> Pro tips
-            </button>
+        <div className="max-w-[820px] mx-auto">
+          {/* Tab navigation */}
+          <div className="flex gap-1.5 flex-wrap mb-8 pb-4 border-b border-white/[0.04]">
+            {sections.map(s => (
+              <button
+                key={s.id}
+                onClick={() => setActiveTab(s.id)}
+                className={`text-[13px] px-3.5 py-2 rounded-md border flex items-center gap-2 transition-all cursor-pointer ${
+                  activeTab === s.id
+                    ? "border-white/[0.15] bg-white/[0.05] text-[#f6f4f0] font-medium"
+                    : "border-white/[0.06] bg-transparent text-[#a8a6a2] hover:bg-white/[0.03] hover:text-[#f6f4f0]"
+                }`}
+              >
+                <s.icon size={15} />
+                {s.label}
+              </button>
+            ))}
           </div>
 
-          {/* OVERVIEW */}
-          <div className={`docs-section ${activeTab === 'overview' ? 'show' : ''}`}>
-            <h2>What is Mint Web?</h2>
-            <p className="sub">A design-to-code platform — draw your UI visually, then Mint generates production-ready full-stack code with a real database and API baked in.</p>
-            <div className="docs-cards">
-              <div className="docs-card"><div className="icon"><Box size={24}/></div><h3>Visual Canvas</h3><p>Design your UI with a powerful editor. Every element maps directly to real code.</p></div>
-              <div className="docs-card"><div className="icon"><Cpu size={24}/></div><h3>Mint Runtime</h3><p>Lightweight engine managing state, actions, and data bindings between UI and backend.</p></div>
-              <div className="docs-card"><div className="icon"><Server size={24}/></div><h3>Auto Backend</h3><p>PostgreSQL database and CRUD API endpoints generated instantly for your tables.</p></div>
-              <div className="docs-card"><div className="icon"><GitBranch size={24}/></div><h3>Workflows</h3><p>Build complex business logic using a node-based visual flowchart editor — no code needed.</p></div>
-              <div className="docs-card"><div className="icon"><Repeat size={24}/></div><h3>Live Sync</h3><p>Push canvas changes to your running app instantly — no rebuild, no redeploy.</p></div>
-              <div className="docs-card"><div className="icon"><Code size={24}/></div><h3>Multi-Framework</h3><p>Export to React, Next.js, Vue, Svelte and more. You own the code.</p></div>
-            </div>
-            <div className="docs-tip"><strong>Mental model:</strong> Think of Mint as three layers — the Canvas (what the user sees), the Runtime (the logic layer), and the Backend (data). All three stay in sync automatically.</div>
-          </div>
+          {/* ─── OVERVIEW ─── */}
+          {activeTab === "overview" && (
+            <div>
+              <SectionHeading>What is Mint?</SectionHeading>
+              <SectionSub>
+                Mint is a visual application builder. You design your UI on a canvas, configure your backend logic visually, and Mint generates production-ready source code across six frameworks. You own the code — export it, modify it, deploy it anywhere.
+              </SectionSub>
 
-          {/* DESIGN */}
-          <div className={`docs-section ${activeTab === 'design' ? 'show' : ''}`}>
-            <h2>Design phase</h2>
-            <p className="sub">Everything starts on the canvas. Each Frame becomes a route in your app. Properties set in the sidebar map 1-to-1 with CSS/layout rules.</p>
-            <div className="docs-steps">
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Create a project</h4><p>Dashboard → <code>New Project</code> → choose a template or blank canvas → set project name → pick target framework (e.g. Next.js).</p></div></div>
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Add frames (screens)</h4><p>Press <code>F</code> and draw a frame. Each frame = one route in your app. Name them clearly: <code>Home</code>, <code>Login</code>, <code>Dashboard</code>. Frames can be nested to create reusable layout components.</p></div></div>
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Style with the right sidebar</h4><p>Select any element to access its design properties:</p></div></div>
-            </div>
-            <div className="docs-row2" style={{marginTop:'8px'}}>
-              <div className="docs-card"><h3 style={{marginBottom:'10px'}}>Layout</h3>
-                <div className="docs-prop-row"><span className="docs-prop-key">Direction</span><span className="docs-prop-val">row / column</span></div>
-                <div className="docs-prop-row"><span className="docs-prop-key">Align</span><span className="docs-prop-val">flex-start … center</span></div>
-                <div className="docs-prop-row"><span className="docs-prop-key">Justify</span><span className="docs-prop-val">space-between …</span></div>
-                <div className="docs-prop-row"><span className="docs-prop-key">Gap</span><span className="docs-prop-val">px or %</span></div>
-                <div className="docs-prop-row"><span className="docs-prop-key">Mode</span><span className="docs-prop-val">Flexbox / Grid</span></div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
+                <Card icon={Box} title="Visual Canvas">Design screens on a Figma-like editor. Every element maps directly to real, readable code.</Card>
+                <Card icon={Cpu} title="Runtime Engine">Lightweight engine that manages state, data bindings, and actions between your UI and backend.</Card>
+                <Card icon={Server} title="Auto Backend">Define database tables visually. Mint generates the schema, API routes, and CRUD operations.</Card>
+                <Card icon={GitBranch} title="Workflows">Build complex business logic as visual flowcharts — conditions, loops, API calls, all without code.</Card>
+                <Card icon={Repeat} title="Live Sync">Push canvas changes to your running app instantly. The sync daemon patches your code via HMR.</Card>
+                <Card icon={Code} title="6 Frameworks">Export to React, Next.js, Vue, Svelte, React Native (Expo), or Flutter. Full project scaffolds included.</Card>
               </div>
-              <div className="docs-card"><h3 style={{marginBottom:'10px'}}>Visuals & type</h3>
-                <div className="docs-prop-row"><span className="docs-prop-key">Background</span><span className="docs-prop-val">solid / gradient</span></div>
-                <div className="docs-prop-row"><span className="docs-prop-key">Border radius</span><span className="docs-prop-val">px</span></div>
-                <div className="docs-prop-row"><span className="docs-prop-key">Shadow / Blur</span><span className="docs-prop-val">effects panel</span></div>
-                <div className="docs-prop-row"><span className="docs-prop-key">Font family</span><span className="docs-prop-val">any Google font</span></div>
-                <div className="docs-prop-row"><span className="docs-prop-key">Weight / Size</span><span className="docs-prop-val">full control</span></div>
-              </div>
+
+              <SubHeading>How it works</SubHeading>
+              <StepList steps={[
+                { title: "Design your screens", desc: "Draw frames on the canvas. Each frame becomes a route in your app. Add shapes, text, buttons, images, and forms." },
+                { title: "Add logic and data", desc: "Open the Backend Panel to define state variables, actions, database tables, and workflows. Bind data to UI elements." },
+                { title: "Commit or export", desc: "Click Commit to generate versioned code, or Export to download a ZIP. Your design becomes a complete, runnable project." },
+                { title: "Run and iterate", desc: "Install dependencies, start your dev server. Enable Live Sync to push design changes without rebuilding." },
+              ]} />
+
+              <Tip title="Mental model:">Think of Mint as three layers — the Canvas (what users see), the Runtime (logic), and the Backend (data). All three stay in sync automatically.</Tip>
             </div>
-            <div className="docs-tip"><strong>Key insight:</strong> Frames are routes, not just boxes. The frame name becomes the URL path. Nesting a frame inside another frame means that inner route renders inside the outer layout — like nested routes in Next.js.</div>
-          </div>
+          )}
 
-          {/* RUNTIME */}
-          <div className={`docs-section ${activeTab === 'runtime' ? 'show' : ''}`}>
-            <h2>Mint Runtime — state, bindings & actions</h2>
-            <p className="sub">The Runtime is the brain of your app. It holds data in State, connects that data to UI elements via Bindings, and runs logic via Actions triggered by events.</p>
+          {/* ─── GETTING STARTED ─── */}
+          {activeTab === "getting-started" && (
+            <div>
+              <SectionHeading>Getting Started</SectionHeading>
+              <SectionSub>Create your account, set up your first project, and export working code in under 5 minutes.</SectionSub>
 
-            <h3 style={{fontSize:'18px',fontWeight:500,marginBottom:'12px',color:'var(--color-text-primary)'}}>State management</h3>
-            <div className="docs-row2">
-              <div className="docs-card"><h3 style={{marginBottom:'8px'}}><span className="docs-tag docs-tag-blue">Global</span></h3><p>Accessible from any screen. Use for data that persists across routes — e.g. <code>currentUser</code>, auth tokens. Enable <strong>Persist</strong> to write to <code>localStorage</code> automatically.</p></div>
-              <div className="docs-card"><h3 style={{marginBottom:'8px'}}><span className="docs-tag docs-tag-green">Local</span></h3><p>Scoped to a single frame/component. Use for UI-only state like <code>isLoading</code>, <code>modalOpen</code>, form field values. Destroyed when the frame unmounts.</p></div>
+              <SubHeading>Create an account</SubHeading>
+              <StepList steps={[
+                { title: "Sign up", desc: "Go to the signup page. Enter your name, email, and password. Complete the onboarding wizard — tell us what you're building, your industry, and team size." },
+                { title: "Create a project", desc: <>From the dashboard, click <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">New Project</code>. Give it a name and optional description.</> },
+                { title: "Open the editor", desc: "Click your project to open the visual editor. You'll see a blank canvas ready for your first frame." },
+              ]} />
+
+              <SubHeading>Your first screen</SubHeading>
+              <StepList steps={[
+                { title: "Draw a frame", desc: <>Press <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">F</code> and drag on the canvas. This frame is your first screen — name it &quot;Home&quot; in the layers panel.</> },
+                { title: "Add elements", desc: <>Use the toolbar: <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">R</code> for rectangles, <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">T</code> for text, <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">O</code> for ellipses. Drag elements into your frame.</> },
+                { title: "Style with the sidebar", desc: "Select any element to see its properties in the right panel — fill color, border, typography, layout direction, padding, and effects." },
+                { title: "Export your project", desc: <>Click <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">Export</code> in the toolbar, pick a framework (e.g. React Native), and download the ZIP.</> },
+              ]} />
+
+              <SubHeading>Run the exported code</SubHeading>
+              <CodeBlock>{`# Extract the ZIP
+unzip my-app-react-native.zip -d my-app
+cd my-app
+
+# Install dependencies
+npm install
+
+# Start the development server
+npx expo start
+
+# Or for web frameworks:
+npm run dev`}</CodeBlock>
+
+              <Tip title="Expo Go:">For React Native exports, scan the QR code with the Expo Go app on your phone to see your design running as a real mobile app.</Tip>
             </div>
+          )}
 
-            <h3 style={{fontSize:'18px',fontWeight:500,margin:'28px 0 12px',color:'var(--color-text-primary)'}}>Data bindings</h3>
-            <div className="docs-steps">
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Select a component</h4><p>Click any element (e.g. a Text box or a Button label).</p></div></div>
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Open Bindings panel</h4><p>Click the link icon next to the property you want to connect (e.g. "Content", "Color", "Visible").</p></div></div>
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Enter an expression</h4><p>Use <code>$global.userName</code> for global state or <code>$local.count</code> for local state. Full expressions work: <code>$local.itemCount &gt; 0 ? 'Items' : 'Empty'</code></p></div></div>
-            </div>
+          {/* ─── EDITOR ─── */}
+          {activeTab === "editor" && (
+            <div>
+              <SectionHeading>The Visual Editor</SectionHeading>
+              <SectionSub>The editor is where you design your app. It works like Figma — draw shapes, arrange layouts, style elements — but everything maps to real code components.</SectionSub>
 
-            <h3 style={{fontSize:'18px',fontWeight:500,margin:'28px 0 12px',color:'var(--color-text-primary)'}}>Actions — the four types</h3>
-
-            <div className="docs-action-card">
-              <div className="head"><span className="docs-tag docs-tag-blue">setState</span><h4>Update state data</h4></div>
-              <p>Writes a value to a specific path in your state tree. <code>$args.0</code> means "the first argument passed when this action was called".</p>
-              <div className="docs-block">{`{
-  "path": "todos",
-  "value": "$args.0",
-  "also": "SET $lastUpdated = now()"
-}`}</div>
-              <div className="docs-tip" style={{marginTop:'8px'}}><strong>also</strong> lets you update a second state variable in the same action — useful for timestamps or counters.</div>
-            </div>
-
-            <div className="docs-action-card">
-              <div className="head"><span className="docs-tag docs-tag-green">fetch</span><h4>HTTP requests & DB queries</h4></div>
-              <p>Calls an API endpoint. <code>storePath</code> automatically saves the response into that state key, so you don't need a separate <code>setState</code> afterwards.</p>
-              <div className="docs-block">{`{
-  "url": "/api/todos",
-  "method": "POST",
-  "headers": { "Content-Type": "application/json" },
-  "body": { "title": "$args.0", "status": "pending" },
-  "storePath": "todos",
-  "onSuccess": "CALL loadTodos; TOAST 'Saved!'"
-}`}</div>
-              <div className="docs-tip" style={{marginTop:'8px'}}><strong>onSuccess</strong> chains multiple actions with semicolons. <code>TOAST</code> shows a notification; <code>CALL</code> runs another named action.</div>
-            </div>
-
-            <div className="docs-action-card">
-              <div className="head"><span className="docs-tag docs-tag-amber">navigate</span><h4>Change screens</h4></div>
-              <p>Pushes a new route. Pass dynamic <code>params</code> to send data to the destination screen — access them there via <code>$route.params.userId</code>.</p>
-              <div className="docs-block">{`{
-  "route": "/dashboard",
-  "params": { "userId": "$global.user.id" }
-}`}</div>
-            </div>
-
-            <div className="docs-action-card">
-              <div className="head"><span className="docs-tag docs-tag-red">condition</span><h4>Branching logic</h4></div>
-              <p>Evaluates an expression and runs a different action list depending on the result. Each entry in <code>then</code> / <code>else</code> is a command string.</p>
-              <div className="docs-block">{`{
-  "expression": "$global.isLoggedIn",
-  "then": ["CALL goToDashboard"],
-  "else": ["OPEN_MODAL 'LoginModal'"]
-}`}</div>
-            </div>
-          </div>
-
-          {/* FLOWS */}
-          <div className={`docs-section ${activeTab === 'flows' ? 'show' : ''}`}>
-            <h2>Workflows (Flows)</h2>
-            <p className="sub">When action JSON strings get complex, switch to Flows — a visual node-based editor that lets you design multi-step logic as a flowchart.</p>
-
-            <div className="docs-steps">
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Open the Workflows tab</h4><p>Click the <code>Workflows</code> tab in the left sidebar of the editor.</p></div></div>
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Add a workflow</h4><p>Click <code>Add Workflow</code>, give it a name. This workflow can then be called from any action using <code>CALL myWorkflowName</code>.</p></div></div>
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Add nodes</h4><p>Three categories of nodes are available:</p>
-                <div style={{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'10px'}}>
-                  <span className="docs-tag docs-tag-blue">Logic: Condition, Loop, Delay</span>
-                  <span className="docs-tag docs-tag-green">Backend: API Call, DB Query</span>
-                  <span className="docs-tag docs-tag-amber">UI: Navigate, Show Modal</span>
+              <SubHeading>Canvas basics</SubHeading>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-5">
+                  <h4 className="text-[15px] font-medium text-[#f6f4f0] mb-3">Frames = Screens</h4>
+                  <p className="text-[13px] text-[#a8a6a2] leading-relaxed mb-2">Every top-level frame becomes a route in your app. The frame name sets the URL path.</p>
+                  <PropRow label="Home" value="→ /" />
+                  <PropRow label="UserProfile" value="→ /user-profile" />
+                  <PropRow label="Settings" value="→ /settings" />
                 </div>
-              </div></div>
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Connect with edges</h4><p>Draw arrows between nodes to set the execution order. Click any arrow to add a conditional expression on it, e.g. <code>{`{{\${_node_1_output.success}}}`}</code> — the path only executes if the condition is truthy.</p></div></div>
-            </div>
-
-            <div className="docs-tip"><strong>When to use Flows vs Actions:</strong> Use action JSON for simple, single-step logic. Switch to Flows when you need branching, loops, or chaining more than 3 steps — the visual graph is much easier to debug.</div>
-
-            <div style={{marginTop:'32px'}}>
-              <p style={{fontSize:'16px',fontWeight:500,marginBottom:'16px',color:'var(--color-text-primary)'}}>Example flow: user login</p>
-              <div className="docs-flow-row">
-                <div className="docs-flow-node"><LogIn size={16} /> Form submit</div>
-                <span className="docs-arrow">→</span>
-                <div className="docs-flow-node"><Server size={16} /> API Call: POST /auth</div>
-                <span className="docs-arrow">→</span>
-                <div className="docs-flow-node"><GitBranch size={16} /> Condition: success?</div>
-              </div>
-              <div className="docs-flow-row" style={{marginLeft:'32px'}}>
-                <span className="docs-tag docs-tag-green">true →</span>
-                <div className="docs-flow-node"><ArrowRight size={16} /> Navigate /dashboard</div>
-              </div>
-              <div className="docs-flow-row" style={{marginLeft:'32px'}}>
-                <span className="docs-tag docs-tag-red">false →</span>
-                <div className="docs-flow-node"><AlertTriangle size={16} /> Show Modal: Error</div>
-              </div>
-            </div>
-          </div>
-
-          {/* DATABASE */}
-          <div className={`docs-section ${activeTab === 'database' ? 'show' : ''}`}>
-            <h2>Database & backend</h2>
-            <p className="sub">Mint provisions a real PostgreSQL database for your project automatically. You define tables in a UI, Mint generates the CRUD API routes. No backend code needed.</p>
-
-            <div className="docs-steps">
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Enable the database</h4><p>Go to the <code>Database</code> tab → click <code>Enable Database</code>. Mint provisions a PostgreSQL instance scoped to your project.</p></div></div>
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Create a table</h4><p>Click <code>New Table</code>. Define each column with a name, type, and optional constraints.</p>
-                <div style={{marginTop:'12px'}}>
-                  <div className="docs-prop-row"><span className="docs-prop-key">UUID</span><span className="docs-prop-val">id — primary key, auto-generated</span></div>
-                  <div className="docs-prop-row"><span className="docs-prop-key">Text</span><span className="docs-prop-val">title, description, email…</span></div>
-                  <div className="docs-prop-row"><span className="docs-prop-key">Boolean</span><span className="docs-prop-val">completed, isActive…</span></div>
-                  <div className="docs-prop-row"><span className="docs-prop-key">Timestamp</span><span className="docs-prop-val">createdAt, updatedAt…</span></div>
+                <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-5">
+                  <h4 className="text-[15px] font-medium text-[#f6f4f0] mb-3">Shape tools</h4>
+                  <PropRow label="Frame" value="F" />
+                  <PropRow label="Rectangle" value="R" />
+                  <PropRow label="Ellipse" value="O" />
+                  <PropRow label="Text" value="T" />
+                  <PropRow label="Line" value="L" />
+                  <PropRow label="Pen (vector)" value="P" />
                 </div>
-              </div></div>
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Set relations</h4><p>Click the <code>Relations</code> tab on any table. Define <code>one-to-many</code> (e.g. a user has many todos) or <code>many-to-many</code> (e.g. posts ↔ tags). Mint generates the join table and foreign keys for you.</p></div></div>
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Set Row Level Security (RLS)</h4><p>Under <code>Policies</code>, add rules to control who can read or write each row. Example policy for "user can only see their own rows":</p>
-                <div className="docs-block">auth.uid() = user_id</div>
-                <p style={{fontSize:'14px',color:'var(--color-text-secondary)',marginTop:'8px'}}>Mint applies this as a PostgreSQL RLS policy automatically — no SQL migration files needed.</p>
-              </div></div>
+              </div>
+
+              <SubHeading>Design properties</SubHeading>
+              <p className="text-[14px] text-[#a8a6a2] mb-3">Select any element to configure it in the right sidebar.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-5">
+                  <h4 className="text-[14px] font-medium text-[#f6f4f0] mb-3">Layout</h4>
+                  <PropRow label="Direction" value="row / column" />
+                  <PropRow label="Align" value="start / center / end" />
+                  <PropRow label="Justify" value="between / around / evenly" />
+                  <PropRow label="Gap" value="px value" />
+                  <PropRow label="Padding" value="per-side control" />
+                </div>
+                <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-5">
+                  <h4 className="text-[14px] font-medium text-[#f6f4f0] mb-3">Appearance</h4>
+                  <PropRow label="Fill" value="solid / gradient" />
+                  <PropRow label="Border" value="width, color, radius" />
+                  <PropRow label="Shadow" value="x, y, blur, spread" />
+                  <PropRow label="Opacity" value="0–100%" />
+                  <PropRow label="Blur" value="background / layer" />
+                </div>
+              </div>
+
+              <SubHeading>Layers panel</SubHeading>
+              <p className="text-[14px] text-[#a8a6a2] mb-3">The left panel shows your layer hierarchy. Drag to reorder, nest elements by dragging onto frames. Right-click for options: rename, duplicate, delete, lock, hide.</p>
+
+              <SubHeading>Interactions & prototyping</SubHeading>
+              <p className="text-[14px] text-[#a8a6a2] mb-3">Connect frames with interaction links to create click-through prototypes. Select an element, choose an event (tap, hover), and set the target frame and transition animation. Use the Prototype Viewer to test flows without exporting.</p>
+
+              <Warning title="Frame naming matters:">The frame name becomes the URL route. Renaming a frame after creating navigation actions can break those references. Name frames intentionally from the start.</Warning>
             </div>
+          )}
 
-            <div className="docs-tip"><strong>Accessing data:</strong> Once your table exists, call it from a <code>fetch</code> action using <code>/api/todos</code> (Mint maps table names to route paths). Use the <code>storePath</code> field to auto-save the result into state. For raw SQL queries, use a <code>DB Query</code> node in a Workflow — just write the table name as defined; namespacing is handled for you.</div>
-          </div>
+          {/* ─── BACKEND ─── */}
+          {activeTab === "backend" && (
+            <div>
+              <SectionHeading>Backend Panel</SectionHeading>
+              <SectionSub>The Backend Panel is where you configure everything behind the UI — state management, actions, database tables, and workflows. Open it from the bottom toolbar in the editor.</SectionSub>
 
-          {/* EXPORT */}
-          <div className={`docs-section ${activeTab === 'export' ? 'show' : ''}`}>
-            <h2>Export, convert & live sync</h2>
-            <p className="sub">When your design is ready, Mint compiles it into real source code. You can download it, push it to GitHub, or pull it with the CLI — and keep the canvas and running app in sync.</p>
+              <SubHeading>State management</SubHeading>
+              <p className="text-[14px] text-[#a8a6a2] mb-3">State holds your app&apos;s data. Define variables with a name, type, and default value.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-5">
+                  <h4 className="text-[14px] font-medium text-[#f6f4f0] mb-2">Global state</h4>
+                  <p className="text-[13px] text-[#a8a6a2] leading-relaxed">Accessible from any screen. Use for auth tokens, user data, app settings. Enable <strong>Persist</strong> to save to localStorage automatically.</p>
+                </div>
+                <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-5">
+                  <h4 className="text-[14px] font-medium text-[#f6f4f0] mb-2">Local state</h4>
+                  <p className="text-[13px] text-[#a8a6a2] leading-relaxed">Scoped to one screen. Use for form values, loading flags, modal visibility. Destroyed when the screen unmounts.</p>
+                </div>
+              </div>
 
-            <h3 style={{fontSize:'18px',fontWeight:500,marginBottom:'12px',color:'var(--color-text-primary)'}}>How conversion works</h3>
-            <div className="docs-steps">
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Click Export</h4><p>The <code>Export</code> button is in the top header. Mint "flattens" your canvas design tree into optimized component code.</p></div></div>
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>What gets generated</h4><p>Mint outputs: a <code>MintProvider</code> wrapper component (handles the runtime), all your UI components with correct props, backend API routes for each table, and a config file.</p></div></div>
+              <SubHeading>Data bindings</SubHeading>
+              <p className="text-[14px] text-[#a8a6a2] mb-3">Connect state to UI using expressions. Click the link icon next to any component property, then enter an expression:</p>
+              <CodeBlock>{`$global.user.name          → global state
+$local.isLoading           → local state
+$route.params.id           → URL parameter
+$local.count > 0 ? "Items" : "Empty"  → ternary`}</CodeBlock>
+
+              <SubHeading>Actions</SubHeading>
+              <p className="text-[14px] text-[#a8a6a2] mb-3">Actions are operations triggered by events (tap, submit, mount). Types include:</p>
+              <div className="space-y-2 mb-4">
+                <PropRow label="setState / updateState / resetState" value="Modify state variables" />
+                <PropRow label="navigate / goBack" value="Change screens" />
+                <PropRow label="apiCall / fetch" value="HTTP requests" />
+                <PropRow label="showToast / showAlert" value="UI feedback" />
+                <PropRow label="condition / loop / delay" value="Logic control" />
+                <PropRow label="login / logout / register" value="Auth operations" />
+              </div>
+
+              <SubHeading>Database</SubHeading>
+              <StepList steps={[
+                { title: "Enable the database", desc: "Open the Database tab and click Enable. Mint provisions a PostgreSQL schema for your project." },
+                { title: "Create tables", desc: "Click New Table. Define columns with name, type (text, integer, boolean, uuid, json, timestamp), and constraints." },
+                { title: "Set relations", desc: "Define one-to-many or many-to-many relations between tables. Mint generates foreign keys and join tables." },
+                { title: "Access data", desc: <>Use <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">fetch</code> actions with your table&apos;s API route, or <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">DB Query</code> nodes in workflows for raw SQL.</> },
+              ]} />
+
+              <SubHeading>Workflows</SubHeading>
+              <p className="text-[14px] text-[#a8a6a2] mb-3">For complex logic, use the visual workflow builder. Drag nodes from the palette, connect them with edges, and configure each node&apos;s parameters.</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
+                {["If / Else", "Switch", "Loop", "ForEach", "Map", "Filter", "Delay", "Debounce", "API Call", "DB Query", "Navigate", "Toast"].map(n => (
+                  <div key={n} className="bg-white/[0.02] border border-white/[0.05] rounded-lg px-3 py-2 text-[13px] text-[#a8a6a2] text-center">{n}</div>
+                ))}
+              </div>
+              <Tip title="When to use Workflows vs Actions:">Use action JSON for simple, single-step logic. Switch to Workflows when you need branching, loops, or more than 3 chained steps.</Tip>
             </div>
+          )}
 
-            <h3 style={{fontSize:'18px',fontWeight:500,margin:'28px 0 12px',color:'var(--color-text-primary)'}}>How to extract your code</h3>
-            <div className="docs-row2">
-              <div className="docs-card"><Download size={24} style={{color:'var(--color-text-info)',marginBottom:'12px'}} /><h3>Download ZIP</h3><p>Get the full source code as a ZIP. Unzip and run — it's a complete project in your chosen framework.</p></div>
-              <div className="docs-card"><Code size={24} style={{color:'var(--color-text-info)',marginBottom:'12px'}} /><h3>Push to GitHub</h3><p>Connect your GitHub repo in settings. Mint pushes changes directly on each export.</p></div>
-            </div>
-            <div className="docs-card" style={{marginBottom:'24px'}}>
-              <TerminalSquare size={24} style={{color:'var(--color-text-info)',marginBottom:'12px'}} />
-              <h3 style={{marginBottom:'6px'}}>CLI — npx mint-cli pull</h3>
-              <p style={{fontSize:'14px',color:'var(--color-text-secondary)'}}>Run in an existing project to pull the latest canvas state as code. Useful for teams where designers work in Mint and developers own the repo.</p>
-              <div className="docs-block">npx mint-cli pull</div>
-            </div>
+          {/* ─── EXPORT & BUILD ─── */}
+          {activeTab === "export" && (
+            <div>
+              <SectionHeading>Export & Build</SectionHeading>
+              <SectionSub>When your design is ready, Mint compiles it into real source code. Download a ZIP, extract it, install dependencies, and run — it&apos;s a complete project.</SectionSub>
 
-            <h3 style={{fontSize:'18px',fontWeight:500,margin:'28px 0 12px',color:'var(--color-text-primary)'}}>Live Sync — update without rebuilding</h3>
-            <div className="docs-steps">
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Make a canvas change</h4><p>Change anything — a button color, a font size, a layout. These are "design-layer" changes Mint can push without recompiling logic.</p></div></div>
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Click "Commit Changes"</h4><p>In the editor header. Mint publishes a new version manifest.</p></div></div>
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Sync Daemon picks it up</h4><p>Your running app (with the Sync Daemon enabled) polls <code>/api/sync</code> and detects the new version. It hot-patches the UI — no page reload.</p></div></div>
-            </div>
-            <div className="docs-tip"><strong>How Sync Daemon works under the hood:</strong> The Daemon is a lightweight service worker embedded by <code>MintProvider</code>. It polls <code>/api/sync</code> every few seconds. When the version hash changes, it fetches the updated component definitions and re-renders only the affected parts of the tree — similar to React Fast Refresh but driven from the cloud canvas.</div>
-          </div>
+              <SubHeading>Supported frameworks</SubHeading>
+              <FrameworkGrid />
 
-          {/* TIPS */}
-          <div className={`docs-section ${activeTab === 'tips' ? 'show' : ''}`}>
-            <h2>Pro tips for building in Mint</h2>
-            <p className="sub">Things that will save you time once you know them.</p>
-            <div className="docs-steps">
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Use <code>$</code> everywhere in expressions</h4><p>Any binding or action field accepts a <code>$</code> expression. <code>$global.user.name</code>, <code>$local.count + 1</code>, <code>$route.params.id</code> — all work. Ternary expressions like <code>$local.error ? 'red' : 'inherit'</code> are valid for color bindings.</p></div></div>
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Don't prefix table names in raw SQL</h4><p>The Runtime handles namespacing. If your table is named <code>todos</code>, write <code>SELECT * FROM todos</code> — not a prefixed internal name. Mint resolves it for you.</p></div></div>
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Use the browser console for debugging</h4><p>The Mint Runtime logs every action execution and state change to the browser console. Open DevTools → Console and watch state mutations in real time as you interact with your app.</p></div></div>
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Persist global state for auth</h4><p>For anything auth-related — user object, token, role — enable the <code>Persist</code> flag on your global state. It writes to <code>localStorage</code> automatically, so your user stays logged in on refresh.</p></div></div>
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Chain actions with semicolons in onSuccess</h4><p>The <code>onSuccess</code> field in a <code>fetch</code> action runs a sequence. Use semicolons to chain: <code>CALL loadTodos; TOAST 'Done!'; CALL resetForm</code> — they run in order, left to right.</p></div></div>
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Use Flows for anything with branching</h4><p>If your logic has an if/else or needs to loop, build it as a Flow instead of nesting <code>condition</code> actions. Flows are visual, debuggable, and much easier for teammates to understand.</p></div></div>
-              <div className="docs-step"><div className="docs-step-num"></div><div className="docs-step-body"><h4>Name frames after your routes</h4><p>The frame name becomes the URL. <code>UserProfile</code> → <code>/user-profile</code>. Be intentional with naming from the start — renaming frames later can break navigation actions that hardcode the route string.</p></div></div>
-            </div>
-          </div>
+              <SubHeading>How to export</SubHeading>
+              <StepList steps={[
+                { title: "Click Export in the toolbar", desc: "Select your target framework from the dialog." },
+                { title: "Configure options", desc: "Choose TypeScript or JavaScript, CSS framework (Tailwind, CSS Modules, Styled Components), and whether to enable Live Sync." },
+                { title: "Download the ZIP", desc: "Mint generates code, bundles images, and creates a complete project scaffold. The ZIP downloads to your browser." },
+              ]} />
 
+              <SubHeading>How to commit</SubHeading>
+              <p className="text-[14px] text-[#a8a6a2] mb-3">Committing is different from exporting. A commit generates code and stores it as a versioned snapshot on the server. This enables Live Sync and version history.</p>
+              <StepList steps={[
+                { title: "Click Commit in the toolbar", desc: "Select the target framework and enter an optional commit message." },
+                { title: "Mint diffs against the previous commit", desc: "Only changed files are stored and sent to sync clients. A full snapshot is kept for future diffs." },
+                { title: "Version number increments", desc: "Each commit gets an auto-incrementing version. You can view history and roll back from the commit log." },
+              ]} />
+
+              <SubHeading>Extract and run</SubHeading>
+              <CodeBlock>{`# Web frameworks (React, Next.js, Vue, Svelte)
+unzip my-app-react.zip -d my-app && cd my-app
+npm install
+npm run dev
+
+# React Native (Expo)
+unzip my-app-react-native.zip -d my-app && cd my-app
+npm install
+npx expo start`}</CodeBlock>
+
+              <SubHeading>Build a release APK (React Native)</SubHeading>
+              <p className="text-[14px] text-[#a8a6a2] mb-3">To build a production Android APK, eject from Expo&apos;s managed workflow and use Gradle:</p>
+              <CodeBlock>{`# 1. Generate native android/ and ios/ folders
+npx expo prebuild
+
+# 2. Build a release APK
+cd android
+./gradlew assembleRelease
+
+# Output: android/app/build/outputs/apk/release/app-release.apk
+
+# 3. Or build an App Bundle for Play Store
+./gradlew bundleRelease
+
+# Output: android/app/build/outputs/bundle/release/app-release.aab`}</CodeBlock>
+
+              <Warning title="Signing:">Release builds require a signing keystore. Create one with keytool and configure it in android/app/build.gradle before running assembleRelease.</Warning>
+
+              <SubHeading>Build for iOS</SubHeading>
+              <CodeBlock>{`# After npx expo prebuild
+cd ios
+pod install
+# Open .xcworkspace in Xcode → Product → Archive`}</CodeBlock>
+            </div>
+          )}
+
+          {/* ─── LIVE SYNC ─── */}
+          {activeTab === "sync" && (
+            <div>
+              <SectionHeading>Live Sync</SectionHeading>
+              <SectionSub>Live Sync keeps your running app in sync with the canvas. Make a design change, commit it, and your dev server updates automatically via Hot Module Replacement — no rebuild needed.</SectionSub>
+
+              <SubHeading>How it works</SubHeading>
+              <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-5 my-4 font-mono text-[13px] text-[#a8a6a2] leading-loose">
+                <div>Editor (browser) → Commit → Server stores version</div>
+                <div className="ml-12">↓</div>
+                <div>mint-connector.mjs polls /api/project-data every 2s</div>
+                <div className="ml-12">↓</div>
+                <div>mint-the-god.mjs writes changed files to disk</div>
+                <div className="ml-12">↓</div>
+                <div>Dev server HMR detects changes → UI updates</div>
+              </div>
+
+              <SubHeading>Enable Live Sync</SubHeading>
+              <StepList steps={[
+                { title: "Enable during export", desc: "Check the \"Enable Live Sync\" option when exporting. This injects three files into your project." },
+                { title: "Start the sync daemon", desc: <><code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">npm run sync</code> — or it starts automatically with <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">npm run dev</code> (the dev script is auto-patched).</> },
+                { title: "Make changes and commit", desc: "Edit anything on the canvas, click Commit. The daemon picks up the new version within 2 seconds." },
+              ]} />
+
+              <SubHeading>Injected files</SubHeading>
+              <div className="space-y-2 mb-4">
+                <PropRow label="mint-connector.mjs" value="Polls server for new commits" />
+                <PropRow label="mint-the-god.mjs" value="Writes received files to disk" />
+                <PropRow label="mint-sync.config.json" value="Project ID, server URL, poll interval" />
+              </div>
+
+              <SubHeading>Protected files</SubHeading>
+              <p className="text-[14px] text-[#a8a6a2] mb-3">The sync daemon will never overwrite these files, even if they appear in a commit:</p>
+              <CodeBlock>{`package.json, package-lock.json, node_modules/,
+.gitignore, .env, .env.local,
+mint-connector.mjs, mint-the-god.mjs, mint-sync.config.json`}</CodeBlock>
+
+              <Tip title="Custom poll interval:">Edit mint-sync.config.json to change the polling frequency. Default is 2000ms (2 seconds).</Tip>
+            </div>
+          )}
+
+          {/* ─── COLLABORATION ─── */}
+          {activeTab === "collab" && (
+            <div>
+              <SectionHeading>Collaboration</SectionHeading>
+              <SectionSub>Work with your team in real-time on the same canvas. See each other&apos;s cursors, selections, and changes as they happen.</SectionSub>
+
+              <SubHeading>Real-time features</SubHeading>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                <Card icon={MousePointer} title="Live cursors">See where each collaborator is pointing in real-time. Each user gets a unique color.</Card>
+                <Card icon={Square} title="Selection sync">When someone selects elements, you see their selection highlighted on your canvas.</Card>
+                <Card icon={GitBranch} title="Change broadcasting">Shape additions, deletions, moves, and style changes sync instantly to all editors.</Card>
+                <Card icon={Users} title="Presence indicators">See who&apos;s online in the current file with avatar indicators in the toolbar.</Card>
+              </div>
+
+              <SubHeading>Teams</SubHeading>
+              <p className="text-[14px] text-[#a8a6a2] mb-3">Create teams to manage access. Team members can have different roles: Owner, Admin, or Editor. Owners can manage members and project settings. Editors can design but cannot change project configuration.</p>
+
+              <SubHeading>Limits</SubHeading>
+              <div className="space-y-2">
+                <PropRow label="Max editors per file" value="50 simultaneous" />
+                <PropRow label="Cursor update rate" value="60 fps (16ms throttle)" />
+              </div>
+            </div>
+          )}
+
+          {/* ─── SHORTCUTS ─── */}
+          {activeTab === "shortcuts" && (
+            <div>
+              <SectionHeading>Keyboard Shortcuts</SectionHeading>
+              <SectionSub>Speed up your workflow with keyboard shortcuts. These work when the canvas is focused.</SectionSub>
+
+              <SubHeading>Tools</SubHeading>
+              <div className="space-y-0">
+                <PropRow label="Frame tool" value="F" />
+                <PropRow label="Rectangle" value="R" />
+                <PropRow label="Ellipse" value="O" />
+                <PropRow label="Text" value="T" />
+                <PropRow label="Line" value="L" />
+                <PropRow label="Pen tool" value="P" />
+                <PropRow label="Move tool" value="V" />
+                <PropRow label="Hand / pan" value="H or Space + drag" />
+              </div>
+
+              <SubHeading>Editing</SubHeading>
+              <div className="space-y-0">
+                <PropRow label="Copy" value="Ctrl + C" />
+                <PropRow label="Paste" value="Ctrl + V" />
+                <PropRow label="Cut" value="Ctrl + X" />
+                <PropRow label="Duplicate" value="Ctrl + D" />
+                <PropRow label="Delete" value="Delete / Backspace" />
+                <PropRow label="Undo" value="Ctrl + Z" />
+                <PropRow label="Redo" value="Ctrl + Shift + Z" />
+                <PropRow label="Select all" value="Ctrl + A" />
+                <PropRow label="Group" value="Ctrl + G" />
+                <PropRow label="Ungroup" value="Ctrl + Shift + G" />
+              </div>
+
+              <SubHeading>View</SubHeading>
+              <div className="space-y-0">
+                <PropRow label="Zoom in" value="Ctrl + =" />
+                <PropRow label="Zoom out" value="Ctrl + -" />
+                <PropRow label="Zoom to fit" value="Ctrl + 1" />
+                <PropRow label="Zoom to 100%" value="Ctrl + 0" />
+                <PropRow label="Toggle layers panel" value="Alt + 1" />
+                <PropRow label="Toggle design panel" value="Alt + 2" />
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Footer */}
+      <footer className="border-t border-white/[0.04] py-8 text-center text-xs text-zinc-600">
+        &copy; {new Date().getFullYear()} mint technologies inc. All rights reserved.
+      </footer>
     </div>
   );
 }

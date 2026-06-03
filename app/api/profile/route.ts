@@ -29,6 +29,12 @@ export async function GET() {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+    const positionRes = await db.query(
+      `SELECT COUNT(*)::int AS position FROM users WHERE created_at <= $1`,
+      [profile.created_at]
+    );
+    const waitlistPosition = positionRes.rows?.[0]?.position ?? 1;
+
     // Fetch stats in parallel
     const [projectsRes, commitsRes, teamsRes] = await Promise.all([
       db.query(
@@ -76,6 +82,7 @@ export async function GET() {
         lang: profile.lang || null,
         theme: profile.theme || null,
         created_at: profile.created_at,
+        waitlist_position: waitlistPosition,
       },
       stats: {
         projectCount: projectsRes.rows?.[0]?.count ?? 0,

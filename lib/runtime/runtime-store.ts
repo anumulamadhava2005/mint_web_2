@@ -21,6 +21,8 @@ import type {
   StateNodeSchema,
   ActionSchema,
   WorkflowSchema,
+  WorkflowNode,
+  WorkflowEdge,
   DatabaseConfigSchema,
   TableSchema,
   FieldSchema,
@@ -66,6 +68,11 @@ export interface RuntimeSchemaState {
   addWorkflow: (workflow: WorkflowSchema) => void;
   updateWorkflow: (id: string, updates: Partial<WorkflowSchema>) => void;
   removeWorkflow: (id: string) => void;
+  addWorkflowNode: (workflowId: string, node: WorkflowNode) => void;
+  updateWorkflowNode: (workflowId: string, nodeId: string, updates: Partial<WorkflowNode>) => void;
+  removeWorkflowNode: (workflowId: string, nodeId: string) => void;
+  addWorkflowEdge: (workflowId: string, edge: WorkflowEdge) => void;
+  removeWorkflowEdge: (workflowId: string, edgeId: string) => void;
 
   // Database management
   setDatabaseConfig: (config: DatabaseConfigSchema) => void;
@@ -275,6 +282,51 @@ export const useRuntimeStore = create<RuntimeSchemaState>()(
       set((s) => {
         s.schema.workflows = s.schema.workflows.filter((w: any) => w.id !== id) as any;
         s.dirty = true;
+      });
+    },
+
+    addWorkflowNode: (workflowId, node) => {
+      set((s) => {
+        const wf = s.schema.workflows.find((w: any) => w.id === workflowId);
+        if (wf) { (wf as any).nodes.push(node); s.dirty = true; }
+      });
+    },
+
+    updateWorkflowNode: (workflowId, nodeId, updates) => {
+      set((s) => {
+        const wf = s.schema.workflows.find((w: any) => w.id === workflowId);
+        if (wf) {
+          const idx = (wf as any).nodes.findIndex((n: any) => n.id === nodeId);
+          if (idx >= 0) { Object.assign((wf as any).nodes[idx], updates); s.dirty = true; }
+        }
+      });
+    },
+
+    removeWorkflowNode: (workflowId, nodeId) => {
+      set((s) => {
+        const wf = s.schema.workflows.find((w: any) => w.id === workflowId);
+        if (wf) {
+          (wf as any).nodes = (wf as any).nodes.filter((n: any) => n.id !== nodeId);
+          (wf as any).edges = (wf as any).edges.filter((e: any) => e.from !== nodeId && e.to !== nodeId);
+          s.dirty = true;
+        }
+      });
+    },
+
+    addWorkflowEdge: (workflowId, edge) => {
+      set((s) => {
+        const wf = s.schema.workflows.find((w: any) => w.id === workflowId);
+        if (wf) { (wf as any).edges.push(edge); s.dirty = true; }
+      });
+    },
+
+    removeWorkflowEdge: (workflowId, edgeId) => {
+      set((s) => {
+        const wf = s.schema.workflows.find((w: any) => w.id === workflowId);
+        if (wf) {
+          (wf as any).edges = (wf as any).edges.filter((e: any) => e.id !== edgeId);
+          s.dirty = true;
+        }
       });
     },
 

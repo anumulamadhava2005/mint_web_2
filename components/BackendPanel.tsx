@@ -248,15 +248,24 @@ function AddFieldForm({ tableId, onAdd }: { tableId: string; onAdd: (tid: string
 }
 
 // ═══════════════════════════════════════════════════════════════
-// State Tab
+// State Tab — Enhanced with scope, persist, groups
 // ═══════════════════════════════════════════════════════════════
+const STATE_TYPES = ["string","number","boolean","object","array","any"] as const;
+const STATE_SCOPES = ["global","local","session","persisted"] as const;
+const STORAGE_TYPES = ["localStorage","sessionStorage","asyncStorage","secureStorage"] as const;
+
 function StateTab() {
   const globalState = useRuntimeStore((s) => s.schema.globalState ?? EMPTY);
   const addGlobalState = useRuntimeStore((s) => s.addGlobalState);
   const removeGlobalState = useRuntimeStore((s) => s.removeGlobalState);
+  const updateGlobalState = useRuntimeStore((s) => s.updateGlobalState);
   const [name, setName] = useState("");
   const [type, setType] = useState("string");
+  const [scope, setScope] = useState<string>("global");
+  const [group, setGroup] = useState("");
   const [defaultVal, setDefaultVal] = useState("");
+  const [persist, setPersist] = useState(false);
+  const [storage, setStorage] = useState("localStorage");
 
   const handleAdd = () => {
     if (!name.trim()) return;
@@ -265,37 +274,92 @@ function StateTab() {
     else if (type === "boolean") parsed = defaultVal === "true";
     else if (type === "object" || type === "array") try { parsed = JSON.parse(defaultVal); } catch { parsed = type === "array" ? [] : {}; }
 
-    addGlobalState({ id: crypto.randomUUID(), name: name.trim(), scope: "global", defaultValue: parsed, type: type as any });
-    setName(""); setDefaultVal("");
+    addGlobalState({
+      id: crypto.randomUUID(), name: name.trim(), scope: scope as any, defaultValue: parsed,
+      type: type as any, group: group.trim() || undefined,
+      persist: persist ? { storage: storage as any } : undefined,
+    });
+    setName(""); setDefaultVal(""); setGroup("");
   };
+
+  // Group state variables
+  const groups = new Map<string, any[]>();
+  globalState.forEach((s: any) => {
+    const g = s.group || "ungrouped";
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g)!.push(s);
+  });
 
   return (
     <div className="space-y-2">
-      <p className="text-[10px] text-zinc-500 uppercase font-semibold tracking-wider">Global State Variables</p>
+      <p className="text-[10px] text-zinc-500 uppercase font-semibold tracking-wider">State Stores</p>
 
-      {globalState.map((s: any) => (
-        <div key={s.id} className="flex items-center gap-1 rounded-lg border border-zinc-700/60 bg-zinc-800/50 px-2 py-1.5">
-          <span className="font-medium text-white">${s.name}</span>
-          <span className="ml-1 rounded bg-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-300">{s.type}</span>
-          <span className="ml-auto text-[10px] text-zinc-500">{JSON.stringify(s.defaultValue)}</span>
-          <button onClick={() => removeGlobalState(s.id)} className="text-zinc-500 hover:text-red-400 ml-1">×</button>
+      {/* Grouped state cards */}
+      {Array.from(groups.entries()).map(([groupName, items]) => (
+        <div key={groupName} className="rounded-lg border border-zinc-700/60 bg-zinc-800/50 overflow-hidden">
+          <div className="flex items-center gap-1.5 px-2 py-1.5 bg-zinc-800/80 border-b border-zinc-700/40">
+            <span className="text-[10px] text-violet-400">■</span>
+            <span className="text-[10px] font-semibold text-zinc-300 uppercase tracking-wider">{groupName}</span>
+            <span className="ml-auto text-[10px] text-zinc-600">{items.length}</span>
+          </div>
+          {/* Mini table */}
+          <div className="divide-y divide-zinc-700/30">
+            {items.map((s: any) => (
+              <div key={s.id} className="flex items-center gap-1 px-2 py-1 hover:bg-zinc-700/20 transition-colors">
+                <span className="text-[10px] text-emerald-400 font-mono">$</span>
+                <span className="font-medium text-white text-[11px]">{s.name}</span>
+                <span className="rounded bg-zinc-700 px-1 py-0.5 text-[9px] text-zinc-300">{s.type || "any"}</span>
+                <span className="rounded bg-zinc-700/60 px-1 py-0.5 text-[9px] text-zinc-400">{s.scope}</span>
+                {s.persist && <span className="text-[9px] text-amber-400" title="Persisted">💾</span>}
+                <span className="ml-auto text-[9px] text-zinc-600 font-mono max-w-[60px] truncate">{JSON.stringify(s.defaultValue)}</span>
+                <button onClick={() => removeGlobalState(s.id)} className="text-zinc-500 hover:text-red-400 ml-1">×</button>
+              </div>
+            ))}
+          </div>
         </div>
       ))}
 
-      <div className="space-y-1 rounded border border-dashed border-zinc-600 p-1.5">
+      {globalState.length === 0 && (
+        <div className="rounded-lg border border-dashed border-zinc-700 p-4 text-center text-zinc-500">
+          <p className="text-[11px]">No state variables</p>
+          <p className="text-[10px]">Create a store to manage your app&apos;s data</p>
+        </div>
+      )}
+
+      {/* Add form */}
+      <div className="space-y-1.5 rounded border border-dashed border-zinc-600 p-1.5">
         <div className="flex gap-1">
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="variable_name"
             onKeyDown={(e) => e.key === "Enter" && handleAdd()}
             className="flex-1 rounded bg-zinc-900 px-1.5 py-0.5 text-xs text-white outline-none ring-1 ring-zinc-700 focus:ring-emerald-500" />
           <select value={type} onChange={(e) => setType(e.target.value)}
             className="rounded bg-zinc-900 px-1 py-0.5 text-[10px] text-zinc-300 outline-none ring-1 ring-zinc-700">
-            {["string","number","boolean","object","array"].map((t) => <option key={t}>{t}</option>)}
+            {STATE_TYPES.map((t) => <option key={t}>{t}</option>)}
           </select>
+        </div>
+        <div className="flex gap-1">
+          <select value={scope} onChange={(e) => setScope(e.target.value)}
+            className="rounded bg-zinc-900 px-1 py-0.5 text-[10px] text-zinc-300 outline-none ring-1 ring-zinc-700">
+            {STATE_SCOPES.map((s) => <option key={s}>{s}</option>)}
+          </select>
+          <input value={group} onChange={(e) => setGroup(e.target.value)} placeholder="group"
+            className="flex-1 rounded bg-zinc-900 px-1.5 py-0.5 text-xs text-white outline-none ring-1 ring-zinc-700 focus:ring-violet-500" />
         </div>
         <div className="flex gap-1">
           <input value={defaultVal} onChange={(e) => setDefaultVal(e.target.value)} placeholder="Default value"
             className="flex-1 rounded bg-zinc-900 px-1.5 py-0.5 text-xs text-white outline-none ring-1 ring-zinc-700 focus:ring-emerald-500" />
-          <button onClick={handleAdd} className="rounded bg-emerald-600 px-2 py-0.5 text-[10px] text-white hover:bg-emerald-500">+ Add</button>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1 text-[10px] text-zinc-400">
+            <input type="checkbox" checked={persist} onChange={(e) => setPersist(e.target.checked)} /> Persist
+          </label>
+          {persist && (
+            <select value={storage} onChange={(e) => setStorage(e.target.value)}
+              className="rounded bg-zinc-900 px-1 py-0.5 text-[10px] text-zinc-300 outline-none ring-1 ring-zinc-700">
+              {STORAGE_TYPES.map((s) => <option key={s}>{s}</option>)}
+            </select>
+          )}
+          <button onClick={handleAdd} className="ml-auto rounded bg-emerald-600 px-2 py-0.5 text-[10px] text-white hover:bg-emerald-500">+ Add</button>
         </div>
       </div>
     </div>
@@ -303,9 +367,37 @@ function StateTab() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Actions Tab
+// Actions Tab — Extended with state & logic actions
 // ═══════════════════════════════════════════════════════════════
-const ACTION_TYPES = ["setState","fetch","navigate","goBack","toast","condition","sequence","delay","openModal","closeModal"] as const;
+const ACTION_TYPES_GROUPED = [
+  { group: "State", types: ["setState","updateState","resetState","removeState"] },
+  { group: "Data", types: ["fetch","mutate","upload","sync"] },
+  { group: "Logic", types: ["condition","sequence","parallel","loop","forEach","map","filter","transform"] },
+  { group: "UI", types: ["navigate","goBack","openModal","closeModal","toast","alert","animate","scroll","focus"] },
+  { group: "Timing", types: ["delay","debounce","throttle"] },
+] as const;
+const ALL_ACTION_TYPES = ACTION_TYPES_GROUPED.flatMap((g) => g.types);
+
+// Color for action type badges
+const ACTION_COLORS: Record<string, string> = {
+  setState: "bg-emerald-900/50 text-emerald-300", updateState: "bg-emerald-900/50 text-emerald-300",
+  resetState: "bg-amber-900/50 text-amber-300", removeState: "bg-red-900/50 text-red-300",
+  fetch: "bg-blue-900/50 text-blue-300", mutate: "bg-blue-900/50 text-blue-300",
+  condition: "bg-violet-900/50 text-violet-300", forEach: "bg-violet-900/50 text-violet-300",
+  map: "bg-violet-900/50 text-violet-300", filter: "bg-violet-900/50 text-violet-300",
+  transform: "bg-violet-900/50 text-violet-300",
+  navigate: "bg-indigo-900/50 text-indigo-300", toast: "bg-indigo-900/50 text-indigo-300",
+  delay: "bg-zinc-700 text-zinc-300", debounce: "bg-zinc-700 text-zinc-300",
+};
+
+// Direction indicators
+const ACTION_DIRECTION: Record<string, { in: string; out: string }> = {
+  setState: { in: "value", out: "state" }, updateState: { in: "partial", out: "state" },
+  resetState: { in: "name", out: "state" }, removeState: { in: "name", out: "—" },
+  fetch: { in: "url", out: "data" }, condition: { in: "expr", out: "branch" },
+  forEach: { in: "items", out: "item" }, map: { in: "items", out: "mapped" },
+  filter: { in: "items", out: "filtered" }, transform: { in: "data", out: "result" },
+};
 
 function ActionsTab() {
   const actions = useRuntimeStore((s) => s.schema.globalActions ?? EMPTY);
@@ -325,22 +417,42 @@ function ActionsTab() {
     <div className="space-y-2">
       <p className="text-[10px] text-zinc-500 uppercase font-semibold tracking-wider">Global Actions</p>
 
-      {actions.map((a: any) => (
-        <div key={a.id} className="rounded-lg border border-zinc-700/60 bg-zinc-800/50">
-          <div className="flex items-center gap-2 px-2 py-1.5 cursor-pointer" onClick={() => setExpanded(expanded === a.id ? null : a.id)}>
-            <span className="text-[10px] text-indigo-400">{expanded === a.id ? "▼" : "▶"}</span>
-            <span className="font-medium text-white">{a.name}</span>
-            <span className="rounded bg-indigo-900/50 px-1.5 py-0.5 text-[10px] text-indigo-300">{a.type}</span>
-            <button onClick={(e) => { e.stopPropagation(); removeGlobalAction(a.id); }}
-              className="ml-auto text-zinc-500 hover:text-red-400">×</button>
-          </div>
-          {expanded === a.id && (
-            <div className="border-t border-zinc-700/50 px-2 py-1.5">
-              <ActionConfigEditor action={a} />
+      {actions.map((a: any) => {
+        const dir = ACTION_DIRECTION[a.type];
+        const color = ACTION_COLORS[a.type] || "bg-indigo-900/50 text-indigo-300";
+        return (
+          <div key={a.id} className="rounded-lg border border-zinc-700/60 bg-zinc-800/50">
+            <div className="flex items-center gap-1.5 px-2 py-1.5 cursor-pointer" onClick={() => setExpanded(expanded === a.id ? null : a.id)}>
+              <span className="text-[10px] text-indigo-400">{expanded === a.id ? "▼" : "▶"}</span>
+              <span className="font-medium text-white text-[11px]">{a.name}</span>
+              <span className={`rounded px-1.5 py-0.5 text-[9px] ${color}`}>{a.type}</span>
+              {dir && (
+                <span className="flex items-center gap-0.5 text-[9px] text-zinc-600 ml-auto mr-1">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-500/60" title="Input" />
+                  {dir.in}
+                  <span className="text-zinc-700">→</span>
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500/60" title="Output" />
+                  {dir.out}
+                </span>
+              )}
+              <button onClick={(e) => { e.stopPropagation(); removeGlobalAction(a.id); }}
+                className={`${dir ? "" : "ml-auto"} text-zinc-500 hover:text-red-400`}>×</button>
             </div>
-          )}
+            {expanded === a.id && (
+              <div className="border-t border-zinc-700/50 px-2 py-1.5">
+                <ActionConfigEditor action={a} />
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {actions.length === 0 && (
+        <div className="rounded-lg border border-dashed border-zinc-700 p-4 text-center text-zinc-500">
+          <p className="text-[11px]">No actions</p>
+          <p className="text-[10px]">Add state, logic, or UI actions</p>
         </div>
-      ))}
+      )}
 
       <div className="flex gap-1">
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Action name"
@@ -348,7 +460,11 @@ function ActionsTab() {
           className="flex-1 rounded bg-zinc-900 px-1.5 py-0.5 text-xs text-white outline-none ring-1 ring-zinc-700 focus:ring-emerald-500" />
         <select value={type} onChange={(e) => setType(e.target.value)}
           className="rounded bg-zinc-900 px-1 py-0.5 text-[10px] text-zinc-300 outline-none ring-1 ring-zinc-700">
-          {ACTION_TYPES.map((t) => <option key={t}>{t}</option>)}
+          {ACTION_TYPES_GROUPED.map((g) => (
+            <optgroup key={g.group} label={g.group}>
+              {g.types.map((t) => <option key={t} value={t}>{t}</option>)}
+            </optgroup>
+          ))}
         </select>
         <button onClick={handleAdd} className="rounded bg-indigo-600 px-2 py-0.5 text-[10px] text-white hover:bg-indigo-500">+</button>
       </div>
@@ -377,13 +493,63 @@ function ActionConfigEditor({ action }: { action: any }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Workflows Tab
+// Workflows Tab — Enhanced with node palette & visual cards
 // ═══════════════════════════════════════════════════════════════
+const NODE_PALETTE = [
+  { group: "Logic", nodes: [
+    { type: "condition", label: "If/Else", icon: "◇" },
+    { type: "switch", label: "Switch", icon: "⊞" },
+    { type: "loop", label: "Loop", icon: "↻" },
+    { type: "forEach", label: "ForEach", icon: "⫶" },
+    { type: "map", label: "Map", icon: "⇄" },
+    { type: "filter", label: "Filter", icon: "⊗" },
+  ]},
+  { group: "State", nodes: [
+    { type: "setState", label: "SetState", icon: "◉" },
+    { type: "updateState", label: "Update", icon: "↺" },
+    { type: "resetState", label: "Reset", icon: "⟲" },
+    { type: "removeState", label: "Remove", icon: "⊖" },
+  ]},
+  { group: "Utility", nodes: [
+    { type: "delay", label: "Delay", icon: "⏱" },
+    { type: "debounce", label: "Debounce", icon: "⧖" },
+    { type: "transform", label: "Transform", icon: "⚙" },
+    { type: "parallel", label: "Parallel", icon: "⫼" },
+  ]},
+  { group: "Backend", nodes: [
+    { type: "apiCall", label: "API Call", icon: "⇆" },
+    { type: "dbQuery", label: "DB Query", icon: "⛁" },
+    { type: "dbMutate", label: "DB Write", icon: "⛃" },
+    { type: "authCheck", label: "Auth", icon: "🔑" },
+  ]},
+  { group: "UI", nodes: [
+    { type: "navigate", label: "Navigate", icon: "→" },
+    { type: "showModal", label: "Modal", icon: "□" },
+    { type: "toast", label: "Toast", icon: "💬" },
+  ]},
+] as const;
+
+const NODE_COLORS: Record<string, string> = {
+  condition: "border-l-violet-500", switch: "border-l-violet-500", loop: "border-l-violet-500",
+  forEach: "border-l-violet-500", map: "border-l-violet-500", filter: "border-l-violet-500",
+  setState: "border-l-emerald-500", updateState: "border-l-emerald-500",
+  resetState: "border-l-amber-500", removeState: "border-l-red-500",
+  delay: "border-l-zinc-500", debounce: "border-l-zinc-500", transform: "border-l-cyan-500",
+  parallel: "border-l-cyan-500",
+  apiCall: "border-l-blue-500", dbQuery: "border-l-blue-500", dbMutate: "border-l-blue-500",
+  authCheck: "border-l-amber-500",
+  navigate: "border-l-indigo-500", showModal: "border-l-indigo-500", toast: "border-l-indigo-500",
+};
+
 function WorkflowsTab() {
   const workflows = useRuntimeStore((s) => s.schema.workflows ?? EMPTY);
   const addWorkflow = useRuntimeStore((s) => s.addWorkflow);
   const removeWorkflow = useRuntimeStore((s) => s.removeWorkflow);
+  const addWorkflowNode = useRuntimeStore((s) => s.addWorkflowNode);
+  const removeWorkflowNode = useRuntimeStore((s) => s.removeWorkflowNode);
   const [name, setName] = useState("");
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [showPalette, setShowPalette] = useState<string | null>(null);
 
   const handleAdd = () => {
     if (!name.trim()) return;
@@ -395,23 +561,92 @@ function WorkflowsTab() {
     setName("");
   };
 
+  const handleAddNode = (workflowId: string, type: string, label: string) => {
+    addWorkflowNode(workflowId, {
+      id: crypto.randomUUID(),
+      type: type as any,
+      label,
+      config: {},
+      position: { x: 100, y: 50 + (workflows.find((w: any) => w.id === workflowId)?.nodes?.length || 0) * 60 },
+    });
+  };
+
   return (
     <div className="space-y-2">
       <p className="text-[10px] text-zinc-500 uppercase font-semibold tracking-wider">Workflows</p>
 
       {workflows.length === 0 && (
         <div className="rounded-lg border border-dashed border-zinc-700 p-4 text-center text-zinc-500">
-          <p>No workflows yet</p>
+          <p className="text-[11px]">No workflows yet</p>
           <p className="text-[10px]">Create visual logic flows for your app</p>
         </div>
       )}
 
       {workflows.map((w: any) => (
-        <div key={w.id} className="flex items-center gap-2 rounded-lg border border-zinc-700/60 bg-zinc-800/50 px-2 py-1.5">
-          <span className="text-amber-400">⚡</span>
-          <span className="font-medium text-white">{w.name}</span>
-          <span className="ml-auto text-[10px] text-zinc-500">{w.nodes?.length || 0} nodes</span>
-          <button onClick={() => removeWorkflow(w.id)} className="text-zinc-500 hover:text-red-400">×</button>
+        <div key={w.id} className="rounded-lg border border-zinc-700/60 bg-zinc-800/50 overflow-hidden">
+          {/* Workflow header */}
+          <div className="flex items-center gap-2 px-2 py-1.5 cursor-pointer bg-zinc-800/80"
+            onClick={() => setExpanded(expanded === w.id ? null : w.id)}>
+            <span className="text-amber-400 text-[11px]">{expanded === w.id ? "▼" : "▶"}</span>
+            <span className="text-amber-400 text-[11px]">⚡</span>
+            <span className="font-medium text-white text-[11px]">{w.name}</span>
+            <span className="ml-auto text-[10px] text-zinc-500">{w.nodes?.length || 0} nodes</span>
+            <button onClick={(e) => { e.stopPropagation(); removeWorkflow(w.id); }}
+              className="text-zinc-500 hover:text-red-400">×</button>
+          </div>
+
+          {/* Expanded: nodes + palette */}
+          {expanded === w.id && (
+            <div className="border-t border-zinc-700/40">
+              {/* Node list */}
+              <div className="divide-y divide-zinc-700/30">
+                {(w.nodes || []).map((node: any) => (
+                  <div key={node.id} className={`flex items-center gap-1.5 px-2 py-1.5 border-l-2 ${NODE_COLORS[node.type] || "border-l-zinc-600"} hover:bg-zinc-700/20 transition-colors`}>
+                    {/* Input connection point */}
+                    <span className="inline-block w-2 h-2 rounded-full border border-cyan-500/60 bg-zinc-900" title="Input" />
+                    <span className="text-[10px] text-zinc-400">{
+                      ((NODE_PALETTE as any).flatMap((g: any) => g.nodes) as any[]).find((n: any) => n.type === node.type)?.icon || "●"
+                    }</span>
+                    <span className="text-[11px] text-white">{node.label || node.type}</span>
+                    <span className="rounded bg-zinc-700 px-1 py-0.5 text-[9px] text-zinc-400">{node.type}</span>
+                    {/* Output connection point */}
+                    <span className="ml-auto inline-block w-2 h-2 rounded-full border border-amber-500/60 bg-zinc-900" title="Output" />
+                    <button onClick={() => removeWorkflowNode(w.id, node.id)}
+                      className="text-zinc-500 hover:text-red-400 ml-1">×</button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Add node: toggle palette */}
+              <div className="px-2 py-1.5 border-t border-zinc-700/40">
+                <button onClick={() => setShowPalette(showPalette === w.id ? null : w.id)}
+                  className="w-full rounded bg-zinc-700/50 py-1 text-[10px] text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 transition-colors">
+                  {showPalette === w.id ? "Hide palette" : "+ Add Node"}
+                </button>
+              </div>
+
+              {/* Node palette */}
+              {showPalette === w.id && (
+                <div className="px-2 py-1.5 border-t border-zinc-700/40 space-y-1.5">
+                  {NODE_PALETTE.map((group) => (
+                    <div key={group.group}>
+                      <p className="text-[9px] text-zinc-600 uppercase tracking-wider mb-1">{group.group}</p>
+                      <div className="flex flex-wrap gap-1">
+                        {group.nodes.map((node) => (
+                          <button key={node.type}
+                            onClick={() => handleAddNode(w.id, node.type, node.label)}
+                            className={`flex items-center gap-1 rounded border border-zinc-700/50 bg-zinc-900/60 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors`}>
+                            <span>{node.icon}</span>
+                            <span>{node.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ))}
 

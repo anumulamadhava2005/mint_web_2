@@ -115,12 +115,11 @@ export async function proxy(request: NextRequest) {
     // User has a token, validate it
     const isValid = await validateToken(token);
     if (isValid) {
-      // Already logged in — redirect to projects (or safe redirect param)
+      // Already logged in — redirect to waitlist success page
       const rawRedirect = request.nextUrl.searchParams.get("redirect");
-      // Only allow relative paths — block absolute URLs and protocol-relative URLs
       const safeRedirect = rawRedirect?.startsWith("/") && !rawRedirect.startsWith("//")
         ? rawRedirect
-        : "/projects";
+        : "/waitlist-success";
       return NextResponse.redirect(new URL(safeRedirect, request.url));
     }
   }
@@ -158,6 +157,10 @@ export async function proxy(request: NextRequest) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("redirect", pathname);
     return NextResponse.redirect(loginUrl);
+  }
+
+  if (isProtectedPage) {
+    return NextResponse.redirect(new URL("/waitlist-success", request.url));
   }
 
   return NextResponse.next();

@@ -61,7 +61,6 @@ export default function Projects() {
   return (
     <div className="relative h-screen overflow-hidden bg-[#0a0a0a] text-[#f6f4f0] selection:bg-emerald-500/30">
       {/* Dynamic Ambient Background */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(16,185,129,0.12),transparent_40%),radial-gradient(ellipse_at_bottom_right,rgba(59,130,246,0.1),transparent_40%)]" />
       <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] mix-blend-overlay pointer-events-none" />
       
       <div className="relative z-10 mx-auto flex h-screen max-w-[1500px] flex-col px-4 py-6 sm:px-8 lg:px-12">

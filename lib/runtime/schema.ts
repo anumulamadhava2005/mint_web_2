@@ -56,7 +56,13 @@ export type ComponentType =
   | "scroll" | "list" | "grid" | "card" | "modal"
   | "form" | "select" | "checkbox" | "radio" | "switch"
   | "icon" | "divider" | "spacer" | "loading"
-  | "video" | "map" | "webview" | "custom";
+  | "video" | "map" | "webview" | "custom"
+  // State components
+  | "stateStore" | "setState" | "updateState" | "resetState" | "removeState"
+  // Logic components
+  | "ifCondition" | "elseCondition" | "switchCondition"
+  | "forEach" | "mapItems" | "filterItems"
+  | "delayNode" | "debounceNode" | "transformNode";
 
 export type PropValue = string | number | boolean | null | PropValue[] | { [key: string]: PropValue };
 
@@ -149,6 +155,7 @@ export interface StateNodeSchema {
   scope: StateScope;
   defaultValue: unknown;
   type?: StateType;
+  group?: string; // visual grouping: "user", "cart", "form"
   derived?: string; // expression to compute from other state
   async?: AsyncStateConfig;
   persist?: PersistConfig;
@@ -201,10 +208,12 @@ export type ActionType =
   | "toast" | "alert" | "animate" | "scroll" | "focus"
   // Data
   | "fetch" | "mutate" | "setState" | "resetState"
+  | "updateState" | "removeState"
   | "cacheSet" | "cacheInvalidate" | "sync" | "upload"
   // Logic
   | "condition" | "loop" | "sequence" | "parallel"
   | "delay" | "debounce" | "throttle"
+  | "forEach" | "map" | "filter" | "transform"
   // Device
   | "camera" | "notifications" | "location" | "biometrics"
   | "haptics" | "share" | "clipboard" | "openUrl"
@@ -238,6 +247,9 @@ export interface WorkflowNode {
 export type WorkflowNodeType =
   // Logic
   | "condition" | "switch" | "loop" | "transform" | "delay" | "parallel"
+  | "forEach" | "map" | "filter" | "debounce"
+  // State
+  | "setState" | "resetState" | "removeState"
   // Backend
   | "apiCall" | "dbQuery" | "dbMutate" | "authCheck"
   // UI

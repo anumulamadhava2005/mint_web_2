@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import Snowfall from "react-snowfall";
 import {
   Smartphone, Globe, Monitor, Layout, Briefcase, ShoppingCart,
   MessageSquare, BarChart3, Wrench, Layers, Workflow, FormInput,
@@ -155,20 +154,11 @@ export default function Signup() {
       });
       if (!res.ok) { setError("Failed to create project"); setLoading(false); return; }
       const data = await res.json();
-      router.replace(`/projects/${data.project.id}`);
+      router.replace("/waitlist-success");
     } catch { setError("Network error"); setLoading(false); }
   }
-
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#ffffff1a]">
-      <Snowfall color="white" snowflakeCount={120} />
-      {/* <div className="absolute inset-0 bg-gradient-to-br from-zinc-900/50 via-black to-zinc-900/50" />
-      <div className="absolute -left-40 -top-40 h-80 w-80 animate-pulse rounded-full bg-emerald-500/5 blur-[100px]" />
-      <div className="absolute -bottom-40 -right-40 h-80 w-80 animate-pulse rounded-full bg-white/5 blur-[100px]" style={{ animationDelay: "1s" }} />
-      <div className="absolute inset-0 opacity-[0.02]" style={{
-        backgroundImage: "linear-gradient(rgba(255,255,255,.1) 1px, transparent 1px), linear-gradient(90deg, #ffffff1a 1px, transparent 1px)",
-        backgroundSize: "50px 50px"
-      }} /> */}
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-black">
 
       <div className="relative z-10 w-full max-w-lg px-4 py-8">
         <StepProgress current={step} total={4} />

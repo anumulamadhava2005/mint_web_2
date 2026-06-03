@@ -8,7 +8,7 @@ try {
   if (!ALLOWED_DB_HOSTS.includes(parsed.hostname)) {
     throw new Error(`DB_PROXY_URL hostname not allowed: ${parsed.hostname}`);
   }
-  if (process.env.NODE_ENV === "production" && parsed.protocol !== "https:") {
+  if (process.env.NODE_ENV === "production" && parsed.protocol !== "https:" && parsed.hostname !== "localhost" && parsed.hostname !== "127.0.0.1") {
     throw new Error("DB_PROXY_URL must use HTTPS in production");
   }
 } catch (e: any) {

@@ -13,15 +13,15 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://embed.reddit.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
-      "img-src 'self' data: blob:",
+      "img-src 'self' data: blob: https://*.redd.it https://*.reddit.com",
       "connect-src 'self' ws: wss:",
+      "frame-src https://www.redditmedia.com https://embed.reddit.com",
       "frame-ancestors 'none'",
     ].join("; "),
   },
-  { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
 ];
 
 const nextConfig: NextConfig = {
