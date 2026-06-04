@@ -53,7 +53,18 @@ export async function POST(req: Request) {
     }
 
     const token = await issueTokenForUser(user.id);
-    const response = NextResponse.json({ ok: true, user: { id: user.id, email: user.email } });
+
+    // Fetch role and approved status for redirect logic
+    const metaRes = await db.query(
+      "SELECT role, approved FROM users WHERE id = $1",
+      [user.id]
+    );
+    const meta = metaRes.rows?.[0] || { role: "user", approved: false };
+
+    const response = NextResponse.json({
+      ok: true,
+      user: { id: user.id, email: user.email, role: meta.role, approved: meta.approved },
+    });
     response.cookies.set("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",

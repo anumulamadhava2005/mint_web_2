@@ -1,40 +1,14 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { createClient } from "redis";
-
-// SD-13: Use Node.js runtime so we can use the redis npm package
 
 // Routes that require authentication
 const protectedPaths = ["/projects"];
-// Routes that should redirect to /projects if already authenticated
+// Routes that should redirect appropriately if already authenticated
 const authPages = ["/login", "/signup"];
+// Routes that require admin role
+const adminPaths = ["/admin"];
 
-// Redis client for direct session validation (no HTTP self-call)
-const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
-let redisClient: ReturnType<typeof createClient> | null = null;
-let redisReady = false;
-
-async function getRedis() {
-  if (redisClient && redisReady) return redisClient;
-  if (redisClient) return null;
-  try {
-    redisClient = createClient({ url: REDIS_URL });
-    redisClient.on("error", () => {
-      redisReady = false;
-    });
-    redisClient.on("ready", () => {
-      redisReady = true;
-    });
-    await redisClient.connect();
-    redisReady = true;
-    return redisClient;
-  } catch {
-    redisClient = null;
-    return null;
-  }
-}
-
-// Lightweight DB query for middleware — avoids importing lib/db which triggers
+// Lightweight DB query for proxy — avoids importing lib/db which triggers
 // heavy schema migrations at module scope.
 const DB_BRIDGE_URL = process.env.DB_PROXY_URL || "https://api.mintit.pro/api/mint-db";
 
@@ -44,38 +18,37 @@ async function dbQuery(text: string, params?: any[]): Promise<{ rows: any[] }> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text, params }),
     cache: "no-store",
-    signal: AbortSignal.timeout(5000),
   });
   if (!res.ok) throw new Error(`DB bridge error: ${res.status}`);
   return res.json();
 }
 
 async function validateToken(token: string): Promise<boolean> {
-  // Try direct Redis lookup first
-  const redis = await getRedis();
-  if (redis) {
-    try {
-      const cached = await redis.get(`session:${token}`);
-      if (cached) return true;
-    } catch { /* fall through to DB */ }
-  }
-
-  // Redis miss — fall back to PostgreSQL session table via DB bridge
   try {
     const res = await dbQuery(
       "SELECT 1 FROM sessions WHERE token = $1 AND expires_at > now() LIMIT 1",
       [token]
     );
-    if (res.rows && res.rows.length > 0) {
-      // Cache in Redis for future requests (5 min TTL)
-      if (redis) {
-        redis.set(`session:${token}`, "1", { EX: 300 }).catch(() => {});
-      }
-      return true;
-    }
+    return !!(res.rows && res.rows.length > 0);
   } catch { /* DB error — fail closed */ }
-
   return false;
+}
+
+/** Get user info (email, role, approved) from session token */
+async function getUserFromToken(token: string): Promise<{ email: string; role: string; approved: boolean } | null> {
+  try {
+    const res = await dbQuery(
+      `SELECT u.email, u.role, u.approved FROM users u
+       JOIN sessions s ON s.user_id = u.id
+       WHERE s.token = $1 AND s.expires_at > now()
+       LIMIT 1`,
+      [token]
+    );
+    if (res.rows && res.rows.length > 0) {
+      return res.rows[0];
+    }
+  } catch { /* fail closed */ }
+  return null;
 }
 
 // API routes that are intentionally public (no auth needed)
@@ -115,14 +88,28 @@ export async function proxy(request: NextRequest) {
     // User has a token, validate it
     const isValid = await validateToken(token);
     if (isValid) {
-      // Already logged in — redirect to waitlist success page
-      const rawRedirect = request.nextUrl.searchParams.get("redirect");
-      const safeRedirect = rawRedirect?.startsWith("/") && !rawRedirect.startsWith("//")
-        ? rawRedirect
-        : "/waitlist-success";
-      return NextResponse.redirect(new URL(safeRedirect, request.url));
+      // Already logged in — determine where to redirect
+      const user = await getUserFromToken(token);
+      if (user) {
+        // Admin or approved user → projects
+        if (user.role === "admin" || user.approved) {
+          const rawRedirect = request.nextUrl.searchParams.get("redirect");
+          const safeRedirect = rawRedirect?.startsWith("/") && !rawRedirect.startsWith("//")
+            ? rawRedirect
+            : "/projects";
+          return NextResponse.redirect(new URL(safeRedirect, request.url));
+        }
+      }
+      // Not approved — waitlist
+      return NextResponse.redirect(new URL("/waitlist-success", request.url));
     }
   }
+
+  // Check if this is an admin route
+  const isAdminPage = adminPaths.some(
+    (path) => pathname === path || pathname.startsWith(path + "/")
+  );
+  const isAdminApi = pathname.startsWith("/api/admin");
 
   // Check if this is a protected page route
   const isProtectedPage = protectedPaths.some(
@@ -133,12 +120,12 @@ export async function proxy(request: NextRequest) {
   const isApiRoute = pathname.startsWith("/api/");
   const isProtectedApi = isApiRoute && !isPublicApiRoute(pathname);
 
-  if (!isProtectedPage && !isProtectedApi) {
+  if (!isProtectedPage && !isProtectedApi && !isAdminPage && !isAdminApi) {
     return NextResponse.next();
   }
 
   if (!token) {
-    if (isProtectedApi) {
+    if (isProtectedApi || isAdminApi) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     // Redirect to login page for page routes
@@ -151,7 +138,7 @@ export async function proxy(request: NextRequest) {
   const isValid = await validateToken(token);
 
   if (!isValid) {
-    if (isProtectedApi) {
+    if (isProtectedApi || isAdminApi) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const loginUrl = new URL("/login", request.url);
@@ -159,8 +146,25 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  // For admin routes, check admin role
+  if (isAdminPage || isAdminApi) {
+    const user = await getUserFromToken(token);
+    if (!user || user.role !== "admin") {
+      if (isAdminApi) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      return NextResponse.redirect(new URL("/waitlist-success", request.url));
+    }
+    return NextResponse.next();
+  }
+
+  // For protected product routes, check approval
   if (isProtectedPage) {
-    return NextResponse.redirect(new URL("/waitlist-success", request.url));
+    const user = await getUserFromToken(token);
+    if (!user || (!user.approved && user.role !== "admin")) {
+      return NextResponse.redirect(new URL("/waitlist-success", request.url));
+    }
+    return NextResponse.next();
   }
 
   return NextResponse.next();
@@ -171,6 +175,8 @@ export const config = {
     "/projects/:path*",
     "/login",
     "/signup",
+    "/admin/:path*",
+    "/admin",
     "/api/:path*",
   ],
 };

@@ -129,6 +129,13 @@ async function init() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS team_size text NULL`).catch(() => {});
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding jsonb NULL`).catch(() => {});
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarded boolean NOT NULL DEFAULT false`).catch(() => {});
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'user'`).catch(() => {});
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS approved boolean NOT NULL DEFAULT false`).catch(() => {});
+
+  // Seed admin: set manimadhava43@gmail.com as admin with approved access
+  await pool.query(
+    `UPDATE users SET role = 'admin', approved = true WHERE lower(email) = lower('manimadhava43@gmail.com') AND role != 'admin'`
+  ).catch(() => {});
 
   // ── Teams ────────────────────────────────────────────────
   await pool.query(`

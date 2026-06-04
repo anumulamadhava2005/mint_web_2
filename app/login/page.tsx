@@ -37,8 +37,13 @@ function LoginInner() {
         return;
       }
 
-      // Server sets httpOnly cookie via Set-Cookie header
-      router.replace(redirect);
+      // Smart redirect based on role and approval status
+      const { role, approved } = data.user || {};
+      if (role === "admin" || approved) {
+        router.replace(redirect === "/waitlist-success" ? "/projects" : redirect);
+      } else {
+        router.replace("/waitlist-success");
+      }
     } catch {
       setError("Network error");
       setLoading(false);

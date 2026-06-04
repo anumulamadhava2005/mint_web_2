@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ProjectsContent from "@/components/ProjectsContent";
 import CommunityContent from "@/components/CommunityContent";
-import { Grid2X2, LogOut, MessageSquareMore, Search, Sparkles, UserCircle } from "lucide-react";
+import { Grid2X2, LogOut, MessageSquareMore, Search, Shield, Sparkles, UserCircle } from "lucide-react";
 
 type ActiveTab = "recents" | "community";
 
@@ -16,28 +16,38 @@ function getCookie(name: string) {
 export default function Projects() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<ActiveTab>("recents");
-  const [user, setUser] = useState<{ email: string } | null>(null);
+  const [user, setUser] = useState<{ email: string; role?: string } | null>(null);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
     async function fetchUser() {
+      try {
+        // Fetch profile which includes role info
+        const profileRes = await fetch("/api/profile");
+        if (profileRes.ok) {
+          const profileData = await profileRes.json();
+          setUser({
+            email: profileData.profile.email,
+            role: profileData.profile.role,
+          });
+          return;
+        }
+      } catch { /* ignore */ }
+
+      // Fallback to token validation
       const token = getCookie("token");
       if (!token) return;
-
       try {
         const res = await fetch("/api/validate-token", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token }),
         });
-
         if (res.ok) {
           const data = await res.json();
           setUser(data.user);
         }
-      } catch {
-        /* ignore */
-      }
+      } catch { /* ignore */ }
     }
 
     fetchUser();
@@ -121,6 +131,18 @@ export default function Projects() {
             </div>
 
             <div className="mt-auto pt-8 pb-2 flex flex-col gap-1">
+              {user?.role === "admin" && (
+                <button
+                  onClick={() => router.push("/admin")}
+                  type="button"
+                  className="group flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm font-semibold text-amber-400/90 transition-all hover:bg-amber-500/10 hover:text-amber-300 border border-amber-500/15 hover:border-amber-500/25 mb-1"
+                >
+                  <span className="flex items-center gap-3">
+                    <Shield size={16} />
+                    Admin Portal
+                  </span>
+                </button>
+              )}
               <button
                 onClick={() => router.push("/profile")}
                 type="button"

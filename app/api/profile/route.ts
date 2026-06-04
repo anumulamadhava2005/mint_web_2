@@ -20,7 +20,7 @@ export async function GET() {
 
     // Fetch full profile data
     const profileRes = await db.query(
-      `SELECT id, email, fullname, photo, lang, theme, created_at
+      `SELECT id, email, fullname, photo, lang, theme, role, approved, created_at
        FROM users WHERE id = $1`,
       [user.id]
     );
@@ -81,6 +81,8 @@ export async function GET() {
         photo: profile.photo || "",
         lang: profile.lang || null,
         theme: profile.theme || null,
+        role: profile.role || "user",
+        approved: profile.approved || false,
         created_at: profile.created_at,
         waitlist_position: waitlistPosition,
       },
