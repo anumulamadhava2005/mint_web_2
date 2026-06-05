@@ -384,39 +384,35 @@ export default function PenpotEditor({
 
       <div className="flex flex-1 overflow-hidden">
         {/* ── Left Panel (Layers + Pages) ── */}
-        {!readOnly && <LeftPanel />}
+        <LeftPanel />
 
         {/* ── Center: Toolbar + Canvas ── */}
         <div className="flex flex-1 flex-col overflow-hidden relative">
           {/* Toolbar */}
-          {!readOnly && (
+          <div className={readOnly ? "pointer-events-none" : ""}>
             <Toolbar
               currentTool={currentTool}
-              onToolChange={(t) => setDrawing(t === "select" ? null : t as any)}
+              onToolChange={readOnly ? () => {} : (t) => setDrawing(t === "select" ? null : t as any)}
               showRulers={showRulers}
               showGrid={showGrid}
-              onToggleRulers={toggleRulers}
-              onToggleGrid={toggleGrid}
+              onToggleRulers={readOnly ? () => {} : toggleRulers}
+              onToggleGrid={readOnly ? () => {} : toggleGrid}
             />
-          )}
+          </div>
 
           {/* Canvas */}
           <div className="flex-1 overflow-hidden relative">
-            <SVGViewport fileId={fileId} />
-            {readOnly && (
-              <div className="absolute inset-0 z-50 cursor-not-allowed" />
-            )}
+            <SVGViewport fileId={fileId} readOnly={readOnly} />
           </div>
         </div>
 
         {/* ── Right Panel (Design / Inspect / Prototype) ── */}
-        {!readOnly && (
-          <RightPanel
-            optionsMode={optionsMode}
-            onModeChange={setOptionsMode}
-            projectId={projectId}
-          />
-        )}
+        <RightPanel
+          optionsMode={optionsMode}
+          onModeChange={setOptionsMode}
+          projectId={projectId}
+          readOnly={readOnly}
+        />
       </div>
 
       {/* Convert to code dialog */}
@@ -1443,10 +1439,12 @@ const RightPanel = memo(function RightPanel({
   optionsMode,
   onModeChange,
   projectId,
+  readOnly = false,
 }: {
   optionsMode: OptionsMode;
   onModeChange: (mode: OptionsMode) => void;
   projectId: string;
+  readOnly?: boolean;
 }) {
   const [panelWidth, setPanelWidth] = useState(optionsMode === "backend" ? 400 : 320);
   const isDragging = useRef(false);
@@ -1490,7 +1488,7 @@ const RightPanel = memo(function RightPanel({
         className="absolute left-0 top-0 bottom-0 z-10 w-1 cursor-col-resize transition-colors hover:bg-indigo-500/40"
       />
 
-      {/* Mode tabs */}
+      {/* Mode tabs — always interactive, even in readOnly */}
       <div className="flex border-b border-white/[0.08]">
         {(["design", "inspect", "prototype", "backend"] as const).map((mode) => (
           <button
@@ -1509,8 +1507,11 @@ const RightPanel = memo(function RightPanel({
         ))}
       </div>
 
-      {/* Tab content — scrollable with hidden scrollbar */}
-      <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: "none", msOverflowStyle: "none" } as React.CSSProperties}>
+      {/* Tab content — scrollable with hidden scrollbar, non-editable in readOnly */}
+      <div
+        className={`flex-1 overflow-y-auto ${readOnly ? "right-panel-readonly" : ""}`}
+        style={{ scrollbarWidth: "none", msOverflowStyle: "none" } as React.CSSProperties}
+      >
         {optionsMode === "design" && <DesignPanel />}
         {optionsMode === "inspect" && <InspectPanel />}
         {optionsMode === "prototype" && <PrototypePanel />}
@@ -1518,7 +1519,16 @@ const RightPanel = memo(function RightPanel({
       </div>
 
       {/* Hide webkit scrollbar via inline style tag */}
-      <style>{`.flex-1.overflow-y-auto::-webkit-scrollbar { display: none; }`}</style>
+      <style>{`
+        .flex-1.overflow-y-auto::-webkit-scrollbar { display: none; }
+        .right-panel-readonly input,
+        .right-panel-readonly select,
+        .right-panel-readonly textarea,
+        .right-panel-readonly button {
+          pointer-events: none !important;
+          cursor: default !important;
+        }
+      `}</style>
     </div>
   );
 });

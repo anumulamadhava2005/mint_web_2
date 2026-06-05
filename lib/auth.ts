@@ -118,3 +118,11 @@ export async function findUserByToken(token: string) {
 export async function clearUsers() {
   await db.query("DELETE FROM users");
 }
+
+export function getProjectSyncToken(projectId: string): string {
+  const secret = process.env.SESSION_SECRET || process.env.JWT_SECRET || "mint-sync-secret-salt-2026";
+  return crypto
+    .createHmac("sha256", secret)
+    .update(projectId)
+    .digest("hex");
+}

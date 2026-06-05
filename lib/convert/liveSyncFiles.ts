@@ -303,6 +303,9 @@ try {
   // Use defaults
 }
 
+// Support passing authorization token via environment variable
+config.authToken = process.env.MINT_AUTH_TOKEN || config.authToken;
+
 // ── Import the_god ────────────────────────────────────────────
 let theGod;
 try {

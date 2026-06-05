@@ -282,6 +282,34 @@ export function generateMintRuntimeProvider(
   L('  return undefined;');
   L("}");
   L("");
+  L("function resolveParamsObject(obj: any, state: any, args: any[]): any {");
+  L('  if (typeof obj === "string" && obj.startsWith("$")) {');
+  L('    return resolveActionParam(obj, state, args);');
+  L('  }');
+  L('  if (obj && typeof obj === "object" && !Array.isArray(obj)) {');
+  L('    const res: any = {};');
+  L('    for (const [k, v] of Object.entries(obj)) {');
+  L('      res[k] = resolveParamsObject(v, state, args);');
+  L('    }');
+  L('    return res;');
+  L('  }');
+  L('  if (Array.isArray(obj)) {');
+  L('    return obj.map((x) => resolveParamsObject(x, state, args));');
+  L('  }');
+  L('  return obj;');
+  L("}");
+  L("");
+  L("function resolveUrl(urlTemplate: string, state: any, args: any[]): string {");
+  L("  return urlTemplate.replace(/:([a-zA-Z0-9_]+)/g, (match, paramName) => {");
+  L('    const resolved = resolveActionParam("$" + paramName, state, args);');
+  L("    if (resolved !== undefined) return String(resolved);");
+  L('    if (args.length > 0 && args[0] && typeof args[0] === "object") {');
+  L("      if (args[0][paramName] !== undefined) return String(args[0][paramName]);");
+  L("    }");
+  L("    return match;");
+  L("  });");
+  L("}");
+  L("");
   L("// ── Dynamic action builder (for live schema updates) ─────────");
   L("function buildDynamicAction(");
   L("  actionDef: any,");
@@ -303,13 +331,29 @@ export function generateMintRuntimeProvider(
   L("    };");
   L("  }");
   L("");
-  L('  if (type === "fetch") {');
+  L('  if (type === "fetch" || type === "mutate") {');
   L("    return async (...args: any[]) => {");
   L("      try {");
-  L("        const params = (config.params || config.body?.params || []).map((p: any) =>");
-  L('          typeof p === "string" && p.startsWith("$") ? resolveActionParam(p, stateRef.current, args) : p');
-  L("        );");
-  L("        const result = await dbQueryFn(config.sql || config.body?.sql || \"\", params);");
+  L("        let result;");
+  L("        if (config.url) {");
+  L("          const resolvedUrl = resolveUrl(config.url, stateRef.current, args);");
+  L("          const reqBody = config.body ? resolveParamsObject(config.body, stateRef.current, args) : undefined;");
+  L("          const res = await fetch(resolvedUrl, {");
+  L("            method: (config.method || 'GET').toUpperCase(),");
+  L("            headers: { 'Content-Type': 'application/json' },");
+  L("            body: reqBody ? JSON.stringify(reqBody) : undefined,");
+  L("          });");
+  L("          if (!res.ok) throw new Error('API call failed: ' + res.statusText);");
+  L("          result = await res.json();");
+  L("        } else {");
+  L("          const params = (config.params || config.body?.params || []).map((p: any) =>");
+  L('            typeof p === "string" && p.startsWith("$") ? resolveActionParam(p, stateRef.current, args) : p');
+  L("          );");
+  L("          result = await dbQueryFn(config.sql || config.body?.sql || \"\", params);");
+  L("        }");
+  L("        if (config.storePath) {");
+  L("          setState(config.storePath, result);");
+  L("        }");
   L('        if (config.onSuccess) handleOnSuccess(config.onSuccess, result, setState, stateRef, allActions);');
   L("      } catch (err) {");
   L('        console.error("Dynamic action " + name + " failed:", err);');
@@ -439,43 +483,85 @@ function buildActionFunction(
   const cfg = config || {};
 
   switch (type) {
-    case "fetch": {
-      const sql = cfg.sql ?? cfg.body?.sql ?? "";
-      const rawParams: any[] = cfg.params ?? cfg.body?.params ?? [];
+    case "fetch":
+    case "mutate": {
+      const url = cfg.url ?? "";
+      const method = cfg.method ?? "GET";
+      const body = cfg.body;
+      const storePath = cfg.storePath ?? "";
       const onSuccess = cfg.onSuccess ?? "";
       const onError = cfg.onError ?? "";
 
-      // Build param resolution lines
-      const paramLines = rawParams.map((p: any) => {
-        if (typeof p === "string" && p.startsWith("$")) {
-          return '      resolveActionParam("' + p + '", stateRef.current, args)';
+      if (url) {
+        // Generate REST API call
+        const lines: string[] = [];
+        lines.push("  const " + name + " = useCallback(async (...args: any[]) => {");
+        lines.push("    try {");
+        lines.push("      const resolvedUrl = resolveUrl(" + JSON.stringify(url) + ", stateRef.current, args);");
+        if (body) {
+          lines.push("      const reqBody = resolveParamsObject(" + JSON.stringify(body) + ", stateRef.current, args);");
         }
-        return "      " + JSON.stringify(p);
-      });
-
-      const lines: string[] = [];
-      lines.push("  const " + name + " = useCallback(async (...args: any[]) => {");
-      lines.push("    try {");
-
-      if (paramLines.length > 0) {
-        lines.push("      const params = [");
-        lines.push(paramLines.join(",\n"));
-        lines.push("      ];");
+        lines.push("      const res = await fetch(resolvedUrl, {");
+        lines.push("        method: " + JSON.stringify(method.toUpperCase()) + ",");
+        lines.push('        headers: { "Content-Type": "application/json" },');
+        if (body) {
+          lines.push("        body: JSON.stringify(reqBody),");
+        }
+        lines.push("      });");
+        lines.push("      if (!res.ok) throw new Error(`API call failed: ${res.statusText}`);");
+        lines.push("      const result = await res.json();");
+        if (storePath) {
+          lines.push('      setState("' + storePath + '", result);');
+        }
+        const successCode = generateOnSuccess(onSuccess, fetchActionNames, isNative);
+        if (successCode) lines.push(successCode);
+        lines.push("    } catch (err) {");
+        lines.push('      console.error("Action ' + name + ' failed:", err);');
+        const errorCode = generateOnError(onError);
+        if (errorCode) lines.push(errorCode);
+        lines.push("    }");
+        lines.push("  }, [setState]);");
+        return lines.join("\n");
       } else {
-        lines.push("      const params: any[] = [];");
+        // Standard SQL query via dbQuery
+        const sql = cfg.sql ?? cfg.body?.sql ?? "";
+        const rawParams: any[] = cfg.params ?? cfg.body?.params ?? [];
+
+        // Build param resolution lines
+        const paramLines = rawParams.map((p: any) => {
+          if (typeof p === "string" && p.startsWith("$")) {
+            return '      resolveActionParam("' + p + '", stateRef.current, args)';
+          }
+          return "      " + JSON.stringify(p);
+        });
+
+        const lines: string[] = [];
+        lines.push("  const " + name + " = useCallback(async (...args: any[]) => {");
+        lines.push("    try {");
+
+        if (paramLines.length > 0) {
+          lines.push("      const params = [");
+          lines.push(paramLines.join(",\n"));
+          lines.push("      ];");
+        } else {
+          lines.push("      const params: any[] = [];");
+        }
+
+        lines.push('      const result = await dbQuery(' + JSON.stringify(sql) + ', params);');
+        if (storePath) {
+          lines.push('      setState("' + storePath + '", result);');
+        }
+        const successCode = generateOnSuccess(onSuccess, fetchActionNames, isNative);
+        if (successCode) lines.push(successCode);
+        lines.push("    } catch (err) {");
+        lines.push('      console.error("Action ' + name + ' failed:", err);');
+        const errorCode = generateOnError(onError);
+        if (errorCode) lines.push(errorCode);
+        lines.push("    }");
+        lines.push("  }, [setState]);");
+
+        return lines.join("\n");
       }
-
-      lines.push('      const result = await dbQuery(' + JSON.stringify(sql) + ', params);');
-      const successCode = generateOnSuccess(onSuccess, fetchActionNames, isNative);
-      if (successCode) lines.push(successCode);
-      lines.push("    } catch (err) {");
-      lines.push('      console.error("Action ' + name + ' failed:", err);');
-      const errorCode = generateOnError(onError);
-      if (errorCode) lines.push(errorCode);
-      lines.push("    }");
-      lines.push("  }, [setState]);");
-
-      return lines.join("\n");
     }
 
     case "setState": {

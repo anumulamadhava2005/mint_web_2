@@ -48,10 +48,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Invalid framework: ${targetFramework}` }, { status: 400 });
     }
 
-    // Verify project ownership
+    // Verify project ownership, allow_public_edit permission, or if user is admin
     const projRes = await db.query(
-      "SELECT id FROM projects WHERE id = $1 AND owner_id = $2",
-      [projectId, user.id]
+      `SELECT id FROM projects 
+       WHERE id = $1 AND (owner_id = $2 OR allow_public_edit = true OR $3 = 'admin')`,
+      [projectId, user.id, user.role]
     );
     if (projRes.rows.length === 0) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
@@ -235,8 +236,8 @@ export async function GET(req: Request) {
     }
 
     const projRes = await db.query(
-      "SELECT id FROM projects WHERE id = $1 AND owner_id = $2",
-      [projectId, user.id]
+      "SELECT id FROM projects WHERE id = $1 AND (owner_id = $2 OR $3 = 'admin')",
+      [projectId, user.id, user.role]
     );
     if (projRes.rows.length === 0) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });

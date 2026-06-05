@@ -61,6 +61,8 @@ const publicApiRoutes = [
   "/api/projects/community",
   "/api/login",
   "/api/signup",
+  "/api/crm",
+  "/api/check-elements",
 ];
 
 function isPublicApiRoute(pathname: string): boolean {

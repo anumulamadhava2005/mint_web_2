@@ -100,7 +100,7 @@ function normalizeFill(fills?: Fill[]): Fill | undefined {
   const image = visible.find((f) => f.type === "IMAGE" && f.imageRef);
   if (image) return image;
 
-  const gradient = visible.find((f) => f.type.startsWith("GRADIENT"));
+  const gradient = visible.find((f) => f.type?.startsWith("GRADIENT"));
   if (gradient) return gradient;
 
   const solid = visible.find((f) => f.type === "SOLID" && f.color);

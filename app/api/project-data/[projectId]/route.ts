@@ -9,7 +9,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { NextResponse } from "next/server";
-import { findUserByToken } from "@/lib/auth";
+import { findUserByToken, getProjectSyncToken } from "@/lib/auth";
 import db from "@/lib/db";
 
 export async function GET(
@@ -22,32 +22,51 @@ export async function GET(
       return NextResponse.json({ error: "projectId required" }, { status: 400 });
     }
 
-    // Authenticate: cookie or Authorization header
-    const cookieHeader = req.headers.get("cookie") || "";
-    const tokenMatch = cookieHeader.match(/(?:^|;\s*)token=([^;]+)/);
-    const tokenFromCookie = tokenMatch ? tokenMatch[1] : null;
-    const authHeader = req.headers.get("authorization");
-    const tokenFromHeader = authHeader?.startsWith("Bearer ")
-      ? authHeader.slice(7)
-      : null;
-    const token = tokenFromCookie || tokenFromHeader;
+    // Verify project authorization (ownership or public access)
+    let isAuthorized = false;
 
-    if (!token) {
-      // Return 404 to prevent enumeration (not 401)
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-
-    const user = await findUserByToken(token);
-    if (!user) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-
-    // Verify project ownership OR public access
-    const projCheck = await db.query(
-      "SELECT id FROM projects WHERE id = $1 AND (owner_id = $2 OR is_public = true)",
-      [projectId, user.id]
+    // 1. Check if the project is public first
+    const publicProjCheck = await db.query(
+      "SELECT id FROM projects WHERE id = $1 AND is_public = true",
+      [projectId]
     );
-    if (!projCheck.rows?.length) {
+    if (publicProjCheck.rows?.length) {
+      isAuthorized = true;
+    }
+
+    // 2. If not public, require a valid session token, project sync token, and verify ownership
+    if (!isAuthorized) {
+      const cookieHeader = req.headers.get("cookie") || "";
+      const tokenMatch = cookieHeader.match(/(?:^|;\s*)token=([^;]+)/);
+      const tokenFromCookie = tokenMatch ? tokenMatch[1] : null;
+      const authHeader = req.headers.get("authorization");
+      const tokenFromHeader = authHeader?.startsWith("Bearer ")
+        ? authHeader.slice(7)
+        : null;
+      const token = tokenFromCookie || tokenFromHeader;
+
+      if (token) {
+        // A. Check if it's the project-specific sync token
+        if (token === getProjectSyncToken(projectId)) {
+          isAuthorized = true;
+        } else {
+          // B. Check if it's a valid session token and verify project ownership
+          const user = await findUserByToken(token);
+          if (user) {
+            const ownerProjCheck = await db.query(
+              "SELECT id FROM projects WHERE id = $1 AND owner_id = $2",
+              [projectId, user.id]
+            );
+            if (ownerProjCheck.rows?.length) {
+              isAuthorized = true;
+            }
+          }
+        }
+      }
+    }
+
+    if (!isAuthorized) {
+      // Return 404 to prevent enumeration (not 401)
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 

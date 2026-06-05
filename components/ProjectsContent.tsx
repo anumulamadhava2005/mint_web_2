@@ -90,7 +90,7 @@ export default function  ProjectsContent({ search = "" }: Props) {
         </div>
         <button
           onClick={() => setDialogOpen(true)}
-          className="group inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-emerald-400 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-[#f6f4f0] shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] active:scale-95 border border-emerald-400/20"
+          className="group inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-emerald-600 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-[#f6f4f0] shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all duration-300 hover:scale-[1.02] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] active:scale-95 border border-emerald-400/20"
         >
           New Project
           <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
@@ -152,12 +152,12 @@ export default function  ProjectsContent({ search = "" }: Props) {
 
                   {/* Card Content */}
                   <div className="p-5">
-                    <div className="flex items-start justify-between gap-3 mb-2">
+                    {/* <div className="flex items-start justify-between gap-3 mb-2">
                       <h3 className="truncate text-base font-semibold text-[#f6f4f0] group-hover:text-emerald-400 transition-colors">{p.name}</h3>
                       <span className="shrink-0 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-emerald-400">
                         open
                       </span>
-                    </div>
+                    </div> */}
 
                     {p.description ? (
                       <p className="line-clamp-2 text-xs leading-relaxed text-[#a8a6a2] mb-4 h-8">{p.description}</p>
@@ -180,16 +180,16 @@ export default function  ProjectsContent({ search = "" }: Props) {
                           title={p.is_public ? "Unpublish from Community" : "Publish to Community"}
                         >
                           <Globe size={12} className={p.is_public ? "animate-pulse" : ""} />
-                          {p.is_public ? 'Public' : 'Publish'}
+                          {p.is_public ? 'Public' : 'Publish to community'}
                         </button>
-                        <span className="flex items-center gap-1 hover:text-rose-400 transition-colors">
+                        {/* <span className="flex items-center gap-1 hover:text-rose-400 transition-colors">
                           <Heart size={12} />
                           {formatCount(p.likes)}
                         </span>
                         <span className="flex items-center gap-1 hover:text-blue-400 transition-colors">
                           <Eye size={12} />
                           {formatCount(p.views)}
-                        </span>
+                        </span> */}
                       </div>
                     </div>
                   </div>

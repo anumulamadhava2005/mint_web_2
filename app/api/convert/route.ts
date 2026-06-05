@@ -16,6 +16,7 @@ import {
   type TargetFramework,
 } from "@/lib/convert";
 import { patchPackageJsonForSync } from "@/lib/convert/liveSyncFiles";
+import { getProjectSyncToken } from "@/lib/auth";
 
 // ── Request Schema ────────────────────────────────────────────
 
@@ -104,8 +105,16 @@ export async function POST(request: Request) {
 
     // Security: NEVER embed session tokens in exported code.
     // Exported apps must use their own auth mechanism (e.g. project UUID).
+    // Alternative: We generate a secure project-specific sync token derived from the project UUID and the server secret.
+    let finalAuthToken = "";
+    const projectId = conversionRequest.options?.projectId;
+    if (projectId) {
+      finalAuthToken = getProjectSyncToken(projectId);
+    }
+
     const finalOptions = {
       ...conversionRequest.options,
+      authToken: finalAuthToken,
     };
 
     // Perform conversion

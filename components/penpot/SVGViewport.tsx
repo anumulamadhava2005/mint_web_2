@@ -123,10 +123,11 @@ function findDropTargetFrame(
 // ── Props ─────────────────────────────────────────────────────
 interface ViewportProps {
   fileId: UUID;
+  readOnly?: boolean;
 }
 
 // ── Main Viewport Component ───────────────────────────────────
-function SVGViewportInner({ fileId }: ViewportProps) {
+function SVGViewportInner({ fileId, readOnly = false }: ViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const renderSvgRef = useRef<SVGSVGElement>(null);
 
@@ -253,6 +254,7 @@ function SVGViewportInner({ fileId }: ViewportProps) {
 
       // Delete / Backspace → Delete selected
       if (e.key === "Delete" || e.key === "Backspace") {
+        if (readOnly) return;
         e.preventDefault();
         const selected = Array.from(local.selected);
         if (selected.length > 0) deleteShapes(selected);
@@ -260,16 +262,19 @@ function SVGViewportInner({ fileId }: ViewportProps) {
 
       // Ctrl+Z → Undo
       if (mod && e.key === "z" && !e.shiftKey) {
+        if (readOnly) return;
         e.preventDefault();
         undo();
       }
       // Ctrl+Shift+Z → Redo
       if (mod && e.key === "z" && e.shiftKey) {
+        if (readOnly) return;
         e.preventDefault();
         redo();
       }
       // Ctrl+D → Duplicate
       if (mod && e.key === "d") {
+        if (readOnly) return;
         e.preventDefault();
         const selected = Array.from(local.selected);
         if (selected.length > 0) {
@@ -278,21 +283,25 @@ function SVGViewportInner({ fileId }: ViewportProps) {
       }
       // Ctrl+A → Select all
       if (mod && e.key === "a") {
+        if (readOnly) return;
         e.preventDefault();
         useWorkspaceStore.getState().selectAll();
       }
       // Ctrl+C → Copy
       if (mod && e.key === "c" && !e.shiftKey) {
+        if (readOnly) return;
         e.preventDefault();
         copyShapes();
       }
       // Ctrl+V → Paste
       if (mod && e.key === "v" && !e.shiftKey) {
+        if (readOnly) return;
         e.preventDefault();
         pasteShapes();
       }
       // Ctrl+X → Cut (copy + delete)
       if (mod && e.key === "x") {
+        if (readOnly) return;
         e.preventDefault();
         copyShapes();
         const selected = Array.from(useWorkspaceStore.getState().local.selected);
@@ -300,23 +309,27 @@ function SVGViewportInner({ fileId }: ViewportProps) {
       }
       // Ctrl+G → Group
       if (mod && e.key === "g" && !e.shiftKey) {
+        if (readOnly) return;
         e.preventDefault();
         const selected = Array.from(local.selected);
         if (selected.length >= 2) groupShapes(selected);
       }
       // Ctrl+Shift+G → Ungroup
       if (mod && e.key === "g" && e.shiftKey) {
+        if (readOnly) return;
         e.preventDefault();
         const selected = Array.from(local.selected);
         if (selected.length > 0) ungroupShapes(selected);
       }
       // Ctrl+S → Save
       if (mod && e.key === "s") {
+        if (readOnly) return;
         e.preventDefault();
         saveFile();
       }
       // Ctrl+] → Bring Forward
       if (mod && e.key === "]") {
+        if (readOnly) return;
         e.preventDefault();
         const selected = Array.from(local.selected);
         if (e.shiftKey) {
@@ -327,6 +340,7 @@ function SVGViewportInner({ fileId }: ViewportProps) {
       }
       // Ctrl+[ → Send Backward
       if (mod && e.key === "[") {
+        if (readOnly) return;
         e.preventDefault();
         const selected = Array.from(local.selected);
         if (e.shiftKey) {
@@ -376,8 +390,8 @@ function SVGViewportInner({ fileId }: ViewportProps) {
         setContextMenu(null);
       }
 
-      // Tool shortcuts (only when no modifier key)
-      if (!mod && !e.shiftKey) {
+      // Tool shortcuts (only when no modifier key and not readOnly)
+      if (!mod && !e.shiftKey && !readOnly) {
         if (e.key === "v" || e.key === "V") setDrawing(null);
         if (e.key === "r" || e.key === "R") setDrawing("rect");
         if (e.key === "o" || e.key === "O") setDrawing("circle");
@@ -388,6 +402,7 @@ function SVGViewportInner({ fileId }: ViewportProps) {
 
       // Arrow keys → Nudge shapes
       if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        if (readOnly) return;
         const selected = Array.from(local.selected);
         if (selected.length > 0) {
           e.preventDefault();
@@ -415,7 +430,7 @@ function SVGViewportInner({ fileId }: ViewportProps) {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [local.selected, deleteShapes, undo, redo, deselectAll, setDrawing, copyShapes, pasteShapes, groupShapes, ungroupShapes, saveFile, bringForward, bringToFront, sendBackward, sendToBack, nudgeShapes, setViewbox, setZoom]);
+  }, [local.selected, deleteShapes, undo, redo, deselectAll, setDrawing, copyShapes, pasteShapes, groupShapes, ungroupShapes, saveFile, bringForward, bringToFront, sendBackward, sendToBack, nudgeShapes, setViewbox, setZoom, readOnly]);
 
   // ── Hit testing ───────────────────────────────────────────
   const hitTestShapes = useCallback(
@@ -520,17 +535,19 @@ function SVGViewportInner({ fileId }: ViewportProps) {
 
       const worldP = toWorld(e);
 
-      // Drawing mode
+      // Drawing mode — blocked in readOnly
       if (local.drawing) {
+        if (readOnly) return;
         setIsDrawing(true);
         setDrawStart(worldP);
         return;
       }
 
-      // Check if clicking on resize handle
+      // Check if clicking on resize handle — blocked in readOnly
       const target = e.target as SVGElement;
       const handleAttr = target.getAttribute?.("data-handle");
       if (handleAttr && local.selected.size > 0) {
+        if (readOnly) return;
         setIsResizing(true);
         setResizeHandle(handleAttr);
         const shapes: Record<UUID, { x: number; y: number; width: number; height: number }> = {};
@@ -548,6 +565,7 @@ function SVGViewportInner({ fileId }: ViewportProps) {
       const hit = hitTestShapes(worldP);
 
       if (hit) {
+        // Allow selection in readOnly mode so the right panel shows props
         if (e.shiftKey) {
           selectShape(hit.id, true);
         } else if (!local.selected.has(hit.id)) {
@@ -558,6 +576,9 @@ function SVGViewportInner({ fileId }: ViewportProps) {
           const currentSelected = useWorkspaceStore.getState().local.selected;
           sendSelectionChange(Array.from(currentSelected));
         });
+
+        // Block dragging in readOnly mode — selection only
+        if (readOnly) return;
 
         // Start drag
         setIsDragging(true);
@@ -588,8 +609,9 @@ function SVGViewportInner({ fileId }: ViewportProps) {
         }
         dragOriginals.current = originals;
       } else {
-        // Deselect and start selection rect
+        // Deselect (allowed in readOnly) but block selection rect drawing
         if (!e.shiftKey) deselectAll();
+        if (readOnly) return;
         setDragStart(worldP);
       }
     },
@@ -606,6 +628,7 @@ function SVGViewportInner({ fileId }: ViewportProps) {
       sendSelectionChange,
       pageObjects,
       contextMenu,
+      readOnly,
     ]
   );
 
@@ -948,6 +971,7 @@ function SVGViewportInner({ fileId }: ViewportProps) {
       style={{ cursor: spaceHeld || isPanning ? "grab" : local.drawing ? "crosshair" : "default" }}
       onContextMenu={(e) => {
         e.preventDefault();
+        if (readOnly) return; // No context menu in readOnly mode
         const rect = containerRef.current?.getBoundingClientRect();
         if (!rect) return;
         const screenP = { x: e.clientX - rect.left, y: e.clientY - rect.top };

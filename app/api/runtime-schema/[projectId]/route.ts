@@ -24,10 +24,10 @@ export async function GET(
 
     const { projectId } = await params;
 
-    // Verify project ownership or public access
+    // Verify project ownership or public access or admin
     const projCheck = await db.query(
-      "SELECT id FROM projects WHERE id = $1 AND (owner_id = $2 OR is_public = true)",
-      [projectId, user.id]
+      "SELECT id FROM projects WHERE id = $1 AND (owner_id = $2 OR is_public = true OR $3 = 'admin')",
+      [projectId, user.id, user.role]
     );
     if (!projCheck.rows?.length) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
@@ -65,10 +65,11 @@ export async function POST(
 
     const { projectId } = await params;
 
-    // Verify project ownership
+    // Verify project ownership, allow_public_edit permission, or if user is admin
     const projCheck = await db.query(
-      "SELECT id FROM projects WHERE id = $1 AND owner_id = $2",
-      [projectId, user.id]
+      `SELECT id FROM projects 
+       WHERE id = $1 AND (owner_id = $2 OR allow_public_edit = true OR $3 = 'admin')`,
+      [projectId, user.id, user.role]
     );
     if (!projCheck.rows?.length) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });

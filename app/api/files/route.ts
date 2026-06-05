@@ -29,8 +29,8 @@ export async function GET(req: Request) {
         `SELECT f.id, f.project_id, f.name, f.revn, f.data, f.features, f.created_at, f.modified_at
          FROM files f
          JOIN projects p ON f.project_id = p.id
-         WHERE f.id = $1 AND f.deleted_at IS NULL AND (p.owner_id = $2 OR p.is_public = true)`,
-        [fileId, user.id]
+         WHERE f.id = $1 AND f.deleted_at IS NULL AND (p.owner_id = $2 OR p.is_public = true OR $3 = 'admin')`,
+        [fileId, user.id, user.role]
       );
       if (res.rows.length === 0) {
         return NextResponse.json({ error: "File not found" }, { status: 404 });
@@ -44,9 +44,9 @@ export async function GET(req: Request) {
         `SELECT f.id, f.project_id, f.name, f.revn, f.features, f.created_at, f.modified_at
          FROM files f
          JOIN projects p ON f.project_id = p.id
-         WHERE f.project_id = $1 AND f.deleted_at IS NULL AND (p.owner_id = $2 OR p.is_public = true)
+         WHERE f.project_id = $1 AND f.deleted_at IS NULL AND (p.owner_id = $2 OR p.is_public = true OR $3 = 'admin')
          ORDER BY f.modified_at DESC`,
-        [projectId, user.id]
+        [projectId, user.id, user.role]
       );
       return NextResponse.json({ files: res.rows });
     }
@@ -75,10 +75,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "projectId required" }, { status: 400 });
     }
 
-    // Verify project ownership or edit access
+    // Verify project ownership or edit access or if admin
     const projRes = await db.query(
-      "SELECT id FROM projects WHERE id = $1 AND (owner_id = $2 OR allow_public_edit = true)",
-      [projectId, user.id]
+      "SELECT id FROM projects WHERE id = $1 AND (owner_id = $2 OR allow_public_edit = true OR $3 = 'admin')",
+      [projectId, user.id, user.role]
     );
     if (projRes.rows.length === 0) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
@@ -117,9 +117,9 @@ export async function PUT(req: Request) {
     const res = await db.query(
       `UPDATE files SET name = $1, modified_at = now()
        FROM projects p
-       WHERE files.id = $2 AND files.project_id = p.id AND (p.owner_id = $3 OR p.allow_public_edit = true) AND files.deleted_at IS NULL
+       WHERE files.id = $2 AND files.project_id = p.id AND (p.owner_id = $3 OR p.allow_public_edit = true OR $4 = 'admin') AND files.deleted_at IS NULL
        RETURNING files.id, files.name, files.modified_at`,
-      [name || "Untitled", id, user.id]
+      [name || "Untitled", id, user.id, user.role]
     );
 
     if (res.rows.length === 0) {
@@ -150,8 +150,8 @@ export async function DELETE(req: Request) {
     await db.query(
       `UPDATE files SET deleted_at = now()
        FROM projects p
-       WHERE files.id = $1 AND files.project_id = p.id AND (p.owner_id = $2 OR p.allow_public_edit = true)`,
-      [id, user.id]
+       WHERE files.id = $1 AND files.project_id = p.id AND (p.owner_id = $2 OR p.allow_public_edit = true OR $3 = 'admin')`,
+      [id, user.id, user.role]
     );
 
     return NextResponse.json({ ok: true });
