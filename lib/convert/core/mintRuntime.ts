@@ -85,7 +85,7 @@ export function generateMintRuntimeProvider(
   L("// MintRuntime — Auto-generated state & actions provider");
   L("// Project: " + projectId);
   L("// ═══════════════════════════════════════════════════════════════");
-  L('import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";');
+  L('import React, { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo } from "react";');
   if (isNative) {
     L('import { useRouter } from "expo-router";');
   }
@@ -178,11 +178,15 @@ export function generateMintRuntimeProvider(
   // NOTE: load* actions are NOT auto-fired on provider mount.
   // Use the onMount binding on individual screen frames instead.
 
-  L("  const actions: MintActions = {");
+  L("  const actions = useMemo<MintActions>(() => ({");
   if (actions.length > 0) {
     L("    " + actions.map((a) => a.name).join(",\n    "));
   }
-  L("  };");
+  L("  }), [");
+  if (actions.length > 0) {
+    L("    " + actions.map((a) => a.name).join(",\n    "));
+  }
+  L("  ]);");
   L("");
   L("  // ── Dynamic schema updates (for SDUI live sync) ──────────");
   L("  const [dynamicActions, setDynamicActions] = useState<MintActions | null>(null);");
@@ -228,7 +232,9 @@ export function generateMintRuntimeProvider(
   L("    }");
   L("  }, [setState]);");
   L("");
-  L("  const mergedActions = dynamicActions ? { ...actions, ...dynamicActions } : actions;");
+  L("  const mergedActions = useMemo(() => (");
+  L("    dynamicActions ? { ...actions, ...dynamicActions } : actions");
+  L("  ), [actions, dynamicActions]);");
   L("  const value: MintContextValue = { state, setState, actions: mergedActions, db: db(), updateSchema };");
   L("");
 
@@ -300,7 +306,7 @@ export function generateMintRuntimeProvider(
   L("}");
   L("");
   L("function resolveUrl(urlTemplate: string, state: any, args: any[]): string {");
-  L("  return urlTemplate.replace(/:([a-zA-Z0-9_]+)/g, (match, paramName) => {");
+  L("  let url = urlTemplate.replace(/:([a-zA-Z0-9_]+)/g, (match, paramName) => {");
   L('    const resolved = resolveActionParam("$" + paramName, state, args);');
   L("    if (resolved !== undefined) return String(resolved);");
   L('    if (args.length > 0 && args[0] && typeof args[0] === "object") {');
@@ -308,6 +314,15 @@ export function generateMintRuntimeProvider(
   L("    }");
   L("    return match;");
   L("  });");
+  L("  url = url.replace(/\\{([a-zA-Z0-9_]+)\\}/g, (match, paramName) => {");
+  L('    const resolved = resolveActionParam("$" + paramName, state, args);');
+  L("    if (resolved !== undefined) return String(resolved);");
+  L('    if (args.length > 0 && args[0] && typeof args[0] === "object") {');
+  L("      if (args[0][paramName] !== undefined) return String(args[0][paramName]);");
+  L("    }");
+  L("    return match;");
+  L("  });");
+  L("  return url;");
   L("}");
   L("");
   L("// ── Dynamic action builder (for live schema updates) ─────────");
@@ -335,7 +350,7 @@ export function generateMintRuntimeProvider(
   L("    return async (...args: any[]) => {");
   L("      try {");
   L("        let result;");
-  L("        if (config.url) {");
+  L("        if (config.url && !config.url.includes(\"/api/db\")) {");
   L("          const resolvedUrl = resolveUrl(config.url, stateRef.current, args);");
   L("          const reqBody = config.body ? resolveParamsObject(config.body, stateRef.current, args) : undefined;");
   L("          const res = await fetch(resolvedUrl, {");
@@ -492,8 +507,8 @@ function buildActionFunction(
       const onSuccess = cfg.onSuccess ?? "";
       const onError = cfg.onError ?? "";
 
-      if (url) {
-        // Generate REST API call
+      if (url && !url.includes("/api/db")) {
+        // REST API path
         const lines: string[] = [];
         lines.push("  const " + name + " = useCallback(async (...args: any[]) => {");
         lines.push("    try {");
@@ -523,31 +538,28 @@ function buildActionFunction(
         lines.push("  }, [setState]);");
         return lines.join("\n");
       } else {
-        // Standard SQL query via dbQuery
+        // SQL / dbQuery path — covers both no-url and /api/db urls
         const sql = cfg.sql ?? cfg.body?.sql ?? "";
         const rawParams: any[] = cfg.params ?? cfg.body?.params ?? [];
 
-        // Build param resolution lines
         const paramLines = rawParams.map((p: any) => {
           if (typeof p === "string" && p.startsWith("$")) {
-            return '      resolveActionParam("' + p + '", stateRef.current, args)';
+            return '        resolveActionParam("' + p + '", stateRef.current, args)';
           }
-          return "      " + JSON.stringify(p);
+          return "        " + JSON.stringify(p);
         });
 
         const lines: string[] = [];
         lines.push("  const " + name + " = useCallback(async (...args: any[]) => {");
         lines.push("    try {");
-
         if (paramLines.length > 0) {
           lines.push("      const params = [");
           lines.push(paramLines.join(",\n"));
           lines.push("      ];");
+          lines.push('      const result = await dbQuery(' + JSON.stringify(sql) + ', params);');
         } else {
-          lines.push("      const params: any[] = [];");
+          lines.push('      const result = await dbQuery(' + JSON.stringify(sql) + ', []);');
         }
-
-        lines.push('      const result = await dbQuery(' + JSON.stringify(sql) + ', params);');
         if (storePath) {
           lines.push('      setState("' + storePath + '", result);');
         }
@@ -559,7 +571,6 @@ function buildActionFunction(
         if (errorCode) lines.push(errorCode);
         lines.push("    }");
         lines.push("  }, [setState]);");
-
         return lines.join("\n");
       }
     }
@@ -572,7 +583,6 @@ function buildActionFunction(
       const lines: string[] = [];
       lines.push("  const " + name + " = useCallback((...args: any[]) => {");
       lines.push('    setState("' + path + '", ' + value + ");");
-      // If this sets currentScreen, also navigate to the corresponding route
       if (/current.?screen/i.test(String(path)) && cfg.value !== undefined) {
         const route = screenNameToRoute(String(cfg.value));
         if (isNative) {
@@ -595,20 +605,16 @@ function buildActionFunction(
       const lines: string[] = [];
       lines.push("  const " + name + " = useCallback(async (...args: any[]) => {");
       lines.push("    try {");
-      
       const successCode = generateOnSuccess(onSuccess, fetchActionNames, isNative);
       if (successCode) lines.push(successCode);
-
       const alsoCode = generateAlsoStatements(also, fetchActionNames, isNative);
       if (alsoCode) lines.push(alsoCode);
-
       lines.push("    } catch (err) {");
       lines.push('      console.error("Action ' + name + ' failed:", err);');
       const errorCode = generateOnError(onError);
       if (errorCode) lines.push(errorCode);
       lines.push("    }");
       lines.push("  }, [setState]);");
-
       return lines.join("\n");
     }
 
