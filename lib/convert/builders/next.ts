@@ -612,7 +612,7 @@ import { useMint } from "./mint-runtime";
 
 const API_ORIGIN = "${apiOrigin}";
 const PROJECT_ID = "${projectId}";
-const AUTH_TOKEN = "${authToken}";
+const AUTH_TOKEN = "";
 const POLL_INTERVAL = 5000;
 const CACHE_KEY = "@mint_web_design";
 
