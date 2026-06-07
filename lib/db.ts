@@ -259,6 +259,28 @@ async function init() {
   `).catch(() => {});
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_project_commits_project ON project_commits(project_id, version DESC)`).catch(() => {});
 
+  // ── Email OTPs ───────────────────────────────────────────
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS email_otps (
+      email text PRIMARY KEY,
+      code text NOT NULL,
+      expires_at timestamptz NOT NULL,
+      attempts integer NOT NULL DEFAULT 0,
+      created_at timestamptz DEFAULT now()
+    )
+  `).catch(() => {});
+
+  // ── OTP Daily Limits ─────────────────────────────────────
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS otp_daily_limits (
+      email text PRIMARY KEY,
+      count integer NOT NULL DEFAULT 0,
+      last_requested timestamptz DEFAULT now()
+    )
+  `).catch(() => {});
+
+
+
   // ── Auto-update triggers ─────────────────────────────────
   // The trigger function uses modified_at. Add modified_at to projects if needed.
   await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS modified_at timestamptz DEFAULT now()`).catch(() => {});

@@ -612,10 +612,17 @@ const styles = StyleSheet.create({
 // React Native Component Generation
 // ═══════════════════════════════════════════════════════════════
 
-function safeStateExpr(key: string): string {
+function safeStateExpr(key: string, loopVarName?: string): string {
   const parts = key.split('.');
-  if (parts.length === 1) return `state.${key}`;
-  return `${parts[0]}` + parts.slice(1).map(p => `?.${p}`).join('');
+
+  if (loopVarName && parts[0].trim() === loopVarName.trim()) {
+    if (parts.length === 1) return parts[0];
+    return parts[0] + parts.slice(1).map(p => `?.${p}`).join('');
+  }
+
+  if (parts.length === 1) return `state.${key.trim()}`;
+  // state.part1?.part2?.part3
+  return `state.${parts[0].trim()}` + parts.slice(1).map(p => `?.${p}`).join('');
 }
 
 function renderRNNode(
@@ -726,7 +733,7 @@ function renderRNNode(
   // ── Input binding: render as <TextInput> ──
   if (b?.inputBind) {
     const stateKey = b.inputBind.replace(/^\$/, '');
-    const accessor = safeStateExpr(stateKey);
+    const accessor = safeStateExpr(stateKey, loopVarName);
     const containerStyle = wrapWithPressable ? innerStyle : style;
     const inputJSX = `${spaces}<TextInput style={${containerStyle}} value={${accessor} ?? ""} onChangeText={(text) => setState("${stateKey}", text)} placeholder="${node.name.replace(/_/g, ' ')}" placeholderTextColor="#888" />`;
 
@@ -736,7 +743,7 @@ function renderRNNode(
     }
     if (wrapVisible) {
       const visKey = wrapVisible.replace(/^\$/, '').replace(/\s*==.*/, '');
-      const visAccessor = safeStateExpr(visKey);
+      const visAccessor = safeStateExpr(visKey, loopVarName);
       return `${spaces}{${visAccessor} ? (\n${result}\n${spaces}) : null}`;
     }
     return result;
@@ -760,7 +767,7 @@ function renderRNNode(
     const textStyle = generateRNTextStyle(node.text);
     const staticText = node.text.characters ?? "";
     const textContent = b?.textBind
-      ? `{${safeStateExpr(b.textBind.replace(/^\$/, ''))} ?? ${JSON.stringify(staticText)}}`
+      ? `{${safeStateExpr(b.textBind.replace(/^\$/, ''), loopVarName)} ?? ${JSON.stringify(staticText)}}`
       : escapeRNText(staticText);
 
     if (wrapWithPressable) {
@@ -824,7 +831,7 @@ ${spaces}</View>`;
       const gap = 12; // 12px default gap for stacked list items
 
       const listKey = wrapRepeat.replace(/^\$/, '');
-      const listAccessor = safeStateExpr(listKey);
+      const listAccessor = safeStateExpr(listKey, loopVarName);
       const itemVar = b.repeatAs;
       finalChildContent = `${spaces}  <View style={{ height: ${minY}, flexShrink: 0 }} />
 ${spaces}  {(${listAccessor} || []).map((${itemVar}: any, _idx: number) => (
@@ -899,7 +906,7 @@ ${spaces}</Pressable>`;
   // ── Apply conditional visibility wrapper if bound ──
   if (wrapVisible) {
     const visKey = wrapVisible.replace(/^\$/, '').replace(/\s*==.*/, '');
-    const visAccessor = safeStateExpr(visKey);
+    const visAccessor = safeStateExpr(visKey, loopVarName);
     content = `${spaces}{${visAccessor} ? (\n${content}\n${spaces}) : null}`;
   }
 
@@ -1015,12 +1022,7 @@ function generateRNTextStyle(text: TextStyle): string {
 }
 
 function escapeRNText(text: string): string {
-  return text
-    .replace(/\\/g, "\\\\")
-    .replace(/"/g, '\\"')
-    .replace(/\n/g, "\\n")
-    .replace(/{/g, "&#123;")
-    .replace(/}/g, "&#125;");
+  return `{${JSON.stringify(text)}}`;
 }
 
 /** Recursively collect all IDs under a frame (inclusive). */

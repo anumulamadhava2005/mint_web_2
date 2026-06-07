@@ -23,6 +23,7 @@ const sections = [
   { id: "export", label: "Export & Build", icon: Download },
   { id: "sync", label: "Live Sync", icon: Repeat },
   { id: "collab", label: "Collaboration", icon: Users },
+  { id: "actions", label: "Actions Config", icon: TerminalSquare },
   { id: "shortcuts", label: "Shortcuts", icon: Zap },
 ];
 
@@ -338,6 +339,142 @@ $local.count > 0 ? "Items" : "Empty"  → ternary`}</CodeBlock>
                 ))}
               </div>
               <Tip title="When to use Workflows vs Actions:">Use action JSON for simple, single-step logic. Switch to Workflows when you need branching, loops, or more than 3 chained steps.</Tip>
+            </div>
+          )}
+
+          {/* ─── ACTIONS CONFIG ─── */}
+          {activeTab === "actions" && (
+            <div>
+              <SectionHeading>Actions Configuration Guide</SectionHeading>
+              <SectionSub>This guide describes how to configure Actions in a Mint Web project. Actions represent the behavior and business logic of your application—connecting user events with state modifications, backend API calls, database operations, and screen routing.</SectionSub>
+
+              <SubHeading>1. Action Schema Structure</SubHeading>
+              <p className="text-[14px] text-[#a8a6a2] mb-3">In the project configuration, actions are defined as an array under <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">globalActions</code> (app-wide) or <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">actions</code> (screen-specific). Each action object follows this schema:</p>
+              <CodeBlock>{`{
+  "id": "uuid-string",
+  "name": "actionFunctionName",
+  "type": "setState | fetch | mutate | navigate | custom",
+  "config": {
+    // Type-specific configurations
+  }
+}`}</CodeBlock>
+              <div className="space-y-2 mb-6 mt-4">
+                <PropRow label="id" value="Unique identifier for the action." />
+                <PropRow label="name" value="The JavaScript function name exposed by the runtime hook." />
+                <PropRow label="type" value="The category of operation to perform." />
+                <PropRow label="config" value="Key-value map defining parameters for the specific action type." />
+              </div>
+
+              <SubHeading>2. Action Types & Configurations</SubHeading>
+              
+              <h4 className="text-[15px] font-medium text-[#f6f4f0] mt-6 mb-2">2.1. fetch / mutate</h4>
+              <p className="text-[14px] text-[#a8a6a2] mb-3">Handles REST API requests as well as direct PostgreSQL database queries. The runtime distinguishes between them based on the presence and prefix of the <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">url</code> config property.</p>
+              
+              <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-5 mb-4">
+                <h5 className="text-[14px] font-semibold text-blue-400 mb-2">Option A: REST API Calls</h5>
+                <p className="text-[13px] text-[#a8a6a2] mb-3">If <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">url</code> is specified and does <strong>not</strong> contain <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">/api/db</code>, the runtime performs an HTTP REST request.</p>
+                <CodeBlock>{`{
+  "id": "fetch-todos",
+  "name": "getTodos",
+  "type": "fetch",
+  "config": {
+    "url": "/api/todos/:status",
+    "method": "GET",
+    "body": null,
+    "storePath": "todosList",
+    "onSuccess": "SET $loading = false; SET $items = $result.rows",
+    "onError": "SET $error = 'Failed to load'"
+  }
+}`}</CodeBlock>
+                <div className="space-y-2 mt-4">
+                  <PropRow label="url" value="The target endpoint template." />
+                  <PropRow label="method" value="HTTP request verb (GET, POST, etc.)." />
+                  <PropRow label="body" value="Optional request payload object." />
+                  <PropRow label="storePath" value="Optional path in state where response is written." />
+                  <PropRow label="onSuccess / onError" value="Statements executed based on success/fail." />
+                </div>
+              </div>
+
+              <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-5 mb-6">
+                <h5 className="text-[14px] font-semibold text-amber-400 mb-2">Option B: Database SQL Queries</h5>
+                <p className="text-[13px] text-[#a8a6a2] mb-3">If <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">url</code> is <strong>not</strong> specified, or if <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">url</code> contains <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">/api/db</code>, the action runs an SQL query against the database using the <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">dbQuery</code> helper. The <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">sql</code> and <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">params</code> can be at the root of <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">config</code>, or nested inside a <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">body</code> object.</p>
+                <CodeBlock>{`{
+  "id": "insert-todo-db",
+  "name": "createTodoInDb",
+  "type": "mutate",
+  "config": {
+    "url": "/api/db/{projectId}",
+    "method": "POST",
+    "body": {
+      "sql": "INSERT INTO todos (title, status, user_id) VALUES ($1, $2, $3) RETURNING *",
+      "params": [ "$args.0", "pending", "$global.user.id" ]
+    },
+    "storePath": "lastCreatedTodo",
+    "onSuccess": "SET $status = 'Saved successfully'; CALL getTodos"
+  }
+}`}</CodeBlock>
+                <div className="space-y-2 mt-4">
+                  <PropRow label="body.sql (or config.sql)" value="The raw SQL query string." />
+                  <PropRow label="body.params (or config.params)" value="Array of parameters for SQL placeholders." />
+                </div>
+              </div>
+
+              <h4 className="text-[15px] font-medium text-[#f6f4f0] mb-2">2.2. setState</h4>
+              <p className="text-[14px] text-[#a8a6a2] mb-3">Updates specific values inside the application state. Dotted paths are supported for nested objects.</p>
+              <CodeBlock>{`{
+  "type": "setState",
+  "config": {
+    "path": "form.username",
+    "value": "$args.0",
+    "also": "SET $form.dirty = true; CALL validateForm"
+  }
+}`}</CodeBlock>
+              <Tip title="Navigation Trigger:">If the path matches <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">/current.?screen/i</code>, the runtime treats the value as a screen name and triggers navigation.</Tip>
+
+              <h4 className="text-[15px] font-medium text-[#f6f4f0] mt-6 mb-2">2.3. navigate</h4>
+              <p className="text-[14px] text-[#a8a6a2] mb-3">Transitions between screens.</p>
+              <CodeBlock>{`{
+  "type": "navigate",
+  "config": {
+    "target": "/dashboard"
+  }
+}`}</CodeBlock>
+
+              <h4 className="text-[15px] font-medium text-[#f6f4f0] mt-6 mb-2">2.4. custom</h4>
+              <p className="text-[14px] text-[#a8a6a2] mb-3">Acts as a pure scripting logic container. It executes sequential actions without having a primary state mutation or fetch command.</p>
+              <CodeBlock>{`{
+  "type": "custom",
+  "config": {
+    "onSuccess": "CALL checkAuth",
+    "also": "SET $clicked = true; CALL refreshApp"
+  }
+}`}</CodeBlock>
+
+              <SubHeading>3. Parameter & Argument Resolution</SubHeading>
+              <p className="text-[14px] text-[#a8a6a2] mb-3">The runtime dynamically resolves values prefixed with <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">$</code> inside action properties:</p>
+              <StepList steps={[
+                { title: "$args.X", desc: "Resolves to the X-th argument passed when calling the action function (e.g. $args.0)." },
+                { title: "$path.to.variable", desc: "Resolves to a property path in the state (e.g., $form.username)." },
+                { title: "Argument Fallback", desc: "If a path resolves to undefined in state, checks if args[0] is an object and resolves the key from it." },
+              ]} />
+
+              <SubHeading>4. Scripting Syntax (onSuccess, onError, also)</SubHeading>
+              <p className="text-[14px] text-[#a8a6a2] mb-3">Fields like <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[13px]">onSuccess</code> allow chainable scripting. Expressions are split by semicolons.</p>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-5">
+                  <h4 className="text-[14px] font-medium text-[#f6f4f0] mb-3">SET Statement</h4>
+                  <p className="text-[13px] text-[#a8a6a2] mb-2">Modifies a state variable. Syntax: <code className="text-[#f6f4f0]">SET $path = expression</code></p>
+                  <PropRow label="$result" value="Root JSON response" />
+                  <PropRow label="$result.rows" value="SQL rows array" />
+                  <PropRow label="dbQuery(...)" value="Inline SQL (in also)" />
+                </div>
+                <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-5">
+                  <h4 className="text-[14px] font-medium text-[#f6f4f0] mb-3">CALL Statement</h4>
+                  <p className="text-[13px] text-[#a8a6a2] mb-2">Executes another action by name. Syntax: <code className="text-[#f6f4f0]">CALL actionName</code></p>
+                  <p className="text-[13px] text-[#a8a6a2]">Fetch/mutate calls are resolved via React refs to ensure the latest state context.</p>
+                </div>
+              </div>
             </div>
           )}
 

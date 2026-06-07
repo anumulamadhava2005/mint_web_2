@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 
 /* ─── Types ───────────────────────────────────────────────── */
-type Step = 1 | 2 | 3 | 4;
+type Step = 1 | 1.5 | 2 | 3 | 4;
 
 /* ─── Chip component ──────────────────────────────────────── */
 function Chip({ label, icon: Icon, selected, onClick }: {
@@ -74,6 +74,7 @@ export default function Signup() {
   const router = useRouter();
   const [step, setStep] = useState<Step>(1);
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
 
   // Step 1
@@ -81,6 +82,7 @@ export default function Signup() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [teamSize, setTeamSize] = useState("");
+  const [otpCode, setOtpCode] = useState("");
 
   // Step 2
   const [projectType, setProjectType] = useState("");
@@ -99,31 +101,111 @@ export default function Signup() {
   const toggleArr = (arr: string[], set: (v: string[]) => void, val: string) =>
     set(arr.includes(val) ? arr.filter((v) => v !== val) : [...arr, val]);
 
-  /* ─── Step 1: Create account ───── */
+  /* ─── Step 1: Request verification code ─── */
   async function handleStep1() {
     setError("");
+    setInfo("");
     if (!fullname.trim()) { setError("Please enter your name"); return; }
     if (!email.trim()) { setError("Please enter your email"); return; }
     if (password.length < 6) { setError("Password must be at least 6 characters"); return; }
     setLoading(true);
     try {
-      const res = await fetch("/api/signup", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, fullname: fullname.trim(), team_size: teamSize || null }),
+      const res = await fetch("/api/otp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.error || "Signup failed"); setLoading(false); return; }
+      if (!res.ok) {
+        setError(data.error || "Failed to send verification code");
+        setLoading(false);
+        return;
+      }
+      setStep(1.5);
+    } catch {
+      setError("Network error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  /* ─── Step 1.5: Verify OTP & Create User ─── */
+  async function handleVerifyOtp() {
+    setError("");
+    setInfo("");
+    if (!otpCode.trim() || otpCode.trim().length !== 6) {
+      setError("Please enter the 6-digit verification code");
+      return;
+    }
+    setLoading(true);
+    try {
+      const verifyRes = await fetch("/api/otp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, code: otpCode.trim() }),
+      });
+      const verifyData = await verifyRes.json();
+      if (!verifyRes.ok) {
+        setError(verifyData.error || "Verification failed");
+        setLoading(false);
+        return;
+      }
+
+      // Create user
+      const signupRes = await fetch("/api/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, fullname: fullname.trim(), team_size: teamSize || null }),
+      });
+      const signupData = await signupRes.json();
+      if (!signupRes.ok) {
+        setError(signupData.error || "Signup failed");
+        setLoading(false);
+        return;
+      }
 
       // Auto-login
       const loginRes = await fetch("/api/login", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-      if (!loginRes.ok) { router.replace("/login"); return; }
+      if (!loginRes.ok) {
+        router.replace("/login");
+        return;
+      }
       setStep(2);
-    } catch { setError("Network error"); }
-    finally { setLoading(false); }
+    } catch {
+      setError("Network error");
+    } finally {
+      setLoading(false);
+    }
   }
+
+  /* ─── Resend OTP ─── */
+  async function handleResendOtp() {
+    setError("");
+    setInfo("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/otp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Failed to resend code");
+      } else {
+        setInfo("Verification code resent successfully!");
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
 
   /* ─── Step 3: Save onboarding context ── */
   async function handleStep3() {
@@ -161,13 +243,19 @@ export default function Signup() {
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-black">
 
       <div className="relative z-10 w-full max-w-lg px-4 py-8">
-        <StepProgress current={step} total={4} />
+        <StepProgress current={step === 1.5 ? 1 : step} total={4} />
 
         <div className="rounded-[28px] border border-white/[0.06] bg-white/[0.04] p-6 sm:p-8 shadow-[0_24px_80px_-48px_rgba(0,0,0,0.6)] backdrop-blur-xl">
 
           {error && (
             <div className="mb-5 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-center text-sm text-red-400">
                {error}
+            </div>
+          )}
+
+          {info && (
+            <div className="mb-5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-center text-sm text-emerald-400">
+               {info}
             </div>
           )}
 
@@ -221,6 +309,35 @@ export default function Signup() {
                 Already have an account?{" "}
                 <Link href="/login" className="font-semibold text-white hover:text-zinc-300 transition-colors">Sign in</Link>
               </p>
+            </div>
+          )}
+
+          {/* ════════ STEP 1.5: OTP VERIFICATION ════════ */}
+          {step === 1.5 && (
+            <div>
+              <StepHeader step="Verification" title="Verify your email" subtitle={`We sent a 6-digit code to ${email}`} />
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-[#666] mb-1.5 block">Verification Code</label>
+                  <input value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" type="text" pattern="[0-9]*" inputMode="numeric"
+                    className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 py-3 text-center text-xl font-bold tracking-[0.5em] text-white placeholder:text-[#444] outline-none focus:border-emerald-500/40 transition-colors" />
+                </div>
+              </div>
+
+              <button onClick={handleVerifyOtp} disabled={loading}
+                className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-white py-3.5 font-semibold text-black transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50">
+                {loading ? <div className="h-5 w-5 animate-spin rounded-full border-2 border-black/20 border-t-black" /> : <><span>Verify Code</span><ArrowRight size={16} /></>}
+              </button>
+
+              <div className="mt-6 flex justify-between text-xs">
+                <button onClick={() => setStep(1)} className="text-zinc-500 hover:text-zinc-300 transition-colors font-medium">
+                  ← Back to details
+                </button>
+                <button onClick={handleResendOtp} disabled={loading} className="text-emerald-400 hover:text-emerald-300 transition-colors font-semibold disabled:opacity-50">
+                  Resend code
+                </button>
+              </div>
             </div>
           )}
 

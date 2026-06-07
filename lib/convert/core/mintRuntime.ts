@@ -111,8 +111,9 @@ export function generateMintRuntimeProvider(
   L("function nsSQL(sql: string): string {");
   L("  let result = sql;");
   L("  result = result.replace(");
-  L('    /\\b(FROM|JOIN|UPDATE|INTO|TABLE|EXISTS|ON)\\s+"([a-zA-Z][a-zA-Z0-9_]*)"/gi,');
-  L("    (match: string, keyword: string, name: string) => {");
+  L('    /\\b(FROM|JOIN|UPDATE|INTO|TABLE|EXISTS)\\s+(?:"([a-zA-Z][a-zA-Z0-9_]*)"|([a-zA-Z][a-zA-Z0-9_]*))/gi,');
+  L("    (match: string, keyword: string, quoted: string, unquoted: string) => {");
+  L("      const name = quoted || unquoted;");
   L('      if (name.startsWith("pg_") || name.startsWith("mint_")) return match;');
   L("      return keyword + ' \"' + TABLE_PREFIX + name + '\"';");
   L("    }");
@@ -122,10 +123,11 @@ export function generateMintRuntimeProvider(
   L("");
   L("// ── DB query helper ───────────────────────────────────────────");
   L("async function dbQuery(sql: string, params: any[] = []): Promise<any> {");
+  L("  const sanitizedParams = params.map(p => (p === \"\" || p === undefined) ? null : p);");
   L("  const res = await fetch(DB_BRIDGE, {");
   L('    method: "POST",');
   L('    headers: { "Content-Type": "application/json" },');
-  L("    body: JSON.stringify({ text: nsSQL(sql), params }),");
+  L("    body: JSON.stringify({ text: nsSQL(sql), params: sanitizedParams }),");
   L("  });");
   L("  if (!res.ok) {");
   L('    const errText = await res.text().catch(() => "");');
@@ -133,6 +135,7 @@ export function generateMintRuntimeProvider(
   L("  }");
   L("  return res.json();");
   L("}");
+
   L("");
   L("// ── Initial State ─────────────────────────────────────────────");
   L("const INITIAL_STATE: MintState = " + JSON.stringify(initialState, null, 2) + ";");
@@ -147,7 +150,7 @@ export function generateMintRuntimeProvider(
   L("  stateRef.current = state;");
   L("");
   L('  const setState = useCallback((key: string, value: any) => {');
-  L("    _setState((prev) => {");
+  L("    _setState((prev: MintState) => {");
   L('      if (key.includes(".")) {');
   L('        const parts = key.split(".");');
   L("        const newState = { ...prev };");
@@ -198,7 +201,7 @@ export function generateMintRuntimeProvider(
   L("");
   L("    // Merge new state defaults (only add missing keys)");
   L("    if (schema.globalState) {");
-  L("      _setState((prev) => {");
+  L("      _setState((prev: MintState) => {");
   L("        const next = { ...prev };");
   L("        for (const s of schema.globalState) {");
   L("          if (!(s.name in next)) {");
@@ -226,7 +229,7 @@ export function generateMintRuntimeProvider(
   L("    if (schema.globalActions) {");
   L("      const built: MintActions = {};");
   L("      for (const a of schema.globalActions) {");
-  L("        built[a.name] = buildDynamicAction(a, stateRef, setState, dbQuery, built);");
+  L("        built[a.name] = buildDynamicAction(a, stateRef, setState, dbQuery, built, typeof router !== \"undefined\" ? router : undefined);");
   L("      }");
   L("      setDynamicActions(built);");
   L("    }");
@@ -331,7 +334,8 @@ export function generateMintRuntimeProvider(
   L("  stateRef: React.MutableRefObject<any>,");
   L("  setState: (key: string, value: any) => void,");
   L("  dbQueryFn: (sql: string, params?: any[]) => Promise<any>,");
-  L("  allActions: Record<string, (...args: any[]) => void>");
+  L("  allActions: Record<string, (...args: any[]) => void>,");
+  L("  router?: any");
   L("): (...args: any[]) => void {");
   L("  const { name, type, config = {} } = actionDef;");
   L("");
@@ -340,8 +344,12 @@ export function generateMintRuntimeProvider(
   L("      setState(config.path || \"\", config.value);");
   L('      if (/current.?screen/i.test(String(config.path)) && config.value !== undefined) {');
   L('        const route = \"/\" + String(config.value).toLowerCase().replace(/\\s+/g, \"-\");');
-  L("        window.location.href = route;");
-  L("      }");
+  L('        if (router) {');
+  L('          try { router.push(route); } catch (e) {}');
+  L('        } else if (typeof window !== \"undefined\" && window.location) {');
+  L('          window.location.href = route;');
+  L('        }');
+  L('      }');
   L('      if (config.also) handleAlso(config.also, allActions, setState, stateRef, dbQueryFn);');
   L("    };");
   L("  }");
@@ -354,11 +362,11 @@ export function generateMintRuntimeProvider(
   L("          const resolvedUrl = resolveUrl(config.url, stateRef.current, args);");
   L("          const reqBody = config.body ? resolveParamsObject(config.body, stateRef.current, args) : undefined;");
   L("          const res = await fetch(resolvedUrl, {");
-  L("            method: (config.method || 'GET').toUpperCase(),");
-  L("            headers: { 'Content-Type': 'application/json' },");
+  L('            method: (config.method || "GET").toUpperCase(),');
+  L('            headers: { "Content-Type": "application/json" },');
   L("            body: reqBody ? JSON.stringify(reqBody) : undefined,");
   L("          });");
-  L("          if (!res.ok) throw new Error('API call failed: ' + res.statusText);");
+  L('          if (!res.ok) throw new Error("API call failed: " + res.statusText);');
   L("          result = await res.json();");
   L("        } else {");
   L("          const params = (config.params || config.body?.params || []).map((p: any) =>");
@@ -378,7 +386,14 @@ export function generateMintRuntimeProvider(
   L("  }");
   L("");
   L('  if (type === "navigate") {');
-  L("    return () => { window.location.href = config.target || \"/\"; };");
+  L("    return () => {");
+  L("      const target = config.target || \"/\";");
+  L("      if (router) {");
+  L("        try { router.push(target); } catch (e) {}");
+  L("      } else if (typeof window !== \"undefined\" && window.location) {");
+  L("        window.location.href = target;");
+  L("      }");
+  L("    };");
   L("  }");
   L("");
   L('  if (type === "custom") {');
@@ -577,12 +592,21 @@ function buildActionFunction(
 
     case "setState": {
       const path = cfg.path ?? "";
-      const value = cfg.value !== undefined ? JSON.stringify(cfg.value) : "undefined";
+      let valueStr = "undefined";
+      if (cfg.value !== undefined) {
+        if (typeof cfg.value === "string" && cfg.value.startsWith("$")) {
+          valueStr = 'resolveActionParam("' + cfg.value + '", stateRef.current, args)';
+        } else if (cfg.value && typeof cfg.value === "object") {
+          valueStr = 'resolveParamsObject(' + JSON.stringify(cfg.value) + ', stateRef.current, args)';
+        } else {
+          valueStr = JSON.stringify(cfg.value);
+        }
+      }
       const also = cfg.also ?? "";
 
       const lines: string[] = [];
       lines.push("  const " + name + " = useCallback((...args: any[]) => {");
-      lines.push('    setState("' + path + '", ' + value + ");");
+      lines.push('    setState("' + path + '", ' + valueStr + ");");
       if (/current.?screen/i.test(String(path)) && cfg.value !== undefined) {
         const route = screenNameToRoute(String(cfg.value));
         if (isNative) {

@@ -8,7 +8,8 @@
     "dev:all": "concurrently \"npm run dev\" \"npm run ws\"",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "reddit:drafts": "node scripts/reddit-post-drafts.js"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",

@@ -119,12 +119,17 @@ export async function POST(
     // All tables are prefixed with the project ID to provide isolation
     const namespacedSQL = namespaceQuery(sql, projectId);
 
+    const sanitizedParams = (queryParams || []).map((p: any) =>
+      (p === "" || p === undefined) ? null : p
+    );
+
     // SD-03: Enforce 5s timeout on user-provided queries
     // Use a transaction so both statements share the same connection
     const result = await db.transaction(async (client) => {
       await client.query("SET statement_timeout = '5000'");
-      return client.query(namespacedSQL, queryParams || []);
+      return client.query(namespacedSQL, sanitizedParams);
     });
+
 
     return NextResponse.json({
       rows: result.rows || [],

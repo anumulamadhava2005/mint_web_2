@@ -61,6 +61,8 @@ const publicApiRoutes = [
   "/api/projects/community",
   "/api/login",
   "/api/signup",
+  "/api/otp/send",
+  "/api/otp/verify",
   "/api/crm",
   "/api/check-elements",
 ];

@@ -95,13 +95,22 @@ function generateCreateTable(table: TableSchema): string {
 
   // Timestamps
   if (table.timestamps !== false) {
-    lines.push(`  "created_at" TIMESTAMPTZ NOT NULL DEFAULT now()`);
-    lines.push(`  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT now()`);
+    const hasCreatedAt = table.fields.some((f) => f.name === "created_at");
+    const hasUpdatedAt = table.fields.some((f) => f.name === "updated_at");
+    if (!hasCreatedAt) {
+      lines.push(`  "created_at" TIMESTAMPTZ NOT NULL DEFAULT now()`);
+    }
+    if (!hasUpdatedAt) {
+      lines.push(`  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT now()`);
+    }
   }
 
   // Soft delete
   if (table.softDelete) {
-    lines.push(`  "deleted_at" TIMESTAMPTZ DEFAULT NULL`);
+    const hasDeletedAt = table.fields.some((f) => f.name === "deleted_at");
+    if (!hasDeletedAt) {
+      lines.push(`  "deleted_at" TIMESTAMPTZ DEFAULT NULL`);
+    }
   }
 
   // Foreign keys from relations

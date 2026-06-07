@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createUser } from "../../../lib/auth";
 import { cacheGet, cacheSet } from "../../../lib/cache";
 import db from "../../../lib/db";
+import { sendWaitlistConfirmationEmail } from "../../../lib/email";
 
 const MAX_ATTEMPTS = 5;
 const WINDOW_SECONDS = 15 * 60; // 15 minutes
@@ -46,7 +47,7 @@ export async function POST(req: Request) {
 
     // Save onboarding fields if provided
     const updates: string[] = [];
-    const values: any[] = [];
+    const values: unknown[] = [];
     let idx = 1;
 
     if (fullname && typeof fullname === "string") {
@@ -70,10 +71,17 @@ export async function POST(req: Request) {
       );
     }
 
+    sendWaitlistConfirmationEmail({
+      email: user.email,
+      fullname: typeof fullname === "string" ? fullname : null,
+    }).catch((emailError) => {
+      console.error("[signup] Failed to send waitlist confirmation email:", emailError);
+    });
+
     return NextResponse.json({ ok: true, user }, { status: 201 });
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Do not leak whether email exists — return generic error for all failures
-    if (err?.message === "User exists") {
+    if (err instanceof Error && err.message === "User exists") {
       return NextResponse.json({ error: "Signup failed" }, { status: 400 });
     }
     return NextResponse.json({ error: "Signup failed" }, { status: 500 });

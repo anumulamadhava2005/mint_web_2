@@ -152,12 +152,12 @@ export default function  ProjectsContent({ search = "" }: Props) {
 
                   {/* Card Content */}
                   <div className="p-5">
-                    {/* <div className="flex items-start justify-between gap-3 mb-2">
+                    <div className="flex items-start justify-between gap-3 mb-2">
                       <h3 className="truncate text-base font-semibold text-[#f6f4f0] group-hover:text-emerald-400 transition-colors">{p.name}</h3>
-                      <span className="shrink-0 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-emerald-400">
+                      {/* <span className="shrink-0 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-emerald-400">
                         open
-                      </span>
-                    </div> */}
+                      </span>*/}
+                    </div> 
 
                     {p.description ? (
                       <p className="line-clamp-2 text-xs leading-relaxed text-[#a8a6a2] mb-4 h-8">{p.description}</p>
