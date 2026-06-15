@@ -89,6 +89,51 @@ export {
   type Migration,
 } from "./database";
 
+export {
+  // Auth guard
+  AuthGuard,
+  isRoleAllowed,
+  filterNavByRole,
+  type AuthCheckResult,
+  type AuthGuardConfig,
+} from "./auth-guard";
+
+// ── Component Engines ────────────────────────────────────────
+
+export {
+  // Data Table
+  DataTableEngine,
+  formatCellValue,
+  type DataTableConfig,
+  type DataTableColumn,
+  type DataTableState,
+  type DataTableResult,
+  // Timeline
+  TimelineEngine,
+  generateTimelineBundle,
+  type TimelineConfig,
+  type TimelineItem,
+  type TimelineResult,
+  // Pipeline Editor
+  PipelineEditor,
+  type PipelineStep,
+  type PipelineConfig,
+  type PipelineValidation,
+  // Component configs
+  type FileUploadConfig,
+  type StatusChipConfig,
+  type TabsConfig,
+  type AvatarConfig,
+  type BadgeConfig,
+  type DatePickerConfig,
+  type SearchInputConfig,
+  type DrawerConfig,
+  type AccordionConfig,
+  // Defaults
+  DEFAULT_STATUS_COLORS,
+  DEFAULT_STATUS_LABELS,
+} from "./components";
+
 // ── Schema Types ─────────────────────────────────────────────
 
 export type {
@@ -142,6 +187,7 @@ import { ActionRegistry } from "./actions";
 import { BindingEngine } from "./bindings";
 import { validateAppSchema } from "./validator";
 import { WorkflowEngine, WorkflowTriggerManager } from "./workflow";
+import { AuthGuard } from "./auth-guard";
 
 export interface MintRuntime {
   state: StateEngine;
@@ -149,6 +195,7 @@ export interface MintRuntime {
   bindings: BindingEngine;
   workflows: WorkflowEngine;
   triggers: WorkflowTriggerManager;
+  auth: AuthGuard;
   destroy: () => void;
 }
 
@@ -226,12 +273,20 @@ export function createRuntime(schema: AppSchema, options?: {
     });
   }
 
+  // Initialize auth guard
+  const auth = new AuthGuard(state, {
+    userStatePath: schema.auth?.userStatePath || "user",
+    roleField: schema.auth?.roleField || "role",
+    loginRoute: schema.navigation?.routes?.find(r => r.path === "/login")?.path || "/login",
+  });
+
   return {
     state,
     actions,
     bindings,
     workflows,
     triggers,
+    auth,
     destroy: () => {
       state.destroy();
       actions.destroy();

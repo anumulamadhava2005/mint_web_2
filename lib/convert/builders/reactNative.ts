@@ -320,7 +320,7 @@ ${interactions
 // ═══════════════════════════════════════════════════════════════
 
 import { useRef, useEffect, useSyncExternalStore, useCallback } from "react";
-import { createMintRuntime, MintState, MintActions, MintBindings, evalExpr, isExpression } from "../lib/mint-runtime";
+import { createMintRuntime, MintState, MintActions, MintBindings, evalExpr, isExpression } from "../lib/mint-runtime.js";
 
 let _globalRuntime: ReturnType<typeof createMintRuntime> | null = null;
 
@@ -735,7 +735,8 @@ function renderRNNode(
     const stateKey = b.inputBind.replace(/^\$/, '');
     const accessor = safeStateExpr(stateKey, loopVarName);
     const containerStyle = wrapWithPressable ? innerStyle : style;
-    const inputJSX = `${spaces}<TextInput style={${containerStyle}} value={${accessor} ?? ""} onChangeText={(text) => setState("${stateKey}", text)} placeholder="${node.name.replace(/_/g, ' ')}" placeholderTextColor="#888" />`;
+    const inputStyle = toRNTextInputStyle(containerStyle);
+    const inputJSX = `${spaces}<TextInput style={${inputStyle}} value={${accessor} ?? ""} onChangeText={(text) => setState("${stateKey}", text)} placeholder="${node.name.replace(/_/g, ' ')}" placeholderTextColor="#888" />`;
 
     let result = inputJSX;
     if (wrapWithPressable && pressableAction) {
@@ -1002,6 +1003,12 @@ function generateRNInnerStyle(node: DrawableNode): string {
   }
 
   return `{ ${parts.join(", ")} }`;
+}
+
+function toRNTextInputStyle(styleLiteral: string): string {
+  const body = styleLiteral.trim().replace(/^\{\s*/, "").replace(/\s*\}$/, "");
+  const extras = `color: "#FFFFFF", paddingHorizontal: 12`;
+  return `{ ${body ? `${body}, ${extras}` : extras} }`;
 }
 
 function generateRNTextStyle(text: TextStyle): string {
@@ -1782,7 +1789,7 @@ function NodeRenderer({
       listData = [];
     }
 
-    const style = buildNodeStyle(node);
+        const style = buildTextInputStyle(node);
     const gap = 12;
 
     const scrollableChildren = node.children || [];
@@ -1995,7 +2002,7 @@ function handleInteraction(ix: Interaction, router: any) {
       if (ix.targetId) {
         const route = ROUTE_MAP[ix.targetId];
         if (route) {
-          router.push(route);
+          router.push(route as any);
         }
       }
       break;

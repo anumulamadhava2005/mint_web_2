@@ -49,6 +49,7 @@ export interface ComponentSchema {
   repeatFor?: { items: string; as: string; key?: string }; // list rendering
   style: StyleSchema;
   events?: Record<string, ActionRef[]>; // "onPress" → actions
+  requiredRoles?: string[]; // role-based visibility: ["admin", "manager"]
 }
 
 export type ComponentType =
@@ -57,6 +58,12 @@ export type ComponentType =
   | "form" | "select" | "checkbox" | "radio" | "switch"
   | "icon" | "divider" | "spacer" | "loading"
   | "video" | "map" | "webview" | "custom"
+  // Data components
+  | "dataTable" | "timeline" | "fileUpload"
+  // UX components
+  | "tabs" | "drawer" | "accordion"
+  | "avatar" | "badge" | "statusChip"
+  | "datePicker" | "searchInput"
   // State components
   | "stateStore" | "setState" | "updateState" | "resetState" | "removeState"
   // Logic components
@@ -301,6 +308,8 @@ export interface AuthConfigSchema {
   refreshEnabled: boolean;
   rbac?: { roles: string[]; defaultRole: string };
   mfa?: { enabled: boolean; methods: ("totp" | "sms" | "email")[] };
+  userStatePath?: string;  // state path for user object, default "user"
+  roleField?: string;      // field name for role in user object, default "role"
 }
 
 export interface AuthProvider {

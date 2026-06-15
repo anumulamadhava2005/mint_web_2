@@ -111,9 +111,18 @@ export class BindingEngine {
   }
 
   /**
-   * Check if a component should be rendered (conditional rendering).
+   * Check if a component should be rendered (conditional rendering + role check).
    */
   isVisible(component: ComponentSchema, extraContext?: Record<string, unknown>): boolean {
+    // Check role-based visibility first
+    if (component.requiredRoles?.length) {
+      const context = { ...this.state.getEvalContext(), ...extraContext };
+      const userRole = (context.user as Record<string, unknown>)?.role as string | undefined;
+      if (!userRole || !component.requiredRoles.includes(userRole)) {
+        return false;
+      }
+    }
+
     if (!component.conditionalRender) return true;
 
     const bindings = this.compiledBindings.get(component.id);

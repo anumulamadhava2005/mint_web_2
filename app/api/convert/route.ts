@@ -4,10 +4,6 @@
 // ═══════════════════════════════════════════════════════════════
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import fs from "fs/promises";
-import path from "path";
-import os from "os";
-import crypto from "crypto";
 import { deflateRawSync } from "zlib";
 
 import {
@@ -144,7 +140,7 @@ export async function POST(request: Request) {
       );
     }
 
-    let finalFiles = result.files;
+    const finalFiles = result.files;
 
     if (conversionRequest.target === "react-native") {
       const appName = conversionRequest.fileName || "Design Export";
