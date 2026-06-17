@@ -821,5 +821,150 @@ export class MintDB {
     return this.query(sql, params).then(r => Number(r.rows?.[0]?.count || 0));
   }
 }
+
+// ── Auth Guard ────────────────────────────────────────────────
+
+export class MintAuthGuard {
+  constructor(state, config = {}) {
+    this._state = state;
+    this._userPath = config.userStatePath || "user";
+    this._roleField = config.roleField || "role";
+    this._loginRoute = config.loginRoute || "/login";
+  }
+
+  _getUser() {
+    const u = this._state.get(this._userPath);
+    if (!u || typeof u !== "object" || !u.id) return null;
+    return u;
+  }
+
+  getUserRole() { const u = this._getUser(); return u ? String(u[this._roleField] || "") : null; }
+  isAuthenticated() { return this._getUser() !== null; }
+
+  hasRole(roles) {
+    if (!roles || !roles.length) return true;
+    const r = this.getUserRole();
+    return r ? roles.indexOf(r) >= 0 : false;
+  }
+
+  checkRouteAccess(route) {
+    if (route.auth && !this.isAuthenticated()) return { allowed: false, reason: "unauthenticated", redirectTo: this._loginRoute };
+    if (route.roles && route.roles.length) {
+      if (!this.isAuthenticated()) return { allowed: false, reason: "unauthenticated", redirectTo: this._loginRoute };
+      if (!this.hasRole(route.roles)) return { allowed: false, reason: "insufficient_role", redirectTo: this._loginRoute };
+    }
+    return { allowed: true };
+  }
+
+  checkComponentAccess(comp) {
+    if (!comp.requiredRoles || !comp.requiredRoles.length) return true;
+    return this.hasRole(comp.requiredRoles);
+  }
+}
+
+// ── Data Table Engine ─────────────────────────────────────────
+
+export class MintDataTable {
+  constructor(config) {
+    this._config = config;
+    this._page = 1;
+    this._pageSize = (config.pagination && config.pagination.pageSize) || 10;
+    this._sortKey = (config.defaultSort && config.defaultSort.key) || null;
+    this._sortDir = (config.defaultSort && config.defaultSort.direction) || "asc";
+    this._search = "";
+    this._filters = {};
+  }
+
+  process(data) {
+    var rows = data.slice();
+    // Search
+    if (this._search && this._config.searchable) {
+      var q = this._search.toLowerCase();
+      var fields = this._config.searchFields || this._config.columns.map(function(c) { return c.key; });
+      rows = rows.filter(function(row) {
+        return fields.some(function(f) { var v = row[f]; return v != null && String(v).toLowerCase().indexOf(q) >= 0; });
+      });
+    }
+    // Filters
+    for (var fk in this._filters) {
+      var fv = this._filters[fk];
+      if (fv == null || fv === "" || fv === "all") continue;
+      rows = rows.filter(function(row) { return String(row[fk]) === String(fv); });
+    }
+    var totalRows = rows.length;
+    // Sort
+    if (this._sortKey) {
+      var key = this._sortKey, dir = this._sortDir === "asc" ? 1 : -1;
+      var col = this._config.columns.find(function(c) { return c.key === key; });
+      rows.sort(function(a, b) {
+        var av = a[key], bv = b[key];
+        if (av == null && bv == null) return 0;
+        if (av == null) return dir;
+        if (bv == null) return -dir;
+        if (col && (col.type === "number" || col.type === "currency")) return (Number(av) - Number(bv)) * dir;
+        return String(av).localeCompare(String(bv)) * dir;
+      });
+    }
+    // Paginate
+    var ps = this._pageSize, tp = Math.max(1, Math.ceil(totalRows / ps));
+    var pg = Math.min(this._page, tp), start = (pg - 1) * ps;
+    var paged = this._config.pagination && this._config.pagination.enabled ? rows.slice(start, start + ps) : rows;
+    return { rows: paged, totalRows: totalRows, totalPages: tp, currentPage: pg, pageSize: ps, hasNext: pg < tp, hasPrev: pg > 1 };
+  }
+
+  setPage(p) { this._page = Math.max(1, p); }
+  setPageSize(s) { this._pageSize = s; this._page = 1; }
+  setSort(k) { if (this._sortKey === k) { this._sortDir = this._sortDir === "asc" ? "desc" : "asc"; } else { this._sortKey = k; this._sortDir = "asc"; } this._page = 1; }
+  setSearch(q) { this._search = q; this._page = 1; }
+  setFilter(col, val) { this._filters[col] = val; this._page = 1; }
+  clearFilters() { this._filters = {}; this._search = ""; this._page = 1; }
+}
+
+// ── Timeline Engine ───────────────────────────────────────────
+
+export function processTimeline(data, config, activeStepValue) {
+  var activeIndex = -1;
+  var items = data.map(function(row, index) {
+    var title = String(row[config.titleKey] || "");
+    var subtitle = config.subtitleKey ? String(row[config.subtitleKey] || "") : undefined;
+    var timestamp = config.timestampKey ? row[config.timestampKey] : undefined;
+    var comment = config.commentKey ? String(row[config.commentKey] || "") : undefined;
+    var status = "pending";
+    if (activeStepValue != null && config.activeMatchKey) {
+      if (row[config.activeMatchKey] === activeStepValue) { status = "active"; activeIndex = index; }
+      else if (activeIndex >= 0) { status = "pending"; }
+      else { status = "completed"; }
+    } else if (config.statusKey) {
+      var s = String(row[config.statusKey] || "").toLowerCase();
+      if (["completed","done","approved","reimbursed","success"].indexOf(s) >= 0) status = "completed";
+      else if (["active","running","current","pending_manager","pending_finance"].indexOf(s) >= 0) status = "active";
+      else if (["failed","error","rejected"].indexOf(s) >= 0) status = "failed";
+      else if (["skipped","cancelled"].indexOf(s) >= 0) status = "skipped";
+    } else { status = "completed"; }
+    return { key: String(row.id || row.step_key || index), title: title, subtitle: subtitle, timestamp: timestamp, comment: comment && comment !== "undefined" ? comment : undefined, status: status, raw: row };
+  });
+  return { items: items, activeIndex: activeIndex, totalSteps: items.length, completedSteps: items.filter(function(i) { return i.status === "completed"; }).length };
+}
+
+// ── Status Chip ───────────────────────────────────────────────
+
+export var STATUS_COLORS = {
+  draft: "#6B7280", pending_manager: "#F59E0B", pending_department_head: "#F59E0B",
+  pending_finance: "#3B82F6", approved: "#10B981", rejected: "#EF4444",
+  changes_requested: "#F97316", reimbursed: "#8B5CF6", active: "#3B82F6",
+  completed: "#10B981", success: "#10B981", warning: "#F59E0B",
+  error: "#EF4444", info: "#3B82F6", default: "#6B7280"
+};
+
+export var STATUS_LABELS = {
+  draft: "Draft", pending_manager: "Pending Manager", pending_department_head: "Pending Dept Head",
+  pending_finance: "Pending Finance", approved: "Approved", rejected: "Rejected",
+  changes_requested: "Changes Requested", reimbursed: "Reimbursed",
+  active: "Active", completed: "Completed"
+};
+
+export function getStatusColor(status) { return STATUS_COLORS[status] || STATUS_COLORS.default; }
+export function getStatusLabel(status) { return STATUS_LABELS[status] || status.replace(/_/g, " ").replace(/\\b\\w/g, function(l) { return l.toUpperCase(); }); }
 `;
 }
+

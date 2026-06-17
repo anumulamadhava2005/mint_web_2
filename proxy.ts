@@ -65,6 +65,7 @@ const publicApiRoutes = [
   "/api/otp/verify",
   "/api/crm",
   "/api/check-elements",
+  "/api/upload",
 ];
 
 function isPublicApiRoute(pathname: string): boolean {
