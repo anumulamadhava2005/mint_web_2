@@ -12,7 +12,7 @@ import {
   ChevronRight, Hash, Workflow, MousePointer, Type, Image as ImageIcon,
   Square, Circle, Minus, Copy, Scissors, RotateCcw, RotateCw,
   ZoomIn, Lock, Unlock, Eye, EyeOff, AlignLeft, Columns,
-  Palette
+  Palette, Receipt, ShieldCheck
 } from "lucide-react";
 
 const sections = [
@@ -24,7 +24,13 @@ const sections = [
   { id: "sync", label: "Live Sync", icon: Repeat },
   { id: "collab", label: "Collaboration", icon: Users },
   { id: "actions", label: "Actions Config", icon: TerminalSquare },
+  { id: "examples", label: "Examples", icon: Lightbulb },
   { id: "shortcuts", label: "Shortcuts", icon: Zap },
+];
+
+// Examples shown in the left sidebar of the Examples tab.
+const EXAMPLES = [
+  { id: "expense-tracker", label: "Expense Tracker", icon: Receipt },
 ];
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
@@ -123,8 +129,264 @@ function FrameworkGrid() {
     </div>
   );
 }
+// ── Small helpers used by the example guides ──────────────────
+function Tag({ children, color = "blue" }: { children: React.ReactNode; color?: string }) {
+  const map: Record<string, string> = {
+    blue: "bg-blue-500/10 text-blue-300 border-blue-500/20",
+    emerald: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
+    amber: "bg-amber-500/10 text-amber-300 border-amber-500/20",
+    violet: "bg-violet-500/10 text-violet-300 border-violet-500/20",
+    rose: "bg-rose-500/10 text-rose-300 border-rose-500/20",
+  };
+  return <span className={`inline-block text-[11px] font-medium px-2 py-0.5 rounded-md border ${map[color] || map.blue}`}>{children}</span>;
+}
+
+function TableCard({ name, badge, fields }: { name: string; badge?: string; fields: { col: string; type: string }[] }) {
+  return (
+    <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-5">
+      <div className="flex items-center gap-2 mb-3">
+        <Database size={15} className="text-emerald-400" />
+        <h4 className="text-[14px] font-semibold text-[#f6f4f0]">{name}</h4>
+        {badge && <Tag color="emerald">{badge}</Tag>}
+      </div>
+      {fields.map((f) => <PropRow key={f.col} label={f.col} value={f.type} />)}
+    </div>
+  );
+}
+
+function ScreenCard({ n, title, route, roles, children }: { n: number; title: string; route: string; roles?: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-5 mb-3">
+      <div className="flex items-center gap-2.5 mb-2 flex-wrap">
+        <span className="w-[24px] h-[24px] rounded-full bg-blue-500/10 text-blue-400 text-[12px] font-semibold flex items-center justify-center">{n}</span>
+        <h4 className="text-[15px] font-semibold text-[#f6f4f0]">{title}</h4>
+        <code className="font-mono text-[12px] text-emerald-400/90">{route}</code>
+        {roles && <Tag color="amber">{roles}</Tag>}
+      </div>
+      <div className="text-[13px] text-[#a8a6a2] leading-relaxed pl-[34px]">{children}</div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Example guide: Expense Approval Tracker
+// ═══════════════════════════════════════════════════════════════
+function ExpenseTrackerGuide() {
+  return (
+    <div>
+      <div className="flex items-center gap-3 mb-2">
+        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center">
+          <Receipt size={22} className="text-white" />
+        </div>
+        <div>
+          <SectionHeading>Expense Approval Tracker</SectionHeading>
+        </div>
+      </div>
+      <SectionSub>
+        A complete, role-based expense app with a <strong>live, database-driven approval pipeline</strong>. Employees submit expenses; managers and finance approve or reject them in turn; admins edit the approval steps at runtime. This guide rebuilds the exact app end-to-end — database, state, actions, screens, navigation, and export.
+      </SectionSub>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
+        <Card icon={ShieldCheck} title="Real auth">Email/password sign-in &amp; sign-up against the platform. Roles come from the authenticated DB user — never a form picker.</Card>
+        <Card icon={Workflow} title="Live approval flow">The next approval step is read fresh from <code className="text-[#e0deda]">workflow_steps</code> on every action. Add a step in the DB and the flow changes with no re-export.</Card>
+        <Card icon={Users} title="Role-gated UI">Employee, Manager, Finance, Admin. Buttons, screens and routes show/hide by role.</Card>
+      </div>
+
+      <Tip title="The whole app is data.">Everything below lives in one runtime schema (screens, state, actions, DB, navigation). You author it in the editor&apos;s <strong>Backend → UI / DB / State / Actions / Flows</strong> tabs; the exporter turns it into a React Native (Expo) app.</Tip>
+
+      <SubHeading>Build order</SubHeading>
+      <StepList steps={[
+        { title: "Model the database", desc: "Create 4 tables and Deploy the migrations." },
+        { title: "Declare global state", desc: "Two stores: user (who is logged in) and local (per-screen scratch space)." },
+        { title: "Write the actions", desc: "Auth, data reads (fetch), and writes (mutate) — including the live next-step logic and post-action navigation." },
+        { title: "Lay out the screens", desc: "9 screens of components, each bound to state and wired to actions." },
+        { title: "Configure navigation", desc: "Stack navigator with auth + role guards." },
+        { title: "Export & run", desc: "Generate the Expo app and run it." },
+      ]} />
+
+      {/* ── 1. DATABASE ── */}
+      <SubHeading>1 · Database</SubHeading>
+      <p className="text-[14px] text-[#a8a6a2] mb-3">Open <strong>Backend → DB</strong>. Add each table, then its fields. Every table gets an auto <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[12px]">id (uuid)</code> primary key and <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[12px]">created_at / updated_at</code> when <strong>Timestamps</strong> is on. Click <strong>Deploy</strong> to run the migrations.</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+        <TableCard name="users" fields={[
+          { col: "email", type: "text · unique · required" },
+          { col: "name", type: "text" },
+          { col: "role", type: "text · default 'employee'" },
+          { col: "password_hash", type: "text" },
+        ]} />
+        <TableCard name="expenses" fields={[
+          { col: "title", type: "text · required" },
+          { col: "description", type: "text" },
+          { col: "amount", type: "float · required" },
+          { col: "category", type: "text" },
+          { col: "receipt_url", type: "text" },
+          { col: "status", type: "text · default 'draft'" },
+          { col: "current_step_key", type: "text" },
+          { col: "employee_id", type: "uuid" },
+        ]} />
+        <TableCard name="workflow_steps" badge="drives the flow" fields={[
+          { col: "step_key", type: "text · unique · required" },
+          { col: "label", type: "text · required" },
+          { col: "approver_role", type: "text · required" },
+          { col: "position", type: "integer · required" },
+          { col: "active", type: "boolean · default true" },
+        ]} />
+        <TableCard name="approval_events" fields={[
+          { col: "expense_id", type: "uuid · required" },
+          { col: "step_key", type: "text · required" },
+          { col: "label", type: "text" },
+          { col: "status", type: "text · required" },
+          { col: "actor_id", type: "uuid" },
+          { col: "comment", type: "text" },
+        ]} />
+      </div>
+      <p className="text-[13px] text-[#a8a6a2] mb-3">Seed <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[12px]">workflow_steps</code> with the approval ladder (order = <code className="text-[#e0deda]">position</code>):</p>
+      <CodeBlock>{`position | step_key     | label                | approver_role
+   1     | manager      | Manager Approval     | manager
+   2     | finance      | Finance Approval     | finance`}</CodeBlock>
+      <Tip title="Why a table, not code?">Because the approval order is rows, an admin can insert &quot;department_head&quot; between Manager and Finance at runtime and every expense instantly follows the new ladder — no rebuild.</Tip>
+
+      {/* ── 2. STATE ── */}
+      <SubHeading>2 · State management</SubHeading>
+      <p className="text-[14px] text-[#a8a6a2] mb-3">Open <strong>Backend → State</strong>. Two stores are enough — the app keeps server data in <code className="text-[#e0deda]">local</code> and identity in <code className="text-[#e0deda]">user</code>.</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+        <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-2"><h4 className="text-[14px] font-semibold text-[#f6f4f0]">user</h4><Tag color="violet">global · object</Tag></div>
+          <p className="text-[13px] text-[#a8a6a2] leading-relaxed">The signed-in account, written by <code className="text-[#e0deda]">signIn/signUp</code>. <code className="text-[#e0deda]">$user.role</code> drives every role-gated control.</p>
+        </div>
+        <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-2"><h4 className="text-[14px] font-semibold text-[#f6f4f0]">local</h4><Tag color="blue">local · object</Tag></div>
+          <p className="text-[13px] text-[#a8a6a2] leading-relaxed">Scratch space: <code className="text-[#e0deda]">$local.form</code> (inputs), <code className="text-[#e0deda]">$local.expenses</code>, <code className="text-[#e0deda]">$local.steps</code>, <code className="text-[#e0deda]">$local.activeExpense</code>, <code className="text-[#e0deda]">$local.authError</code>.</p>
+        </div>
+      </div>
+      <p className="text-[13px] text-[#a8a6a2] mb-2">Bind any component property to state with a <code className="bg-white/[0.06] px-1.5 py-0.5 rounded text-[12px]">$</code> expression. Inputs use <code className="text-[#e0deda]">inputBind</code> (two-way), text uses <code className="text-[#e0deda]">textBind</code>, lists/tables use <code className="text-[#e0deda]">dataSource</code>:</p>
+      <CodeBlock>{`$local.form.email        → two-way bind a text input
+$user.role               → show the signed-in role
+$local.expenses          → feed a Data Table / Chart
+$local.activeExpense.title  → detail field
+repeatFor: $local.steps as step   → render a list row per record`}</CodeBlock>
+
+      {/* ── 3. ACTIONS ── */}
+      <SubHeading>3 · Actions</SubHeading>
+      <p className="text-[14px] text-[#a8a6a2] mb-3">Open <strong>Backend → Actions</strong>. Each action is <code className="text-[#e0deda]">{`{ name, type, config }`}</code>. Reads are <Tag color="blue">fetch</Tag>, writes are <Tag color="amber">mutate</Tag>, auth uses the dedicated <Tag color="emerald">signIn/signUp/signOut</Tag> types. A button runs an action via <code className="text-[#e0deda]">onClick: &quot;actionName&quot;</code>.</p>
+
+      <h4 className="text-[15px] font-medium text-[#f6f4f0] mt-6 mb-2">Authentication <Tag color="emerald">real</Tag></h4>
+      <p className="text-[14px] text-[#a8a6a2] mb-3">These POST to the platform auth endpoints with server-side password verification, store the returned user, and navigate on success. On failure they set <code className="text-[#e0deda]">$local.authError</code> and stay put.</p>
+      <CodeBlock>{`signIn  → { type: "signIn",  config: {
+  url: "/api/login",
+  email: "$local.form.email", password: "$local.form.password",
+  userPath: "user", tokenPath: "session.token",
+  navigateTo: "dashboard"        // only on success
+}}
+signUp  → { type: "signUp",  config: { url: "/api/signup", name: "$local.form.name", …, navigateTo: "dashboard" }}
+signOut → { type: "signOut", config: { url: "/api/logout", userPath: "user", navigateTo: "login" }}`}</CodeBlock>
+      <Warning title="No fake roles.">The role is whatever the database says for that account — the sign-in form never lets the user pick it. That&apos;s the difference between a demo and real auth.</Warning>
+
+      <h4 className="text-[15px] font-medium text-[#f6f4f0] mt-6 mb-2">Reads <Tag color="blue">fetch</Tag></h4>
+      <p className="text-[14px] text-[#a8a6a2] mb-3">A <code className="text-[#e0deda]">fetch</code> with <code className="text-[#e0deda]">sql</code> runs against the project DB and writes rows to <code className="text-[#e0deda]">storePath</code>. Call them from a screen&apos;s <code className="text-[#e0deda]">onMount</code>.</p>
+      <CodeBlock>{`loadExpenses → SELECT * FROM expenses ORDER BY created_at DESC      → $local.expenses
+loadSteps    → SELECT * FROM workflow_steps ORDER BY position ASC  → $local.steps
+loadEvents   → SELECT * FROM approval_events WHERE expense_id = $1  → $local.events
+                params: ["$local.activeExpense.id"]
+loadDashboard→ SELECT COUNT(*) FILTER (WHERE status LIKE 'pending_%') AS pending_count, … → $local.*`}</CodeBlock>
+
+      <h4 className="text-[15px] font-medium text-[#f6f4f0] mt-6 mb-2">Writes <Tag color="amber">mutate</Tag> + the live step</h4>
+      <p className="text-[14px] text-[#a8a6a2] mb-3">The heart of the app. Instead of hard-coding &quot;manager → finance&quot;, the SQL <em>reads the next step from the table</em> with a sub-select, so the ladder is whatever the rows say.</p>
+      <CodeBlock>{`-- reusable sub-selects
+FIRST_STEP      = (SELECT step_key FROM workflow_steps
+                   WHERE active ORDER BY position ASC LIMIT 1)
+NEXT_STEP_AFTER = (SELECT step_key FROM workflow_steps
+                   WHERE active AND position >
+                     (SELECT position FROM workflow_steps WHERE step_key = $2)
+                   ORDER BY position ASC LIMIT 1)
+
+submitExpense (mutate):
+  INSERT INTO expenses (title, …, status, current_step_key, employee_id)
+  VALUES ($1, …, COALESCE('pending_' || FIRST_STEP, 'approved'), FIRST_STEP, $6)
+  params: ["$local.form.title", …, "$user.id"]
+  also: "SET $local.form = []"      navigateTo: "my-expenses"
+
+approveExpense (mutate):     // on the details screen
+  UPDATE expenses
+  SET status = COALESCE('pending_' || NEXT_STEP_AFTER, 'approved'),
+      current_step_key = NEXT_STEP_AFTER
+  WHERE id = $1
+  params: ["$local.activeExpense.id", "$local.activeExpense.current_step_key"]
+  also: "… INSERT INTO approval_events …; CALL loadEvents"   navigateTo: "dashboard"`}</CodeBlock>
+      <p className="text-[13px] text-[#a8a6a2] mb-3">The list-row variants <code className="text-[#e0deda]">approveExpenseFromList</code>, <code className="text-[#e0deda]">rejectExpenseFromList</code> and <code className="text-[#e0deda]">markReimbursed</code> do the same write for <code className="text-[#e0deda]">$expense</code> (the loop item) and then re-query the list — they intentionally <strong>stay on the same screen</strong> (no <code className="text-[#e0deda]">navigateTo</code>). <code className="text-[#e0deda]">addWorkflowStep</code> inserts a row into <code className="text-[#e0deda]">workflow_steps</code> and refreshes.</p>
+
+      <h4 className="text-[15px] font-medium text-[#f6f4f0] mt-6 mb-2">Navigation from actions</h4>
+      <p className="text-[14px] text-[#a8a6a2] mb-3">Add <code className="text-[#e0deda]">navigateTo: &quot;screenId&quot;</code> to any action&apos;s config to route after it succeeds. Buttons that only navigate use <code className="text-[#e0deda]">onClick: &quot;navigate:screenId&quot;</code>.</p>
+      <div className="space-y-2 mb-4">
+        <PropRow label="signIn / signUp" value="navigateTo: dashboard" />
+        <PropRow label="signOut" value="navigateTo: login" />
+        <PropRow label="submitExpense" value="navigateTo: my-expenses" />
+        <PropRow label="approveExpense" value="navigateTo: dashboard" />
+        <PropRow label='button onClick="navigate:workflow-builder"' value="push that screen" />
+      </div>
+
+      {/* ── 4. SCREENS ── */}
+      <SubHeading>4 · Screens &amp; UI</SubHeading>
+      <p className="text-[14px] text-[#a8a6a2] mb-4">Open <strong>Backend → UI</strong>, pick a screen (synced from your canvas frames), and drop components from the palette. Each component has bindings; each screen has <code className="text-[#e0deda]">onMount</code> actions and optional <code className="text-[#e0deda]">requiredRoles</code>.</p>
+
+      <ScreenCard n={1} title="Login" route="/login">
+        Inputs bound to <code className="text-[#e0deda]">$local.form.name/email/password</code>; <strong>Sign In</strong> → <code className="text-[#e0deda]">signIn</code>, <strong>Create Account</strong> → <code className="text-[#e0deda]">signUp</code>; a text bound to <code className="text-[#e0deda]">$local.authError</code> (visible only when set).
+      </ScreenCard>
+      <ScreenCard n={2} title="Dashboard" route="/dashboard">
+        Three stat cards bound to <code className="text-[#e0deda]">$local.pendingCount / approvedCount / totalAmount</code>; role-gated nav buttons (Submit, Review Approvals, Finance, Workflow Builder); <strong>Sign Out</strong> → <code className="text-[#e0deda]">signOut</code>. <code className="text-[#e0deda]">onMount: loadDashboard</code>.
+      </ScreenCard>
+      <ScreenCard n={3} title="Submit Expense" route="/submit-expense" roles="employee · admin">
+        Form inputs → <code className="text-[#e0deda]">$local.form.*</code>, a category <strong>Dropdown</strong>, a <strong>File Upload</strong> for the receipt; <strong>Submit</strong> → <code className="text-[#e0deda]">submitExpense</code> (routes to My Expenses).
+      </ScreenCard>
+      <ScreenCard n={4} title="My Expenses" route="/my-expenses">
+        A <strong>Data Table</strong> bound to <code className="text-[#e0deda]">$local.expenses</code> with Title / Amount (currency) / Category / Status (chip) / Date columns. <code className="text-[#e0deda]">onMount: loadExpenses</code>.
+      </ScreenCard>
+      <ScreenCard n={5} title="Expense Details" route="/expense-details">
+        Card of fields from <code className="text-[#e0deda]">$local.activeExpense.*</code>, a <strong>Status Chip</strong>, and a <strong>Timeline</strong> of <code className="text-[#e0deda]">$local.events</code> highlighting the current step. <code className="text-[#e0deda]">onMount: loadEvents</code>.
+      </ScreenCard>
+      <ScreenCard n={6} title="Manager Approvals" route="/manager-approvals" roles="manager · admin">
+        A <strong>List</strong> <code className="text-[#e0deda]">repeatFor $local.pendingExpenses as expense</code>; each row shows title/amount/status with <strong>Approve</strong>/<strong>Reject</strong> → the <code className="text-[#e0deda]">…FromList</code> actions. <code className="text-[#e0deda]">onMount: loadPendingManager</code>.
+      </ScreenCard>
+      <ScreenCard n={7} title="Finance Approvals" route="/finance-approvals" roles="finance · admin">
+        Same pattern, plus <strong>Mark Reimbursed</strong> → <code className="text-[#e0deda]">markReimbursed</code>. <code className="text-[#e0deda]">onMount: loadPendingFinance</code>.
+      </ScreenCard>
+      <ScreenCard n={8} title="Workflow Builder" route="/workflow-builder" roles="admin">
+        Lists the live <code className="text-[#e0deda]">$local.steps</code>; a form (step_key / label / approver_role) → <code className="text-[#e0deda]">addWorkflowStep</code> inserts a new approval stage at runtime.
+      </ScreenCard>
+      <ScreenCard n={9} title="Component Gallery" route="/component-gallery">
+        A test bench rendering every component — Stat Card, Chart, Camera→Image, Data Table, Timeline, Dropdown, Date, Checkbox, Switch, File Upload, Status Chip — bound to real data via <code className="text-[#e0deda]">loadExpenses</code> + <code className="text-[#e0deda]">loadSteps</code>.
+      </ScreenCard>
+
+      {/* ── 5. NAVIGATION ── */}
+      <SubHeading>5 · Navigation</SubHeading>
+      <p className="text-[14px] text-[#a8a6a2] mb-3">A <strong>stack</strong> navigator with the login screen as the entry. Routes can require auth and a role; unauthorized roles never see the screen (and its nav buttons are hidden via <code className="text-[#e0deda]">requiredRoles</code>).</p>
+      <CodeBlock>{`navigation: { type: "stack", initialRoute: "/login", routes: [
+  { path: "/login",            screenId: "login" },
+  { path: "/dashboard",        screenId: "dashboard",        auth: true },
+  { path: "/submit-expense",   screenId: "submit-expense",   auth: true, roles: ["employee","admin"] },
+  { path: "/my-expenses",      screenId: "my-expenses",      auth: true },
+  { path: "/expense-details",  screenId: "expense-details",  auth: true },
+  { path: "/manager-approvals",screenId: "manager-approvals",auth: true, roles: ["manager","admin"] },
+  { path: "/finance-approvals",screenId: "finance-approvals",auth: true, roles: ["finance","admin"] },
+  { path: "/workflow-builder", screenId: "workflow-builder", auth: true, roles: ["admin"] },
+  { path: "/component-gallery",screenId: "component-gallery",auth: true },
+]}`}</CodeBlock>
+
+      {/* ── 6. EXPORT ── */}
+      <SubHeading>6 · Export &amp; run</SubHeading>
+      <p className="text-[14px] text-[#a8a6a2] mb-3">Because the screens have authored components, exporting <strong>React Native</strong> uses the schema exporter — a full Expo Router app whose screens, actions and live DB bridge come straight from the runtime schema.</p>
+      <CodeBlock>{`unzip expense-approval-react-native.zip -d expense-app
+cd expense-app
+npm install
+npx expo start   # scan the QR code with Expo Go`}</CodeBlock>
+      <Tip title="One source of truth.">Change a workflow step in the DB, or edit a screen in the editor and re-commit — the running app reflects it. The design, the logic and the data are the same schema all the way down.</Tip>
+    </div>
+  );
+}
+
 export default function DocsPage() {
   const [activeTab, setActiveTab] = useState("overview");
+  const [activeExample, setActiveExample] = useState("expense-tracker");
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-[#f6f4f0] antialiased selection:bg-white/20">
@@ -601,6 +863,40 @@ mint-connector.mjs, mint-the-god.mjs, mint-sync.config.json`}</CodeBlock>
               <div className="space-y-2">
                 <PropRow label="Max editors per file" value="50 simultaneous" />
                 <PropRow label="Cursor update rate" value="60 fps (16ms throttle)" />
+              </div>
+            </div>
+          )}
+
+          {/* ─── EXAMPLES ─── */}
+          {activeTab === "examples" && (
+            <div className="flex gap-6 items-start">
+              {/* Examples sidebar */}
+              <aside className="w-[180px] shrink-0 sticky top-[100px]">
+                <p className="text-[11px] uppercase tracking-widest text-[#666360] mb-2 px-2">Examples</p>
+                <div className="flex flex-col gap-1">
+                  {EXAMPLES.map((ex) => (
+                    <button
+                      key={ex.id}
+                      onClick={() => setActiveExample(ex.id)}
+                      className={`flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] text-left transition-all border ${
+                        activeExample === ex.id
+                          ? "bg-white/[0.06] text-[#f6f4f0] border-white/[0.1] font-medium"
+                          : "text-[#a8a6a2] hover:bg-white/[0.03] hover:text-[#f6f4f0] border-transparent"
+                      }`}
+                    >
+                      <ex.icon size={15} className={activeExample === ex.id ? "text-emerald-400" : ""} />
+                      <span>{ex.label}</span>
+                    </button>
+                  ))}
+                  <div className="mt-3 px-3 py-2 rounded-lg border border-dashed border-white/[0.08] text-[11px] text-[#666360] leading-relaxed">
+                    More examples coming soon.
+                  </div>
+                </div>
+              </aside>
+
+              {/* Example content */}
+              <div className="flex-1 min-w-0">
+                {activeExample === "expense-tracker" && <ExpenseTrackerGuide />}
               </div>
             </div>
           )}
