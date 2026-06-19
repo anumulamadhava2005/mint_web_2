@@ -97,6 +97,21 @@ export async function convertDesign(
         apiOrigin: options.apiOrigin,
       }) as GeneratedFile[];
 
+      // Live Sync: emit the connector / the_god / config (same as the design
+      // path) and patch package.json so `npm start` auto-runs the connector.
+      if (options.enableLiveSync) {
+        files.push(...generateLiveSyncFiles(options));
+        const pkgIdx = files.findIndex(
+          (f) => f.path === "package.json" || f.path.endsWith("/package.json")
+        );
+        if (pkgIdx !== -1 && files[pkgIdx].type === "text") {
+          files[pkgIdx] = {
+            ...files[pkgIdx],
+            content: patchPackageJsonForSync(files[pkgIdx].content as string),
+          };
+        }
+      }
+
       return { success: true, files, usedSchemaRuntime: true };
     }
 

@@ -116,8 +116,29 @@ export async function POST(request: Request) {
       finalAuthToken = getProjectSyncToken(projectId);
     }
 
+    // Bake the origin the export request actually came from, so the exported
+    // app's live-sync connector + runtime point at the editor you used —
+    // exporting from localhost targets localhost, from prod targets prod.
+    // Honours reverse-proxy headers; falls back to NEXT_PUBLIC_APP_URL.
+    function getRequestOrigin(): string {
+      const xfHost = request.headers.get("x-forwarded-host");
+      if (xfHost) {
+        const proto = request.headers.get("x-forwarded-proto") || "https";
+        return `${proto}://${xfHost}`;
+      }
+      const origin = request.headers.get("origin");
+      if (origin) return origin;
+      try { return new URL(request.url).origin; } catch { return ""; }
+    }
+    const apiOrigin =
+      conversionRequest.options?.apiOrigin ||
+      getRequestOrigin() ||
+      process.env.NEXT_PUBLIC_APP_URL ||
+      undefined;
+
     const finalOptions = {
       ...conversionRequest.options,
+      apiOrigin,
       authToken: finalAuthToken,
     };
 
@@ -176,6 +197,7 @@ export async function POST(request: Request) {
           "expo-font": "~14.0.11",
           "expo-haptics": "~15.0.8",
           "expo-image": "~3.0.11",
+          "expo-image-picker": "~17.0.8",
           "expo-linking": "~8.0.11",
           "expo-router": "~6.0.23",
           "expo-splash-screen": "~31.0.13",

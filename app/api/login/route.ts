@@ -2,11 +2,16 @@ import { NextResponse } from "next/server";
 import { findUserByEmail, verifyPassword, issueTokenForUser, dummyVerifyPassword } from "../../../lib/auth";
 import db from "../../../lib/db";
 import { cacheGet, cacheSet } from "../../../lib/cache";
+import { getClientIp } from "../../../lib/clientIp";
 
 const MAX_ATTEMPTS = 5;
 const WINDOW_SECONDS = 15 * 60; // 15 minutes
 
-async function checkRateLimit(ip: string): Promise<{ allowed: boolean }> {
+// Returns allowed=false only for an attributable IP that exceeded the limit.
+// A null IP (direct/local request with no proxy header) is never limited —
+// otherwise all such clients share one bucket and block each other.
+async function checkRateLimit(ip: string | null): Promise<{ allowed: boolean }> {
+  if (!ip) return { allowed: true };
   const key = `ratelimit:login:${ip}`;
   const current = await cacheGet<number>(key);
   if (current !== null && current >= MAX_ATTEMPTS) {
@@ -18,8 +23,7 @@ async function checkRateLimit(ip: string): Promise<{ allowed: boolean }> {
 
 export async function POST(req: Request) {
   try {
-    const forwardedFor = req.headers.get("x-forwarded-for");
-    const ip = forwardedFor?.split(",").map(s => s.trim()).filter(Boolean).at(-1) || "unknown";
+    const ip = getClientIp(req);
 
     const { allowed } = await checkRateLimit(ip);
     if (!allowed) {

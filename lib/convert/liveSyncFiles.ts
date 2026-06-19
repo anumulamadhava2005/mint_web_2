@@ -21,8 +21,9 @@ export function generateLiveSyncFiles(
   const fileKey = options.fileKey || "unknown";
   const projectId = options.projectId || fileKey;
   const userId = options.userId || "unknown";
-  // The editor runs on NEXT_PUBLIC_APP_URL or defaults to the production URL
-  const editorOrigin = process.env.NEXT_PUBLIC_APP_URL || "https://mintweb.mintit.pro";
+  // The editor origin: prefer the origin the export came from (passed as
+  // options.apiOrigin by the convert route), then NEXT_PUBLIC_APP_URL, then prod.
+  const editorOrigin = options.apiOrigin || process.env.NEXT_PUBLIC_APP_URL || "https://mintweb.mintit.pro";
   const authToken = options.authToken || "";
 
   // ─── 1. Default Home Page ──────────────────────────────────
@@ -303,7 +304,10 @@ try {
   // Use defaults
 }
 
-// Support passing authorization token via environment variable
+// Support overriding the target editor + token via environment variables,
+// so you can repoint a build without re-exporting:
+//   MINT_EDITOR_ORIGIN=http://localhost:3000 MINT_AUTH_TOKEN=... npm run sync
+config.editorOrigin = process.env.MINT_EDITOR_ORIGIN || config.editorOrigin;
 config.authToken = process.env.MINT_AUTH_TOKEN || config.authToken;
 
 // ── Import the_god ────────────────────────────────────────────
@@ -382,10 +386,21 @@ async function poll() {
 
   } catch (err) {
     consecutiveErrors++;
+    const is404 = String(err.message).includes("404");
     if (consecutiveErrors <= 3) {
       log(\`Connection error: \${err.message} (retry \${consecutiveErrors}/3)\`, c.yellow);
+      if (is404 && consecutiveErrors === 1) {
+        // 404 here is the server's anti-enumeration guard: it was reached but
+        // rejected this projectId + authToken. Almost never "server down".
+        log(\`  ↳ Reached \${config.editorOrigin} but it rejected the request (404).\`, c.dim);
+        log(\`  ↳ Check mint-sync.config.json: projectId="\${config.projectId}", and that\`, c.dim);
+        log(\`     authToken matches this server (re-export, or override with\`, c.dim);
+        log(\`     MINT_EDITOR_ORIGIN / MINT_AUTH_TOKEN env vars).\`, c.dim);
+      }
     } else if (consecutiveErrors === 4) {
-      log(\`Cannot reach editor at \${config.editorOrigin}. Is it running? Retrying silently...\`, c.red);
+      log(is404
+        ? \`Still rejected by \${config.editorOrigin} (404). Fix projectId/authToken/editorOrigin. Retrying silently...\`
+        : \`Cannot reach editor at \${config.editorOrigin}. Is it running? Retrying silently...\`, c.red);
     }
   } finally {
     isPolling = false;
@@ -482,6 +497,37 @@ function isProtected(filePath) {
   return PROTECTED_FILES.has(basename) || filePath.startsWith("node_modules/");
 }
 
+// Merge incoming package.json dependencies into the existing one additively.
+// Only dependency/devDependency keys that are NOT already present locally are
+// added — so a new native module (e.g. expo-image-picker introduced by adding
+// a Camera component) flows through Live Sync, while your scripts, your pinned
+// versions, and the injected sync scripts stay untouched. Returns the list of
+// newly added package names.
+function mergePackageJson(incomingContent, localPath) {
+  if (!fs.existsSync(localPath)) {
+    fs.writeFileSync(localPath, incomingContent, "utf-8");
+    return { created: true, added: [] };
+  }
+  let incoming, local;
+  try { incoming = JSON.parse(incomingContent); } catch (e) { return { changed: false, added: [] }; }
+  try { local = JSON.parse(fs.readFileSync(localPath, "utf-8")); } catch (e) { return { changed: false, added: [] }; }
+  const added = [];
+  for (const section of ["dependencies", "devDependencies"]) {
+    const inc = incoming[section];
+    if (!inc || typeof inc !== "object") continue;
+    if (!local[section] || typeof local[section] !== "object") local[section] = {};
+    for (const name of Object.keys(inc)) {
+      if (!(name in local[section])) {
+        local[section][name] = inc[name];
+        added.push(name);
+      }
+    }
+  }
+  if (added.length === 0) return { changed: false, added: [] };
+  fs.writeFileSync(localPath, JSON.stringify(local, null, 2), "utf-8");
+  return { changed: true, added };
+}
+
 /**
  * Process the project data JSON received from the Mint server.
  * Writes each file to disk, creating directories as needed.
@@ -502,6 +548,24 @@ export function processProjectData(data, rootDir) {
     // Validate file entry
     if (!file.path || file.content === undefined || file.content === null) {
       skipped++;
+      continue;
+    }
+
+    // package.json: merge new dependencies additively instead of skipping it,
+    // so newly-required packages reach the project without clobbering scripts.
+    if (path.basename(file.path) === "package.json" && !file.path.startsWith("node_modules/")) {
+      const localPath = path.join(rootDir, file.path);
+      const r = mergePackageJson(file.content, localPath);
+      if (r.created) {
+        console.log("         " + c.green + "+" + c.reset + " package.json created");
+        written++;
+      } else if (r.changed) {
+        console.log("         " + c.green + "+" + c.reset + " package.json — added deps: " + r.added.join(", "));
+        console.log("         " + c.yellow + "Run: npm install (or npx expo install) to fetch new packages." + c.reset);
+        written++;
+      } else {
+        skipped++;
+      }
       continue;
     }
 
