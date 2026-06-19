@@ -58,6 +58,9 @@ const publicApiRoutes = [
   "/api/design-data",
   "/api/sync",
   "/api/project-data",
+  // Managed DB bridge for exported apps — the route itself authorizes via the
+  // project sync token / public flag / session owner (see app/api/db/[projectId]).
+  "/api/db",
   "/api/projects/community",
   "/api/login",
   "/api/signup",

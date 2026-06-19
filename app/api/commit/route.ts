@@ -7,7 +7,7 @@
 
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { findUserByToken } from "@/lib/auth";
+import { findUserByToken, getProjectSyncToken } from "@/lib/auth";
 import db from "@/lib/db";
 import { runConvertWorker, getQueueDepth } from "@/lib/convertWorker";
 import type { TargetFramework } from "@/lib/convert/types";
@@ -101,6 +101,9 @@ export async function POST(req: Request) {
         includeComments: true,
         enableLiveSync: false,
         projectId,
+        // Bake the project sync token so the committed app can authenticate
+        // its managed-DB calls (POST /api/db/[projectId]).
+        authToken: getProjectSyncToken(projectId),
         runtimeSchema: effectiveRuntimeSchema || undefined,
       },
     });

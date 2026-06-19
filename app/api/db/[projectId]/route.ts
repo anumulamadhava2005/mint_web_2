@@ -14,7 +14,7 @@
 
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { findUserByToken } from "../../../../lib/auth";
+import { findUserByToken, getProjectSyncToken } from "../../../../lib/auth";
 import db from "../../../../lib/db";
 
 // Allowed SQL operations — strictly DML only
@@ -61,7 +61,9 @@ export async function POST(
       return NextResponse.json({ error: "Missing projectId" }, { status: 400 });
     }
 
-    // Auth check
+    // Auth check. Exported apps authenticate with the project-specific sync
+    // token (HMAC of the projectId — same trust model as /api/design-data and
+    // /api/project-data); the editor authenticates with a session cookie/token.
     const cookieStore = await cookies();
     const tokenFromCookie = cookieStore.get("token")?.value;
     const authHeader = req.headers.get("authorization");
@@ -70,22 +72,38 @@ export async function POST(
       : null;
     const token = tokenFromCookie || tokenFromHeader;
 
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    let isAuthorized = false;
+
+    // A. Project sync token — the credential baked into exported apps.
+    if (token && token === getProjectSyncToken(projectId)) {
+      isAuthorized = true;
     }
 
-    const user = await findUserByToken(token);
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // B. Public projects are readable/writable by the managed DB bridge.
+    if (!isAuthorized) {
+      const publicCheck = await db.query(
+        "SELECT id FROM projects WHERE id = $1 AND is_public = true",
+        [projectId]
+      );
+      if (publicCheck.rows?.length) isAuthorized = true;
     }
 
-    // Verify project ownership or public access
-    const projCheck = await db.query(
-      "SELECT id FROM projects WHERE id = $1 AND (owner_id = $2 OR is_public = true)",
-      [projectId, user.id]
-    );
-    if (!projCheck.rows?.length) {
-      return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    // C. Otherwise require a valid session token that owns the project.
+    if (!isAuthorized && token) {
+      const user = await findUserByToken(token);
+      if (user) {
+        const ownerCheck = await db.query(
+          "SELECT id FROM projects WHERE id = $1 AND owner_id = $2",
+          [projectId, user.id]
+        );
+        if (ownerCheck.rows?.length) isAuthorized = true;
+      }
+    }
+
+    if (!isAuthorized) {
+      // 404 (not 401) to avoid project-id enumeration, matching the
+      // other SDUI endpoints.
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
     const body = await req.json();

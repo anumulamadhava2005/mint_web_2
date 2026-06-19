@@ -26,6 +26,8 @@ export interface RNSchemaOptions {
   projectId: string;
   apiOrigin?: string;
   appName?: string;
+  /** Project sync token — baked in so the app can call the managed DB/auth API. */
+  authToken?: string;
 }
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -212,7 +214,10 @@ import { router } from "expo-router";
 
 export const PROJECT_ID = ${JSON.stringify(opts.projectId)};
 export const API_ORIGIN = ${JSON.stringify(origin)};
+// Project sync token — authenticates managed-DB calls from this app.
+export const AUTH_TOKEN = ${JSON.stringify(opts.authToken || "")};
 const DB_BRIDGE = API_ORIGIN + "/api/db/" + PROJECT_ID;
+const AUTH_HEADERS = AUTH_TOKEN ? { Authorization: "Bearer " + AUTH_TOKEN } : {};
 
 // ── Navigation ───────────────────────────────────────────────
 // ROUTES: screenId -> expo-router path (home screen is "/").
@@ -231,7 +236,7 @@ function routeFor(target) {
 export async function dbQuery(sql, params = []) {
   const res = await fetch(DB_BRIDGE, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...AUTH_HEADERS },
     body: JSON.stringify({ sql, params }),
   });
   if (!res.ok) throw new Error("DB query failed: " + res.status);

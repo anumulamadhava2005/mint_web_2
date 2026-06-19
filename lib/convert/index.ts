@@ -95,6 +95,7 @@ export async function convertDesign(
         projectId: options.projectId || appSchema.id,
         appName: appSchema.name,
         apiOrigin: options.apiOrigin,
+        authToken: options.authToken,
       }) as GeneratedFile[];
 
       // Live Sync: emit the connector / the_god / config (same as the design
