@@ -1451,6 +1451,19 @@ const RightPanel = memo(function RightPanel({
   const startX = useRef(0);
   const startWidth = useRef(0);
 
+  // Top-level canvas frames → screens for the Backend "Screens" tab
+  const file = useWorkspaceStore((s) => s.file);
+  const currentPageId = useWorkspaceStore((s) => s.currentPageId);
+  const frames = useMemo(() => {
+    if (!file || !currentPageId) return [] as { id: string; name: string }[];
+    const objects = file.pagesIndex[currentPageId]?.objects || {};
+    const root = objects[ROOT_FRAME_ID];
+    return (root?.shapes || [])
+      .map((id: string) => objects[id])
+      .filter((s: any) => s && s.type === "frame" && !s.hidden)
+      .map((f: any) => ({ id: f.id, name: f.name }));
+  }, [file, currentPageId]);
+
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     isDragging.current = true;
     startX.current = e.clientX;
@@ -1515,7 +1528,7 @@ const RightPanel = memo(function RightPanel({
         {optionsMode === "design" && <DesignPanel />}
         {optionsMode === "inspect" && <InspectPanel />}
         {optionsMode === "prototype" && <PrototypePanel />}
-        {optionsMode === "backend" && <BackendPanel projectId={projectId} />}
+        {optionsMode === "backend" && <BackendPanel projectId={projectId} frames={frames} />}
       </div>
 
       {/* Hide webkit scrollbar via inline style tag */}

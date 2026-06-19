@@ -497,12 +497,21 @@ export interface ConversionOptions {
   userId?: string;
   /** Auth token for private project API access (injected server-side) */
   authToken?: string;
-  // Runtime schema (state, actions, database, workflows)
+  /** Origin of the Mint platform API (for the exported app's live DB/auth bridge) */
+  apiOrigin?: string;
+  // Runtime schema (state, actions, database, workflows, screens)
   runtimeSchema?: {
+    id?: string;
+    name?: string;
     globalState?: Array<{ id: string; name: string; type: string; defaultValue: any }>;
     globalActions?: Array<{ id: string; name: string; type: string; config: any }>;
     database?: { provider: string; connectionUrl?: string; tables?: any[] };
     workflows?: any[];
+    /** Authored screen UI trees — drives the schema-based React Native exporter */
+    screens?: any[];
+    navigation?: any;
+    theme?: any;
+    auth?: any;
   };
 }
 
@@ -512,6 +521,9 @@ export interface ConversionResult {
   warnings?: string[];
   errors?: string[];
   manifest?: ImageManifest;
+  /** True when the schema-driven React Native exporter produced the files
+   *  (it emits its own package.json/app.json, so callers must not re-inject). */
+  usedSchemaRuntime?: boolean;
 }
 
 export interface GeneratedFile {

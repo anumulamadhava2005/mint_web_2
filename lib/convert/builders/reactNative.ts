@@ -722,7 +722,16 @@ function renderRNNode(
   if (b?.onClick) {
     wrapWithPressable = true;
     const clickArg = loopVarName ? loopVarName : "";
-    pressableAction = `actions.${b.onClick}(${clickArg})`;
+    if (b.onClick.startsWith("navigate:")) {
+      // navigate:slug → router.push("/slug")
+      const slug = b.onClick.replace("navigate:", "");
+      pressableAction = `router.push("/${slug}" as any)`;
+    } else if (/[^a-zA-Z0-9_$]/.test(b.onClick)) {
+      // Action name has special chars → use bracket notation
+      pressableAction = `actions["${b.onClick}"](${clickArg})`;
+    } else {
+      pressableAction = `actions.${b.onClick}(${clickArg})`;
+    }
   }
 
   const wrapVisible = b?.visibleBind;

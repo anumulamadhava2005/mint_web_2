@@ -26,6 +26,9 @@ import type {
   DatabaseConfigSchema,
   TableSchema,
   FieldSchema,
+  RelationSchema,
+  IndexSchema,
+  PolicySchema,
   ComponentSchema,
   NavigationSchema,
   ThemeSchema,
@@ -64,6 +67,12 @@ export interface RuntimeSchemaState {
   updateScreen: (id: string, updates: Partial<ScreenSchema>) => void;
   removeScreen: (id: string) => void;
 
+  // Component (screen UI) management
+  addComponent: (screenId: string, component: ComponentSchema) => void;
+  updateComponent: (screenId: string, componentId: string, updates: Partial<ComponentSchema>) => void;
+  removeComponent: (screenId: string, componentId: string) => void;
+  moveComponent: (screenId: string, componentId: string, dir: -1 | 1) => void;
+
   // Workflow management
   addWorkflow: (workflow: WorkflowSchema) => void;
   updateWorkflow: (id: string, updates: Partial<WorkflowSchema>) => void;
@@ -80,7 +89,15 @@ export interface RuntimeSchemaState {
   updateTable: (id: string, updates: Partial<TableSchema>) => void;
   removeTable: (id: string) => void;
   addField: (tableId: string, field: FieldSchema) => void;
+  updateField: (tableId: string, fieldName: string, updates: Partial<FieldSchema>) => void;
   removeField: (tableId: string, fieldName: string) => void;
+  // Relations / indexes / policies (RLS)
+  addRelation: (tableId: string, relation: RelationSchema) => void;
+  removeRelation: (tableId: string, index: number) => void;
+  addIndex: (tableId: string, index: IndexSchema) => void;
+  removeIndex: (tableId: string, indexName: string) => void;
+  addPolicy: (tableId: string, policy: PolicySchema) => void;
+  removePolicy: (tableId: string, policyName: string) => void;
 
   // Theme
   updateTheme: (theme: Partial<ThemeSchema>) => void;
@@ -260,6 +277,52 @@ export const useRuntimeStore = create<RuntimeSchemaState>()(
       });
     },
 
+    // ── Components (screen UI tree) ──────────────────────────
+    addComponent: (screenId, component) => {
+      set((s) => {
+        const screen = s.schema.screens.find((sc: any) => sc.id === screenId);
+        if (screen) {
+          if (!(screen as any).components) (screen as any).components = [];
+          (screen as any).components.push(component);
+          s.dirty = true;
+        }
+      });
+    },
+
+    updateComponent: (screenId, componentId, updates) => {
+      set((s) => {
+        const screen = s.schema.screens.find((sc: any) => sc.id === screenId);
+        if (!screen) return;
+        const idx = ((screen as any).components || []).findIndex((c: any) => c.id === componentId);
+        if (idx >= 0) {
+          Object.assign((screen as any).components[idx], updates);
+          s.dirty = true;
+        }
+      });
+    },
+
+    removeComponent: (screenId, componentId) => {
+      set((s) => {
+        const screen = s.schema.screens.find((sc: any) => sc.id === screenId);
+        if (!screen) return;
+        (screen as any).components = ((screen as any).components || []).filter((c: any) => c.id !== componentId);
+        s.dirty = true;
+      });
+    },
+
+    moveComponent: (screenId, componentId, dir) => {
+      set((s) => {
+        const screen = s.schema.screens.find((sc: any) => sc.id === screenId);
+        if (!screen) return;
+        const comps = (screen as any).components || [];
+        const idx = comps.findIndex((c: any) => c.id === componentId);
+        const next = idx + dir;
+        if (idx < 0 || next < 0 || next >= comps.length) return;
+        [comps[idx], comps[next]] = [comps[next], comps[idx]];
+        s.dirty = true;
+      });
+    },
+
     // ── Workflows ────────────────────────────────────────────
     addWorkflow: (workflow) => {
       set((s) => {
@@ -378,12 +441,97 @@ export const useRuntimeStore = create<RuntimeSchemaState>()(
       });
     },
 
+    updateField: (tableId, fieldName, updates) => {
+      set((s) => {
+        if (!s.schema.database) return;
+        const table = (s.schema.database as any).tables.find((t: any) => t.id === tableId);
+        if (!table) return;
+        const field = table.fields.find((f: any) => f.name === fieldName);
+        if (field) {
+          Object.assign(field, updates);
+          s.dirty = true;
+        }
+      });
+    },
+
     removeField: (tableId, fieldName) => {
       set((s) => {
         if (!s.schema.database) return;
         const table = (s.schema.database as any).tables.find((t: any) => t.id === tableId);
         if (table) {
           table.fields = table.fields.filter((f: any) => f.name !== fieldName);
+          s.dirty = true;
+        }
+      });
+    },
+
+    // ── Relations ────────────────────────────────────────────
+    addRelation: (tableId, relation) => {
+      set((s) => {
+        if (!s.schema.database) return;
+        const table = (s.schema.database as any).tables.find((t: any) => t.id === tableId);
+        if (table) {
+          if (!table.relations) table.relations = [];
+          table.relations.push(relation);
+          s.dirty = true;
+        }
+      });
+    },
+
+    removeRelation: (tableId, index) => {
+      set((s) => {
+        if (!s.schema.database) return;
+        const table = (s.schema.database as any).tables.find((t: any) => t.id === tableId);
+        if (table?.relations) {
+          table.relations.splice(index, 1);
+          s.dirty = true;
+        }
+      });
+    },
+
+    // ── Indexes ──────────────────────────────────────────────
+    addIndex: (tableId, index) => {
+      set((s) => {
+        if (!s.schema.database) return;
+        const table = (s.schema.database as any).tables.find((t: any) => t.id === tableId);
+        if (table) {
+          if (!table.indexes) table.indexes = [];
+          table.indexes.push(index);
+          s.dirty = true;
+        }
+      });
+    },
+
+    removeIndex: (tableId, indexName) => {
+      set((s) => {
+        if (!s.schema.database) return;
+        const table = (s.schema.database as any).tables.find((t: any) => t.id === tableId);
+        if (table?.indexes) {
+          table.indexes = table.indexes.filter((i: any) => i.name !== indexName);
+          s.dirty = true;
+        }
+      });
+    },
+
+    // ── Policies (RLS) ───────────────────────────────────────
+    addPolicy: (tableId, policy) => {
+      set((s) => {
+        if (!s.schema.database) return;
+        const table = (s.schema.database as any).tables.find((t: any) => t.id === tableId);
+        if (table) {
+          if (!table.policies) table.policies = [];
+          table.policies.push(policy);
+          s.dirty = true;
+        }
+      });
+    },
+
+    removePolicy: (tableId, policyName) => {
+      set((s) => {
+        if (!s.schema.database) return;
+        const table = (s.schema.database as any).tables.find((t: any) => t.id === tableId);
+        if (table?.policies) {
+          table.policies = table.policies.filter((p: any) => p.name !== policyName);
           s.dirty = true;
         }
       });

@@ -411,6 +411,51 @@ export class ActionRegistry {
         window.open(String(config.url), String(config.target || "_blank"));
       }
     });
+
+    // ── Auth Actions ──────────────────────────────────
+    const postJson = async (ctx: ActionContext, url: string, body: unknown) => {
+      const init = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+      const res = ctx.api ? await ctx.api.fetch(url, init) : await fetch(url, init);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as { error?: string })?.error || "Request failed");
+      return data as Record<string, unknown>;
+    };
+    const storeSession = (config: Record<string, unknown>, ctx: ActionContext, data: Record<string, unknown>) => {
+      if (data.user !== undefined) ctx.state.set(String(config.userPath || "user"), data.user);
+      if (data.token !== undefined) ctx.state.set(String(config.tokenPath || "session.token"), data.token);
+    };
+
+    this.register("signIn", async (config, ctx) => {
+      const data = await postJson(ctx, String(config.url || "/api/login"), {
+        email: config.email,
+        password: config.password,
+      });
+      storeSession(config, ctx, data);
+      return data;
+    });
+
+    this.register("signUp", async (config, ctx) => {
+      const body = (config.body as Record<string, unknown>) || {
+        email: config.email,
+        password: config.password,
+        name: config.name,
+      };
+      const data = await postJson(ctx, String(config.url || "/api/signup"), body);
+      storeSession(config, ctx, data);
+      return data;
+    });
+
+    this.register("signOut", async (config, ctx) => {
+      const url = String(config.url || "/api/logout");
+      try {
+        if (ctx.api) await ctx.api.fetch(url, { method: "POST" });
+        else await fetch(url, { method: "POST" });
+      } catch {
+        // Clear local session regardless of network outcome.
+      }
+      ctx.state.set(String(config.userPath || "user"), null);
+      ctx.state.set(String(config.tokenPath || "session.token"), null);
+    });
   }
 
   /** Destroy and clean up timers */

@@ -136,6 +136,55 @@ export interface TabsConfig {
   orientation?: "horizontal" | "vertical";
 }
 
+// ── Image ────────────────────────────────────────────────────
+
+export interface ImageConfig {
+  src?: string;               // URL or expression ("$row.photo_url")
+  alt?: string;
+  fit?: "cover" | "contain" | "fill";
+  radius?: number;            // corner radius, px
+  height?: number;            // px; width fills container
+  aspectRatio?: number;       // e.g. 1 for square
+}
+
+// ── Camera ───────────────────────────────────────────────────
+
+export interface CameraConfig {
+  storePath: string;          // state path to store the captured photo URL
+  facing?: "front" | "back";  // default back (food), front (selfie/body)
+  label?: string;             // button label
+  uploadUrl?: string;         // default "/api/upload"
+  quality?: number;           // 0..1, default 0.7
+  previewEnabled?: boolean;   // show captured image preview
+}
+
+// ── Chart ────────────────────────────────────────────────────
+
+export interface ChartConfig {
+  dataSource: string;         // expression resolving to an array of rows
+  type: "line" | "bar" | "area";
+  xKey: string;               // field for the x axis / labels ("date")
+  yKey: string;               // field for the value ("weight")
+  color?: string;             // series color
+  height?: number;            // px, default 180
+  title?: string;
+  showGrid?: boolean;
+  showValues?: boolean;       // print value labels on points/bars
+  maxPoints?: number;         // cap rendered points
+}
+
+// ── Stat / Metric Card ───────────────────────────────────────
+
+export interface StatCardConfig {
+  label: string;              // "Current Weight"
+  value: string;              // expression or static ("$local.weight")
+  unit?: string;              // "kg", "%"
+  delta?: string;             // expression for change indicator ("-1.2")
+  deltaDirection?: "up-good" | "down-good"; // color semantics
+  icon?: string;              // emoji / glyph
+  color?: string;             // accent color
+}
+
 // ── Avatar ───────────────────────────────────────────────────
 
 export interface AvatarConfig {

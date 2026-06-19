@@ -3,6 +3,7 @@ import { writeFile, mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import path from "path";
 import crypto from "crypto";
+import db from "@/lib/db";
 
 // ── Config ───────────────────────────────────────────────────
 
@@ -42,6 +43,24 @@ export async function POST(req: NextRequest) {
         { error: `File type not allowed: ${file.type}` },
         { status: 400 }
       );
+    }
+
+    // Scope uploads to real projects. The endpoint stays public (no session),
+    // but a valid, existing projectId is required so it can't be abused as
+    // anonymous open file storage.
+    if (!projectId) {
+      return NextResponse.json({ error: "projectId is required" }, { status: 400 });
+    }
+    let projectExists = false;
+    try {
+      const res = await db.query("SELECT id FROM projects WHERE id = $1 LIMIT 1", [projectId]);
+      projectExists = !!(res.rows && res.rows.length > 0);
+    } catch {
+      // Malformed id (e.g. not a uuid) or DB error — treat as not found.
+      projectExists = false;
+    }
+    if (!projectExists) {
+      return NextResponse.json({ error: "Unknown project" }, { status: 404 });
     }
 
     // Create upload directory

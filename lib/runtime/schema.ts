@@ -60,6 +60,9 @@ export type ComponentType =
   | "video" | "map" | "webview" | "custom"
   // Data components
   | "dataTable" | "timeline" | "fileUpload"
+  | "chart" | "statCard"
+  // Media components
+  | "camera"
   // UX components
   | "tabs" | "drawer" | "accordion"
   | "avatar" | "badge" | "statusChip"
@@ -224,6 +227,8 @@ export type ActionType =
   // Device
   | "camera" | "notifications" | "location" | "biometrics"
   | "haptics" | "share" | "clipboard" | "openUrl"
+  // Auth
+  | "signIn" | "signUp" | "signOut"
   // Custom
   | "custom" | "workflow";
 

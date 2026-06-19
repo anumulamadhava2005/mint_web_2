@@ -7,11 +7,14 @@
 // ═══════════════════════════════════════════════════════════════
 "use client";
 
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
-import MobileRenderer, { ScreenNavigator } from "@/components/MobileRenderer";
-import type { MobileConfig } from "@/lib/mobileConfig";
+import { ScreenNavigator } from "@/components/MobileRenderer";
+import SchemaRenderer from "@/components/SchemaRenderer";
+import { StateEngine } from "@/lib/runtime/state";
+import type { MobileScreen } from "@/lib/mobileConfig";
+import type { AppSchema } from "@/lib/runtime/schema";
 
 // Device frame presets
 const DEVICES = [
@@ -25,7 +28,7 @@ export default function PreviewPage() {
   const params = useParams();
   const projectId = params?.projectId as string;
 
-  const [config, setConfig] = useState<MobileConfig | null>(null);
+  const [config, setConfig] = useState<AppSchema | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
@@ -35,6 +38,26 @@ export default function PreviewPage() {
   const socketRef = useRef<Socket | null>(null);
 
   const device = DEVICES[deviceIdx];
+
+  const activeScreen = config?.screens.find((s) => s.id === activeScreenId) || config?.screens[0] || null;
+
+  // Seed a StateEngine from global + active-screen local state so bindings resolve.
+  const stateEngine = useMemo(() => {
+    const engine = new StateEngine();
+    if (config?.globalState?.length) engine.initFromSchema(config.globalState);
+    if (activeScreen?.localState?.length) engine.initFromSchema(activeScreen.localState);
+    return engine;
+  }, [config, activeScreen]);
+
+  // ScreenNavigator expects MobileScreen[]; adapt ScreenSchema → minimal shape.
+  const navScreens: MobileScreen[] = (config?.screens || []).map((s) => ({
+    id: s.id,
+    name: s.name,
+    width: device.width,
+    height: device.height,
+    backgroundColor: "#FFFFFF",
+    components: [],
+  }));
 
   // Fetch initial config
   useEffect(() => {
@@ -53,13 +76,15 @@ export default function PreviewPage() {
           throw new Error("Failed to fetch config");
         }
         const data = await res.json();
-        setConfig(data.config);
+        const schema: AppSchema | null = data.runtimeSchema || null;
+        if (!schema) {
+          setConfig(null);
+          setError("No runtime schema in latest commit.");
+          return;
+        }
+        setConfig(schema);
         setVersion(data.version);
-        setActiveScreenId(
-          data.config.flows?.[0]?.startScreenId ||
-            data.config.screens?.[0]?.id ||
-            ""
-        );
+        setActiveScreenId(schema.screens?.[0]?.id || "");
       } catch (e: any) {
         setError(e.message || "Failed to load preview");
       } finally {
@@ -90,22 +115,20 @@ export default function PreviewPage() {
       console.log("📱 Subscribed to project updates");
     });
 
-    socket.on("config-update", (data: { projectId: string; version: number; config: MobileConfig }) => {
+    socket.on("config-update", (data: { projectId: string; version: number; runtimeSchema?: AppSchema; config?: { designData?: { runtimeSchema?: AppSchema } } }) => {
       if (data.projectId === projectId) {
         console.log(`📱 Received config update v${data.version}`);
-        setConfig(data.config);
+        const schema = data.runtimeSchema || data.config?.designData?.runtimeSchema || null;
+        if (!schema) return;
+        setConfig(schema);
         setVersion(data.version);
         setError(null);
 
         // Update active screen if the current one still exists
         setActiveScreenId((prev) => {
-          const exists = data.config.screens.some((s) => s.id === prev);
+          const exists = schema.screens.some((s) => s.id === prev);
           if (exists) return prev;
-          return (
-            data.config.flows?.[0]?.startScreenId ||
-            data.config.screens?.[0]?.id ||
-            ""
-          );
+          return schema.screens?.[0]?.id || "";
         });
       }
     });
@@ -177,7 +200,7 @@ export default function PreviewPage() {
       {config && config.screens.length > 1 && (
         <div className="shrink-0 border-b border-zinc-800 bg-zinc-900/50">
           <ScreenNavigator
-            screens={config.screens}
+            screens={navScreens}
             currentScreenId={activeScreenId}
             onNavigate={setActiveScreenId}
           />
@@ -214,15 +237,16 @@ export default function PreviewPage() {
 
               {/* Screen content */}
               <div
-                className="absolute left-3 top-3 overflow-hidden rounded-[28px]"
+                className="absolute left-3 top-3 overflow-auto rounded-[28px] bg-white"
                 style={{ width: device.width, height: device.height }}
               >
-                <MobileRenderer
-                  config={{ ...config, screens: config.screens }}
-                  initialScreenId={activeScreenId}
-                  deviceWidth={device.width}
-                  deviceHeight={device.height}
-                />
+                {activeScreen ? (
+                  <SchemaRenderer
+                    components={activeScreen.components}
+                    state={stateEngine}
+                    projectId={projectId}
+                  />
+                ) : null}
               </div>
 
               {/* Home indicator */}

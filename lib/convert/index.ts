@@ -36,6 +36,7 @@ import {
 } from "./core/images";
 
 import { getBuilder, getAvailableFrameworks } from "./builders";
+import { buildReactNativeFromSchema } from "./builders/reactNativeSchema";
 
 // ═══════════════════════════════════════════════════════════════
 // Main Conversion Function
@@ -60,6 +61,45 @@ export async function convertDesign(
   const errors: string[] = [];
 
   try {
+    // 0. Schema-driven React Native path.
+    // When exporting React Native and the project has authored screen
+    // components (dataTable / camera / chart / forms / …), generate the app
+    // from the runtime AppSchema (Expo Router + mint-runtime) instead of the
+    // design-shape path. This exporter emits its own package.json/app.json,
+    // so the result is flagged for callers to skip RN scaffolding injection.
+    const rs = options.runtimeSchema as
+      | (NonNullable<ConversionOptions["runtimeSchema"]> & { screens?: any[] })
+      | undefined;
+    const schemaScreens = Array.isArray(rs?.screens) ? rs!.screens! : [];
+    const hasAuthoredComponents = schemaScreens.some(
+      (s) => Array.isArray(s?.components) && s.components.length > 0
+    );
+
+    if (target === "react-native" && hasAuthoredComponents) {
+      const appSchema = {
+        id: rs?.id || options.projectId || "app",
+        name: rs?.name || fileName || "Mint App",
+        version: "1.0.0",
+        schemaVersion: 1,
+        theme: rs?.theme ?? { colors: {}, fonts: {}, spacing: {}, radii: {}, shadows: {} },
+        screens: schemaScreens,
+        globalState: rs?.globalState ?? [],
+        globalActions: rs?.globalActions ?? [],
+        workflows: rs?.workflows ?? [],
+        navigation: rs?.navigation ?? { type: "stack", initialRoute: "/", routes: [] },
+        auth: rs?.auth,
+        database: rs?.database,
+      } as any;
+
+      const files = buildReactNativeFromSchema(appSchema, {
+        projectId: options.projectId || appSchema.id,
+        appName: appSchema.name,
+        apiOrigin: options.apiOrigin,
+      }) as GeneratedFile[];
+
+      return { success: true, files, usedSchemaRuntime: true };
+    }
+
     // 1. Get the appropriate builder
     const builder = getBuilder(target);
     if (!builder) {

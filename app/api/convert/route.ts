@@ -57,11 +57,19 @@ const ConversionRequestSchema = z.object({
       fileKey: z.string().optional(),
       projectId: z.string().optional(),
       userId: z.string().optional(),
+      apiOrigin: z.string().optional(),
       runtimeSchema: z.object({
+        id: z.string().optional(),
+        name: z.string().optional(),
         globalState: z.array(z.any()).optional(),
         globalActions: z.array(z.any()).optional(),
         database: z.any().optional(),
         workflows: z.array(z.any()).optional(),
+        // Authored screen UI trees drive the schema-based React Native exporter
+        screens: z.array(z.any()).optional(),
+        navigation: z.any().optional(),
+        theme: z.any().optional(),
+        auth: z.any().optional(),
       }).optional(),
     })
     .optional(),
@@ -142,7 +150,9 @@ export async function POST(request: Request) {
 
     const finalFiles = result.files;
 
-    if (conversionRequest.target === "react-native") {
+    // The schema-driven RN exporter emits its own package.json/app.json/etc,
+    // so only inject the design-path scaffolding when it was NOT used.
+    if (conversionRequest.target === "react-native" && !result.usedSchemaRuntime) {
       const appName = conversionRequest.fileName || "Design Export";
       const slugName = appName.toLowerCase().replace(/\s+/g, "-");
       
