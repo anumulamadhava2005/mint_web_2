@@ -13,6 +13,13 @@ import type { UUID, PenpotShape } from "@/lib/penpot/types";
 import { ROOT_FRAME_ID } from "@/lib/penpot/types";
 import { DEVICE_PRESETS, type DevicePreset } from "@/lib/devicePresets";
 import ConvertDialog from "./ConvertDialog";
+import {
+  COMPONENT_PALETTE,
+  defaultComponent,
+  componentSummary,
+  ComponentConfigEditor,
+  type CanvasFrame,
+} from "./BackendPanel";
 import BackendPanel from "./BackendPanel";
 import { Settings, Share } from "lucide-react";
 // socket.io-client removed — sync daemon uses HTTP polling now
@@ -1525,7 +1532,7 @@ const RightPanel = memo(function RightPanel({
         className={`flex-1 overflow-y-auto ${readOnly ? "right-panel-readonly" : ""}`}
         style={{ scrollbarWidth: "none", msOverflowStyle: "none" } as React.CSSProperties}
       >
-        {optionsMode === "design" && <DesignPanel />}
+        {optionsMode === "design" && <DesignPanel frames={frames} />}
         {optionsMode === "inspect" && <InspectPanel />}
         {optionsMode === "prototype" && <PrototypePanel />}
         {optionsMode === "backend" && <BackendPanel projectId={projectId} frames={frames} />}
@@ -1609,8 +1616,134 @@ function CollapsibleSection({
   );
 }
 
+// ── Screens & Components Section (shared with Backend UI tab) ─
+function ScreensSection({ frames }: { frames: CanvasFrame[] }) {
+  const screens = useRuntimeStore((s) => s.schema.screens ?? EMPTY_BINDING_ARR);
+  const addScreen = useRuntimeStore((s) => s.addScreen);
+  const removeScreen = useRuntimeStore((s) => s.removeScreen);
+  const syncFromCanvas = useRuntimeStore((s) => s.syncFromCanvas);
+  const addComponent = useRuntimeStore((s) => s.addComponent);
+  const removeComponent = useRuntimeStore((s) => s.removeComponent);
+  const moveComponent = useRuntimeStore((s) => s.moveComponent);
+
+  const [selectedId, setSelectedId] = useState<string>("");
+  const [newScreen, setNewScreen] = useState("");
+  const [showPalette, setShowPalette] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!selectedId && screens.length) setSelectedId((screens[0] as any).id);
+  }, [screens, selectedId]);
+
+  const screen: any = screens.find((s: any) => s.id === selectedId) || screens[0];
+  const components: any[] = screen?.components || [];
+  const unsyncedFrames = frames.filter((f) => !screens.some((s: any) => s.id === f.id));
+
+  const handleAddScreen = () => {
+    if (!newScreen.trim()) return;
+    const slug = newScreen.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+    const id = crypto.randomUUID();
+    addScreen({ id, name: newScreen.trim(), route: `/${slug}`, components: [], localState: [], actions: [] } as any);
+    setSelectedId(id);
+    setNewScreen("");
+  };
+
+  return (
+    <div className="space-y-2 text-xs">
+      {/* Screen selector */}
+      <div className="flex items-center gap-1">
+        <select value={screen?.id || ""} onChange={(e) => setSelectedId(e.target.value)}
+          className="flex-1 rounded bg-zinc-800 px-2 py-1 text-xs text-white outline-none ring-1 ring-zinc-700 focus:ring-indigo-500">
+          {screens.length === 0 && <option value="">No screens</option>}
+          {screens.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        {screen && (
+          <button onClick={() => { removeScreen(screen.id); setSelectedId(""); }}
+            title="Delete screen" className="text-zinc-500 hover:text-red-400">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6" /></svg>
+          </button>
+        )}
+      </div>
+
+      {/* Add screen + sync */}
+      <div className="flex items-center gap-1">
+        <input value={newScreen} onChange={(e) => setNewScreen(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleAddScreen()}
+          placeholder="New screen name…" className="flex-1 rounded bg-zinc-900 px-1.5 py-0.5 text-xs text-white outline-none ring-1 ring-zinc-700 focus:ring-indigo-500" />
+        <button onClick={handleAddScreen} className="rounded bg-indigo-600 p-1 text-white hover:bg-indigo-500">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+        </button>
+      </div>
+      {unsyncedFrames.length > 0 && (
+        <button onClick={() => { syncFromCanvas(frames); if (!selectedId && frames[0]) setSelectedId(frames[0].id); }}
+          className="w-full rounded border border-dashed border-indigo-700/60 bg-indigo-900/20 py-1 text-[10px] text-indigo-300 hover:bg-indigo-900/40">
+          ⟳ Sync {unsyncedFrames.length} canvas frame{unsyncedFrames.length > 1 ? "s" : ""} → screens
+        </button>
+      )}
+
+      {/* Component list */}
+      {screen && (
+        <>
+          <p className="text-[10px] text-zinc-500 uppercase font-semibold tracking-wider">Components · {screen.name}</p>
+          {components.length === 0 && (
+            <div className="rounded-lg border border-dashed border-zinc-700 p-3 text-center text-zinc-500">
+              <p className="text-[10px]">No components. Add one below.</p>
+            </div>
+          )}
+          {components.map((c: any, i: number) => (
+            <div key={c.id} className="rounded-lg border border-zinc-700/60 bg-zinc-800/50">
+              <div className="flex items-center gap-1.5 px-2 py-1.5 cursor-pointer" onClick={() => setExpanded(expanded === c.id ? null : c.id)}>
+                <span className="text-[10px] text-indigo-400">{expanded === c.id ? "▼" : "▶"}</span>
+                <span className="rounded bg-indigo-900/40 px-1 py-0.5 text-[9px] text-indigo-300">{c.type}</span>
+                <span className="truncate text-[11px] text-zinc-300">{componentSummary(c)}</span>
+                <span className="ml-auto flex items-center gap-0.5">
+                  <button onClick={(e) => { e.stopPropagation(); moveComponent(screen.id, c.id, -1); }} disabled={i === 0}
+                    className="px-0.5 text-zinc-500 hover:text-zinc-200 disabled:opacity-30">↑</button>
+                  <button onClick={(e) => { e.stopPropagation(); moveComponent(screen.id, c.id, 1); }} disabled={i === components.length - 1}
+                    className="px-0.5 text-zinc-500 hover:text-zinc-200 disabled:opacity-30">↓</button>
+                  <button onClick={(e) => { e.stopPropagation(); removeComponent(screen.id, c.id); }}
+                    className="px-0.5 text-zinc-500 hover:text-red-400">×</button>
+                </span>
+              </div>
+              {expanded === c.id && (
+                <div className="border-t border-zinc-700/50 px-2 py-1.5">
+                  <ComponentConfigEditor screenId={screen.id} component={c} />
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* Component palette */}
+          <button onClick={() => setShowPalette(!showPalette)}
+            className="w-full rounded bg-zinc-700/50 py-1 text-[10px] text-zinc-300 hover:bg-zinc-700">
+            {showPalette ? "Hide components" : "+ Add Component"}
+          </button>
+          {showPalette && (
+            <div className="space-y-1.5 rounded border border-zinc-700/50 bg-zinc-900/40 p-1.5">
+              {COMPONENT_PALETTE.map((g) => (
+                <div key={g.group}>
+                  <p className="text-[9px] text-zinc-600 uppercase tracking-wider mb-1">{g.group}</p>
+                  <div className="flex flex-wrap gap-1">
+                    {g.items.map((it) => (
+                      <button key={it.type}
+                        onClick={() => { const comp = defaultComponent(it.type); addComponent(screen.id, comp); setExpanded(comp.id); }}
+                        className="flex items-center gap-1 rounded border border-zinc-700/50 bg-zinc-900/60 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:text-white hover:border-zinc-500">
+                        <span>{it.icon}</span><span>{it.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Design Panel ──────────────────────────────────────────────
-function DesignPanel() {
+function DesignPanel({ frames }: { frames: CanvasFrame[] }) {
   const selectedShapes = useSelectedShapes();
   const updateShape = useWorkspaceStore((s) => s.updateShape);
 
@@ -1643,56 +1776,76 @@ function DesignPanel() {
     [stateOptions]
   );
 
-  if (selectedShapes.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
-        <div className="rounded-xl bg-white/[0.03] p-3">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-zinc-600">
-            <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
-          </svg>
+  // Render screens section + shape properties
+  const shapeContent = (() => {
+    if (selectedShapes.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+          <div className="rounded-xl bg-white/[0.03] p-3">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-zinc-600">
+              <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-zinc-400">No selection</p>
+            <p className="mt-0.5 text-[11px] text-zinc-600">Click a shape on the canvas to edit</p>
+          </div>
         </div>
-        <div>
-          <p className="text-xs font-medium text-zinc-400">No selection</p>
-          <p className="mt-0.5 text-[11px] text-zinc-600">Click a shape on the canvas to edit</p>
-        </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  if (selectedShapes.length > 1) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-2 p-8 text-center">
-        <div className="flex -space-x-1.5">
-          {selectedShapes.slice(0, 3).map((s) => (
-            <div key={s.id} className="h-6 w-6 rounded-md border-2 border-[#2c2c2c] bg-indigo-600/20" />
-          ))}
+    if (selectedShapes.length > 1) {
+      return (
+        <div className="flex flex-col items-center justify-center gap-2 p-8 text-center">
+          <div className="flex -space-x-1.5">
+            {selectedShapes.slice(0, 3).map((s) => (
+              <div key={s.id} className="h-6 w-6 rounded-md border-2 border-[#2c2c2c] bg-indigo-600/20" />
+            ))}
+          </div>
+          <p className="text-xs font-medium text-zinc-400">{selectedShapes.length} shapes selected</p>
         </div>
-        <p className="text-xs font-medium text-zinc-400">{selectedShapes.length} shapes selected</p>
-      </div>
-    );
-  }
+      );
+    }
 
-  const shape = selectedShapes[0];
-  const parent =
-    shape.parentId && shape.parentId !== ROOT_FRAME_ID
-      ? pageObjects[shape.parentId]
-      : null;
-  const localX = parent ? shape.x - parent.x : shape.x;
-  const localY = parent ? shape.y - parent.y : shape.y;
+    return null; // single selection — rendered below
+  })();
+
+  // Single shape selected — full property panel
+  const singleShape = selectedShapes.length === 1 ? selectedShapes[0] : null;
+  const parent = singleShape && singleShape.parentId && singleShape.parentId !== ROOT_FRAME_ID
+    ? pageObjects[singleShape.parentId] : null;
+  const localX = singleShape ? (parent ? singleShape.x - parent.x : singleShape.x) : 0;
+  const localY = singleShape ? (parent ? singleShape.y - parent.y : singleShape.y) : 0;
   const handleLocalXChange = (localVal: number) => {
+    if (!singleShape) return;
     const absX = parent ? parent.x + localVal : localVal;
-    updateShape(shape.id, { x: absX });
+    updateShape(singleShape.id, { x: absX });
   };
   const handleLocalYChange = (localVal: number) => {
+    if (!singleShape) return;
     const absY = parent ? parent.y + localVal : localVal;
-    updateShape(shape.id, { y: absY });
+    updateShape(singleShape.id, { y: absY });
   };
 
-  const hasBindings = shape.runtimeBindings && Object.values(shape.runtimeBindings).some(Boolean);
-  const bindingCount = hasBindings ? Object.values(shape.runtimeBindings!).filter(Boolean).length : 0;
+  const shape = singleShape;
+  const hasBindings = shape ? shape.runtimeBindings && Object.values(shape.runtimeBindings).some(Boolean) : false;
+  const bindingCount = hasBindings && shape ? Object.values(shape.runtimeBindings!).filter(Boolean).length : 0;
 
   return (
     <div className="divide-y divide-white/[0.04]">
+      {/* ── Screens & Components ── */}
+      <CollapsibleSection
+        title="Screens & Components"
+        icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>}
+        accentColor="text-indigo-400"
+        defaultOpen={selectedShapes.length === 0}
+      >
+        <ScreensSection frames={frames} />
+      </CollapsibleSection>
+
+      {/* Selection-dependent content */}
+      {shapeContent ? shapeContent : shape && (
+        <>
       {/* ── Shape Header ── */}
       <div className="px-3.5 py-3">
         <div className="flex items-center gap-2">
@@ -2184,6 +2337,8 @@ function DesignPanel() {
           )}
         </div>
       </CollapsibleSection>
+        </>
+      )}
     </div>
   );
 }

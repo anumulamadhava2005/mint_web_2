@@ -935,7 +935,7 @@ function WorkflowsTab() {
 // Writes into schema.screens[].components — consumed by the preview
 // (SchemaRenderer) and the React Native (schema) exporter.
 // ═══════════════════════════════════════════════════════════════
-const COMPONENT_PALETTE = [
+export const COMPONENT_PALETTE = [
   { group: "Layout", items: [
     { type: "view", label: "View", icon: "▭" },
     { type: "scroll", label: "Scroll", icon: "↕" },
@@ -976,7 +976,7 @@ const COMPONENT_PALETTE = [
 ] as const;
 
 // Sensible default props/bindings per component type.
-function defaultComponent(type: string): any {
+export function defaultComponent(type: string): any {
   const base: any = { id: crypto.randomUUID(), type, props: {}, bindings: {}, style: {} };
   switch (type) {
     case "text": base.props = { text: "Text" }; break;
@@ -1014,7 +1014,7 @@ function defaultComponent(type: string): any {
   return base;
 }
 
-function componentSummary(c: any): string {
+export function componentSummary(c: any): string {
   const p = c.props || {};
   if (c.type === "dataTable") return `${(p.columns || []).length} cols · ${c.bindings?.dataSource || p.dataSource || "—"}`;
   if (c.type === "select") return `${(p.options || []).length} options`;
@@ -1157,7 +1157,7 @@ function ComponentsTab({ frames }: { frames: CanvasFrame[] }) {
 }
 
 // ── Labeled text field (module-level so inputs keep focus) ───
-function CfgField({ label, value, onChange, placeholder, mono }: {
+export function CfgField({ label, value, onChange, placeholder, mono }: {
   label: string; value: any; onChange: (v: string) => void; placeholder?: string; mono?: boolean;
 }) {
   return (
@@ -1170,7 +1170,7 @@ function CfgField({ label, value, onChange, placeholder, mono }: {
 }
 
 // ── Per-component config editor (dispatch by type) ───────────
-function ComponentConfigEditor({ screenId, component }: { screenId: string; component: any }) {
+export function ComponentConfigEditor({ screenId, component }: { screenId: string; component: any }) {
   const updateComponent = useRuntimeStore((s) => s.updateComponent);
   const c = component;
   const patchProps = (patch: any) => updateComponent(screenId, c.id, { props: { ...(c.props || {}), ...patch } } as any);
@@ -1327,7 +1327,7 @@ function ComponentConfigEditor({ screenId, component }: { screenId: string; comp
   );
 }
 
-function SelectOptionsEditor({ options, onChange }: { options: any[]; onChange: (o: any[]) => void }) {
+export function SelectOptionsEditor({ options, onChange }: { options: any[]; onChange: (o: any[]) => void }) {
   const [val, setVal] = useState("");
   const [lab, setLab] = useState("");
   const add = () => {
@@ -1356,9 +1356,9 @@ function SelectOptionsEditor({ options, onChange }: { options: any[]; onChange: 
   );
 }
 
-const COLUMN_TYPES = ["text", "number", "currency", "date", "status", "avatar", "actions"] as const;
+export const COLUMN_TYPES = ["text", "number", "currency", "date", "status", "avatar", "actions"] as const;
 
-function DataTableColumnsEditor({ columns, onChange }: { columns: any[]; onChange: (c: any[]) => void }) {
+export function DataTableColumnsEditor({ columns, onChange }: { columns: any[]; onChange: (c: any[]) => void }) {
   const [key, setKey] = useState("");
   const [label, setLabel] = useState("");
   const [type, setType] = useState<string>("text");
@@ -1393,7 +1393,7 @@ function DataTableColumnsEditor({ columns, onChange }: { columns: any[]; onChang
   );
 }
 
-function AdvancedPropsEditor({ screenId, component }: { screenId: string; component: any }) {
+export function AdvancedPropsEditor({ screenId, component }: { screenId: string; component: any }) {
   const updateComponent = useRuntimeStore((s) => s.updateComponent);
   const [open, setOpen] = useState(false);
   const [text, setText] = useState(() => JSON.stringify(component.props || {}, null, 2));
