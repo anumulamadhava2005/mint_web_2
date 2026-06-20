@@ -78,33 +78,23 @@ export async function POST(
     // Auth check. Exported apps authenticate with the project-specific sync
     // token (HMAC of the projectId — same trust model as /api/design-data and
     // /api/project-data); the editor authenticates with a session cookie/token.
-    const cookieStore = await cookies();
-    const tokenFromCookie = cookieStore.get("token")?.value;
+    // Prefer Authorization header (sync token from exported apps) over cookie,
+    // because login sets a session cookie that React Native's fetch auto-sends,
+    // which would shadow the valid sync token if cookie were checked first.
     const authHeader = req.headers.get("authorization");
     const tokenFromHeader = authHeader?.startsWith("Bearer ")
       ? authHeader.slice(7)
       : null;
-    const token = tokenFromCookie || tokenFromHeader;
+    const cookieStore = await cookies();
+    const tokenFromCookie = cookieStore.get("token")?.value;
 
     let isAuthorized = false;
 
     // A. Project sync token — the credential baked into exported apps.
+    //    Check the Bearer header explicitly (not the cookie).
     const expectedSyncToken = getProjectSyncToken(projectId);
-    if (token && token === expectedSyncToken) {
+    if (tokenFromHeader && tokenFromHeader === expectedSyncToken) {
       isAuthorized = true;
-    }
-
-    // Debug: log auth details on failure so we can diagnose mismatches
-    if (!isAuthorized) {
-      console.log("[MintDB] Auth debug:", {
-        projectId,
-        hasToken: !!token,
-        tokenPrefix: token ? token.slice(0, 8) + "..." : "none",
-        expectedPrefix: expectedSyncToken.slice(0, 8) + "...",
-        match: token === expectedSyncToken,
-        jwtSecretSet: !!process.env.JWT_SECRET,
-        sessionSecretSet: !!process.env.SESSION_SECRET,
-      });
     }
 
     // B. Public projects are readable/writable by the managed DB bridge.
@@ -117,8 +107,10 @@ export async function POST(
     }
 
     // C. Otherwise require a valid session token that owns the project.
-    if (!isAuthorized && token) {
-      const user = await findUserByToken(token);
+    //    Check both header and cookie — either can carry a session token.
+    const sessionToken = tokenFromHeader || tokenFromCookie;
+    if (!isAuthorized && sessionToken) {
+      const user = await findUserByToken(sessionToken);
       if (user) {
         const ownerCheck = await db.query(
           "SELECT id FROM projects WHERE id = $1 AND owner_id = $2",
