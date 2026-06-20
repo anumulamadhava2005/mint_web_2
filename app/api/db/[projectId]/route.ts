@@ -50,6 +50,20 @@ const BLOCKED_PATTERNS = [
   /;\s*\S/,
 ];
 
+// CORS headers for cross-origin requests (e.g. React Native exported apps)
+function corsHeaders() {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  };
+}
+
+// Handle CORS preflight
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: corsHeaders() });
+}
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ projectId: string }> }
@@ -58,7 +72,7 @@ export async function POST(
     const { projectId } = await params;
 
     if (!projectId || typeof projectId !== "string") {
-      return NextResponse.json({ error: "Missing projectId" }, { status: 400 });
+      return NextResponse.json({ error: "Missing projectId" }, { status: 400, headers: corsHeaders() });
     }
 
     // Auth check. Exported apps authenticate with the project-specific sync
@@ -75,8 +89,22 @@ export async function POST(
     let isAuthorized = false;
 
     // A. Project sync token — the credential baked into exported apps.
-    if (token && token === getProjectSyncToken(projectId)) {
+    const expectedSyncToken = getProjectSyncToken(projectId);
+    if (token && token === expectedSyncToken) {
       isAuthorized = true;
+    }
+
+    // Debug: log auth details on failure so we can diagnose mismatches
+    if (!isAuthorized) {
+      console.log("[MintDB] Auth debug:", {
+        projectId,
+        hasToken: !!token,
+        tokenPrefix: token ? token.slice(0, 8) + "..." : "none",
+        expectedPrefix: expectedSyncToken.slice(0, 8) + "...",
+        match: token === expectedSyncToken,
+        jwtSecretSet: !!process.env.JWT_SECRET,
+        sessionSecretSet: !!process.env.SESSION_SECRET,
+      });
     }
 
     // B. Public projects are readable/writable by the managed DB bridge.
@@ -103,14 +131,14 @@ export async function POST(
     if (!isAuthorized) {
       // 404 (not 401) to avoid project-id enumeration, matching the
       // other SDUI endpoints.
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ error: "Not found" }, { status: 404, headers: corsHeaders() });
     }
 
     const body = await req.json();
     const { sql, params: queryParams } = body;
 
     if (!sql || typeof sql !== "string") {
-      return NextResponse.json({ error: "Missing SQL query" }, { status: 400 });
+      return NextResponse.json({ error: "Missing SQL query" }, { status: 400, headers: corsHeaders() });
     }
 
     // Security: validate SQL — only DML allowed
@@ -119,7 +147,7 @@ export async function POST(
     if (!isAllowed) {
       return NextResponse.json(
         { error: "Query type not allowed" },
-        { status: 403 }
+        { status: 403, headers: corsHeaders() }
       );
     }
 
@@ -128,7 +156,7 @@ export async function POST(
       if (pattern.test(sql)) {
         return NextResponse.json(
           { error: "Query contains blocked pattern" },
-          { status: 403 }
+          { status: 403, headers: corsHeaders() }
         );
       }
     }
@@ -152,12 +180,12 @@ export async function POST(
     return NextResponse.json({
       rows: result.rows || [],
       rowCount: result.rows?.length || 0,
-    });
+    }, { headers: corsHeaders() });
   } catch (e) {
     console.error("[MintDB] Query error:", e);
     return NextResponse.json(
       { error: "Query failed" },
-      { status: 400 }
+      { status: 400, headers: corsHeaders() }
     );
   }
 }
