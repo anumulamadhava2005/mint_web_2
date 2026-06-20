@@ -16,6 +16,19 @@ const VALID_FRAMEWORKS: TargetFramework[] = [
   "react", "nextjs", "vue", "svelte", "react-native", "flutter", "html",
 ];
 
+// Origin the commit request came from (honours reverse-proxy headers), so
+// exported/committed apps target the editor you used rather than production.
+function getCommitOrigin(req: Request): string | undefined {
+  const xfHost = req.headers.get("x-forwarded-host");
+  if (xfHost) {
+    const proto = req.headers.get("x-forwarded-proto") || "https";
+    return `${proto}://${xfHost}`;
+  }
+  const origin = req.headers.get("origin");
+  if (origin) return origin;
+  try { return new URL(req.url).origin; } catch { return undefined; }
+}
+
 // POST /api/commit
 export async function POST(req: Request) {
   try {
@@ -104,6 +117,9 @@ export async function POST(req: Request) {
         // Bake the project sync token so the committed app can authenticate
         // its managed-DB calls (POST /api/db/[projectId]).
         authToken: getProjectSyncToken(projectId),
+        // Bake the editor origin this commit came from, so the app talks to
+        // this server (not the production default).
+        apiOrigin: getCommitOrigin(req),
         runtimeSchema: effectiveRuntimeSchema || undefined,
       },
     });

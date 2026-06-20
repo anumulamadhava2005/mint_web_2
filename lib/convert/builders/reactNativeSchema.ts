@@ -213,9 +213,17 @@ function runtimeFile(
 import { router } from "expo-router";
 
 export const PROJECT_ID = ${JSON.stringify(opts.projectId)};
-export const API_ORIGIN = ${JSON.stringify(origin)};
+// API origin. The baked default is the editor you exported from. On a phone
+// or Android emulator "localhost" is the DEVICE, not your computer — set
+// EXPO_PUBLIC_API_ORIGIN to your machine's LAN IP (e.g. http://192.168.1.20:3001)
+// in a .env file and restart Metro (no re-export needed).
+export const API_ORIGIN =
+  (typeof process !== "undefined" && process.env && process.env.EXPO_PUBLIC_API_ORIGIN) ||
+  ${JSON.stringify(origin)};
 // Project sync token — authenticates managed-DB calls from this app.
-export const AUTH_TOKEN = ${JSON.stringify(opts.authToken || "")};
+export const AUTH_TOKEN =
+  (typeof process !== "undefined" && process.env && process.env.EXPO_PUBLIC_MINT_TOKEN) ||
+  ${JSON.stringify(opts.authToken || "")};
 const DB_BRIDGE = API_ORIGIN + "/api/db/" + PROJECT_ID;
 const AUTH_HEADERS = AUTH_TOKEN ? { Authorization: "Bearer " + AUTH_TOKEN } : {};
 
@@ -832,6 +840,7 @@ ${routes.map((r) => `          <Stack.Screen name="${r.route}" options={{ title:
   // app.json
   const appName = opts.appName || schema.name || "Mint App";
   const appSlug = slug(appName);
+  const baseOrigin = opts.apiOrigin || "https://mintweb.mintit.pro";
   files.push({
     path: "app.json",
     type: "text",
@@ -923,6 +932,25 @@ npm install
 npm run start      # then press i / a, or scan the QR with Expo Go
 \`\`\`
 
+## Connecting to the backend (important)
+
+This app talks to the Mint API at \`API_ORIGIN\` (baked to the editor you exported
+from). On a **physical phone or Android emulator, \`localhost\` is the device itself**,
+not your computer — so a \`localhost\` origin fails with "Network request failed".
+
+Point the app at a host the device can reach by creating a \`.env\` file
+(see \`.env.example\`) and restarting Metro — **no re-export needed**:
+
+\`\`\`bash
+# .env  — use your computer's LAN IP (run \`ifconfig\` / \`ipconfig\`)
+EXPO_PUBLIC_API_ORIGIN=http://192.168.1.20:3001
+\`\`\`
+
+- iOS simulator: \`http://localhost:3001\` works (it shares the host network).
+- Android emulator: use \`http://10.0.2.2:3001\`.
+- Physical device: use your computer's LAN IP, and make sure the phone is on the
+  same Wi-Fi and your dev server is reachable (firewall allowing the port).
+
 ## Live Sync (optional)
 
 If exported with Live Sync enabled, \`npm run start\` also launches \`mint-connector.mjs\`,
@@ -932,6 +960,24 @@ Re-point it any time without re-exporting:
 \`\`\`bash
 MINT_EDITOR_ORIGIN=http://localhost:3001 MINT_AUTH_TOKEN=<token> npm run sync
 \`\`\`
+`,
+  });
+
+  // .env.example — Expo inlines EXPO_PUBLIC_* vars at build time.
+  files.push({
+    path: ".env.example",
+    type: "text",
+    content: `# Copy to .env and restart Metro (npm run start) to apply.
+
+# API host the device can reach. On a phone/emulator this is NOT localhost:
+#   iOS simulator:    same as the editor (localhost works)
+#   Android emulator: replace the host with 10.0.2.2
+#   Physical device:  replace the host with your computer's LAN IP
+# Baked default (the editor you exported from):
+EXPO_PUBLIC_API_ORIGIN=${baseOrigin}
+
+# Optional: override the baked project sync token used for managed-DB calls.
+# EXPO_PUBLIC_MINT_TOKEN=
 `,
   });
 
