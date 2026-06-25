@@ -41,3 +41,128 @@ body {
 .brand-accent { color: var(--accent); }
 .brand-surface { background: var(--surface); }
 .brand-muted { color: var(--muted); }
+
+/* ═══════════════════════════════════════════════════════════════
+   Studio (ProEditor) design tokens — scoped to .studio-root so the
+   marketing / dashboard surfaces are untouched. Mirrors
+   design-tokens.json. Dark is the default; [data-theme="light"]
+   provides a real light theme for the top-bar toggle.
+   ═══════════════════════════════════════════════════════════════ */
+.studio-root {
+  /* surfaces — figure/ground separation by elevation */
+  --st-bg: #0c0c0c;
+  --st-canvas: #161616;
+  --st-surface: #1d1d1d;
+  --st-surface-2: #242424;
+  --st-elevated: #2e2e2e;
+  --st-overlay: rgba(0, 0, 0, 0.65);
+
+  /* text ramp (ratios documented against --st-surface) */
+  --st-text: #ececec;        /* 11:1  */
+  --st-text-2: #a6a6a6;      /* 5.8:1 */
+  --st-text-3: #6e6e6e;      /* 3.2:1 — never sole info carrier */
+  --st-text-disabled: #4a4a4a;
+
+  /* brand + semantic */
+  --st-brand: #a78bfa;       /* violet-400 — selection, primary action */
+  --st-brand-strong: #8b5cf6;
+  --st-brand-tint: rgba(167, 139, 250, 0.14);
+  --st-info: #60a5fa;
+  --st-success: #4ade80;
+  --st-warning: #fbbf24;
+  --st-error: #f87171;
+  --st-focus: #a78bfa;
+
+  /* borders */
+  --st-border: rgba(255, 255, 255, 0.07);
+  --st-border-2: rgba(255, 255, 255, 0.11);
+  --st-border-3: rgba(255, 255, 255, 0.16);
+
+  /* radii */
+  --st-r-sm: 4px;
+  --st-r-md: 7px;
+  --st-r-lg: 11px;
+  --st-r-full: 9999px;
+
+  /* shadow */
+  --st-shadow-raised: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --st-shadow-floating: 0 8px 30px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+
+  /* motion */
+  --st-dur-fast: 100ms;
+  --st-dur: 180ms;
+  --st-dur-slow: 320ms;
+  --st-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --st-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* grid dotfield */
+  --st-grid-dot: rgba(255, 255, 255, 0.05);
+
+  --st-font: var(--font-sans, "Inter", system-ui, sans-serif);
+  --st-mono: var(--font-mono, "Geist Mono", ui-monospace, monospace);
+
+  background: var(--st-bg);
+  color: var(--st-text);
+  font-family: var(--st-font);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv11", "ss01";
+}
+
+.studio-root[data-theme="light"] {
+  --st-bg: #f4f4f5;
+  --st-canvas: #ececee;
+  --st-surface: #ffffff;
+  --st-surface-2: #f7f7f8;
+  --st-elevated: #ffffff;
+  --st-overlay: rgba(24, 24, 27, 0.45);
+
+  --st-text: #18181b;
+  --st-text-2: #52525b;
+  --st-text-3: #8a8a93;
+  --st-text-disabled: #c0c0c6;
+
+  --st-brand: #7c3aed;
+  --st-brand-strong: #6d28d9;
+  --st-brand-tint: rgba(124, 58, 237, 0.10);
+  --st-info: #2563eb;
+  --st-success: #16a34a;
+  --st-warning: #d97706;
+  --st-error: #dc2626;
+  --st-focus: #7c3aed;
+
+  --st-border: rgba(0, 0, 0, 0.08);
+  --st-border-2: rgba(0, 0, 0, 0.12);
+  --st-border-3: rgba(0, 0, 0, 0.18);
+
+  --st-shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.08), 0 1px 1px rgba(0, 0, 0, 0.04);
+  --st-shadow-floating: 0 12px 32px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06);
+
+  --st-grid-dot: rgba(0, 0, 0, 0.06);
+}
+
+/* Custom scrollbars inside the studio — quiet, not invented affordances */
+.studio-root *::-webkit-scrollbar { width: 10px; height: 10px; }
+.studio-root *::-webkit-scrollbar-track { background: transparent; }
+.studio-root *::-webkit-scrollbar-thumb {
+  background: var(--st-border-2);
+  border-radius: var(--st-r-full);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+.studio-root *::-webkit-scrollbar-thumb:hover { background: var(--st-border-3); background-clip: content-box; }
+
+.studio-scrim { background: var(--st-overlay); }
+
+@keyframes st-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes st-pop-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+@keyframes st-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-root *,
+  .studio-root *::before,
+  .studio-root *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
