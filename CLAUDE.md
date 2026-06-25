@@ -44,7 +44,7 @@ npm run build        # production build
 npm run lint         # ESLint
 ```
 
-There is no test runner declared in `package.json`. Use `npm run lint` and `npm run build` to validate changes.
+There is no test runner declared in `package.json`. Use `npm run lint` and `npm run build` to validate changes. **Known gap:** no automated tests exist — manually verify auth, conversion pipeline, and DB-bridge paths before shipping security-sensitive changes.
 
 # Environment
 
