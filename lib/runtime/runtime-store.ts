@@ -31,6 +31,7 @@ import type {
   PolicySchema,
   ComponentSchema,
   NavigationSchema,
+  RouteSchema,
   ThemeSchema,
   AuthConfigSchema,
 } from "../runtime/schema";
@@ -102,8 +103,14 @@ export interface RuntimeSchemaState {
   // Theme
   updateTheme: (theme: Partial<ThemeSchema>) => void;
 
+  // Navigation
+  updateNavigation: (updates: Partial<NavigationSchema>) => void;
+  addRoute: (route: RouteSchema) => void;
+  removeRoute: (path: string) => void;
+
   // Auth
   setAuthConfig: (auth: AuthConfigSchema) => void;
+  updateAuthConfig: (updates: Partial<AuthConfigSchema>) => void;
 
   // UI
   setActiveTab: (tab: RuntimeSchemaState["activeTab"]) => void;
@@ -545,10 +552,48 @@ export const useRuntimeStore = create<RuntimeSchemaState>()(
       });
     },
 
+    // ── Navigation ───────────────────────────────────────────
+    updateNavigation: (updates) => {
+      set((s) => {
+        Object.assign(s.schema.navigation, updates);
+        s.dirty = true;
+      });
+    },
+
+    addRoute: (route) => {
+      set((s) => {
+        const exists = s.schema.navigation.routes.some((r: any) => r.path === route.path);
+        if (!exists) s.schema.navigation.routes.push(route as any);
+        s.dirty = true;
+      });
+    },
+
+    removeRoute: (path) => {
+      set((s) => {
+        s.schema.navigation.routes = s.schema.navigation.routes.filter((r: any) => r.path !== path) as any;
+        s.dirty = true;
+      });
+    },
+
     // ── Auth ─────────────────────────────────────────────────
     setAuthConfig: (auth) => {
       set((s) => {
         s.schema.auth = auth as any;
+        s.dirty = true;
+      });
+    },
+
+    updateAuthConfig: (updates) => {
+      set((s) => {
+        if (!s.schema.auth) {
+          s.schema.auth = {
+            providers: [],
+            sessionType: "jwt",
+            tokenExpiry: 3600,
+            refreshEnabled: true,
+          } as any;
+        }
+        Object.assign(s.schema.auth as any, updates);
         s.dirty = true;
       });
     },

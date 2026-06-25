@@ -25,12 +25,19 @@ import {
   PanelLeft,
   Rocket,
   Check,
-  Construction,
 } from "lucide-react";
 import { useRuntimeStore } from "@/lib/runtime/runtime-store";
 import { StateManager } from "./StateManager";
+import { ScreenManager } from "./ScreenManager";
+import { ComponentLibrary } from "./ComponentLibrary";
+import { ThemeDesigner } from "./ThemeDesigner";
+import { ActionsEditor } from "./ActionsEditor";
+import { NavigationEditor } from "./NavigationEditor";
+import { DatabaseEditor } from "./DatabaseEditor";
+import { AuthEditor } from "./AuthEditor";
+import { SettingsPanel } from "./SettingsPanel";
 import { CommandPalette, type Command } from "./CommandPalette";
-import { Btn, EmptyState, cx } from "./primitives";
+import { Btn, cx } from "./primitives";
 
 export type StudioMode =
   | "screens"
@@ -52,18 +59,18 @@ interface ModeDef {
 }
 
 const MODES: ModeDef[] = [
-  { id: "screens", label: "Screen Manager", icon: <Frame size={17} />, built: false },
-  { id: "components", label: "Component Library", icon: <Boxes size={17} />, built: false },
-  { id: "theme", label: "Theme Designer", icon: <Palette size={17} />, built: false },
+  { id: "screens", label: "Screen Manager", icon: <Frame size={17} />, built: true },
+  { id: "components", label: "Component Library", icon: <Boxes size={17} />, built: true },
+  { id: "theme", label: "Theme Designer", icon: <Palette size={17} />, built: true },
   { id: "state", label: "State Manager", icon: <Variable size={17} />, built: true },
-  { id: "actions", label: "Action Editor", icon: <Zap size={17} />, built: false },
-  { id: "workflows", label: "Workflow & Logic", icon: <WorkflowIcon size={17} />, built: false },
-  { id: "navigation", label: "Navigation Editor", icon: <Navigation size={17} />, built: false },
-  { id: "database", label: "Database & Schema", icon: <Database size={17} />, built: false },
-  { id: "auth", label: "Auth & RBAC", icon: <ShieldCheck size={17} />, built: false },
+  { id: "actions", label: "Action Editor", icon: <Zap size={17} />, built: true },
+  { id: "workflows", label: "Workflow & Logic", icon: <WorkflowIcon size={17} />, built: true },
+  { id: "navigation", label: "Navigation Editor", icon: <Navigation size={17} />, built: true },
+  { id: "database", label: "Database & Schema", icon: <Database size={17} />, built: true },
+  { id: "auth", label: "Auth & RBAC", icon: <ShieldCheck size={17} />, built: true },
 ];
 
-const SETTINGS_MODE: ModeDef = { id: "settings", label: "App Settings", icon: <Settings size={17} />, built: false };
+const SETTINGS_MODE: ModeDef = { id: "settings", label: "App Settings", icon: <Settings size={17} />, built: true };
 
 export function StudioShell({
   projectId,
@@ -74,7 +81,7 @@ export function StudioShell({
   projectName: string;
   onExit?: () => void;
 }) {
-  const [mode, setMode] = useState<StudioMode>("state");
+  const [mode, setMode] = useState<StudioMode>("screens");
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -245,21 +252,17 @@ export function StudioShell({
         </nav>
 
         {/* editor surface */}
-        <main className="relative min-w-0 flex-1" style={{ background: "var(--st-canvas)" }}>
-          {mode === "state" ? (
-            <StateManager />
-          ) : (
-            <EmptyState
-              icon={<Construction size={22} />}
-              title={`${activeMode.label} — not in this build`}
-              description="This surface is part of the studio roadmap. The State Manager is the fully-built flagship; switch to it to see the production pattern every editor will follow."
-              action={
-                <Btn variant="outline" size="md" onClick={() => setMode("state")}>
-                  <Variable size={14} /> Open State Manager
-                </Btn>
-              }
-            />
-          )}
+        <main className="relative min-w-0 flex-1 overflow-hidden" style={{ background: "var(--st-canvas)" }}>
+          {mode === "screens" && <ScreenManager />}
+          {mode === "components" && <ComponentLibrary />}
+          {mode === "theme" && <ThemeDesigner />}
+          {mode === "state" && <StateManager />}
+          {mode === "actions" && <ActionsEditor />}
+          {mode === "workflows" && <ActionsEditor />}
+          {mode === "navigation" && <NavigationEditor />}
+          {mode === "database" && <DatabaseEditor />}
+          {mode === "auth" && <AuthEditor />}
+          {mode === "settings" && <SettingsPanel projectId={projectId} />}
         </main>
       </div>
 
