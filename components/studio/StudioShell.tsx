@@ -7,7 +7,8 @@
 // The canvas is the protagonist — chrome stays quiet until engaged.
 // ═══════════════════════════════════════════════════════════════
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef, type ReactNode } from "react";
+import PenpotEditor from "@/components/PenpotEditor";
 import {
   Frame,
   Boxes,
@@ -25,6 +26,7 @@ import {
   Rocket,
   Check,
   Monitor,
+  Download,
 } from "lucide-react";
 import { useRuntimeStore } from "@/lib/runtime/runtime-store";
 import { StateManager } from "./StateManager";
@@ -135,6 +137,22 @@ export function StudioShell({
     }
   }, [exportSchema, projectId, flashToast]);
 
+  const handleExport = useCallback(() => {
+    try {
+      const json = exportSchema();
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${projectId}-schema.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      flashToast("Schema exported");
+    } catch {
+      flashToast("Export failed");
+    }
+  }, [exportSchema, projectId, flashToast]);
+
   const commands: Command[] = useMemo(() => {
     const nav: Command[] = [...MODES, SETTINGS_MODE].map((m) => ({
       id: `goto:${m.id}`,
@@ -158,6 +176,13 @@ export function StudioShell({
         group: "Actions",
         icon: <Rocket size={15} />,
         run: handlePublish,
+      },
+      {
+        id: "export",
+        label: "Export schema JSON",
+        group: "Actions",
+        icon: <Download size={15} />,
+        run: handleExport,
       },
     ];
     return [...actions, ...nav];
@@ -227,6 +252,10 @@ export function StudioShell({
           >
             {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
           </button>
+          <Btn variant="ghost" size="sm" onClick={handleExport} className="gap-1.5 px-2.5" title="Download schema JSON">
+            <Download size={13} />
+            Export
+          </Btn>
           <Btn variant="primary" size="sm" onClick={handlePublish} className="gap-1.5 px-2.5">
             <Rocket size={13} />
             Publish
@@ -320,17 +349,80 @@ export function StudioShell({
   );
 }
 
-function CanvasView({ projectId, projectName: _projectName }: { projectId: string; projectName: string }) {
+function CanvasView({ projectId, projectName }: { projectId: string; projectName: string }) {
+  const [fileId, setFileId] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const loadedFor = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (loadedFor.current === projectId) return;
+    loadedFor.current = projectId;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/files?projectId=${projectId}`, { credentials: "include" });
+        if (!res.ok) throw new Error(`Failed to load files (${res.status})`);
+        const data = await res.json();
+
+        let id: string | undefined;
+        if (data.files?.length > 0) {
+          id = data.files[0].id;
+        } else {
+          const createRes = await fetch("/api/files", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectId, name: "Design File", data: {} }),
+          });
+          if (!createRes.ok) throw new Error(`Failed to create file (${createRes.status})`);
+          const newFile = await createRes.json();
+          id = newFile.file?.id;
+        }
+
+        if (id && !cancelled) setFileId(id);
+        else if (!cancelled) throw new Error("No file id returned");
+      } catch (e: any) {
+        if (!cancelled) setLoadError(e.message ?? "Canvas failed to load");
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [projectId]);
+
+  if (loadError) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3" style={{ background: "#2c2c2c" }}>
+        <p className="text-sm text-red-400">{loadError}</p>
+        <button
+          className="rounded px-3 py-1.5 text-xs font-medium text-white"
+          style={{ background: "#7c3aed" }}
+          onClick={() => { loadedFor.current = null; setLoadError(null); setFileId(""); }}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (!fileId) {
+    return (
+      <div className="flex h-full items-center justify-center" style={{ background: "#2c2c2c" }}>
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-7 w-7 animate-spin rounded-full border-2 border-violet-400 border-t-transparent" />
+          <p className="text-sm text-zinc-500">Loading canvas…</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex h-full flex-col" style={{ background: "var(--st-bg)" }}>
-      {/* Full Penpot canvas embedded — all frames, tools, and layers panel load inline */}
-      <iframe
-        src={`/projects/${projectId}`}
-        title="Design Canvas"
-        style={{ flex: 1, border: "none", display: "block", width: "100%", height: "100%" }}
-        allow="clipboard-read; clipboard-write"
-      />
-    </div>
+    <PenpotEditor
+      fileId={fileId}
+      projectId={projectId}
+      projectName={projectName}
+      onBack={() => {}}
+    />
   );
 }
 
