@@ -1,34 +1,22 @@
 "use client";
 
-// ═══════════════════════════════════════════════════════════════
-// DatabaseEditor — Visual ERD / schema editor. 3-column layout:
-// table list sidebar | card grid canvas | field inspector.
-// Binds to useRuntimeStore database CRUD.
-// ═══════════════════════════════════════════════════════════════
-
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useRef, useMemo, useEffect } from "react";
+import type { CSSProperties } from "react";
 import { v4 as uuid } from "uuid";
 import {
-  Plus, Trash2, Settings, Key, Link2, Code2, AlertCircle,
-  ChevronRight, Table2, Columns, Sliders, Users, Rocket,
+  Plus, Trash2, Code2, Key, Link2, Rocket, Database,
+  ZoomIn, ZoomOut, Maximize2, Circle, RefreshCw,
 } from "lucide-react";
 import { useRuntimeStore } from "@/lib/runtime/runtime-store";
-import type { TableSchema, FieldSchema, RelationSchema } from "@/lib/runtime/schema";
-import {
-  Inspector, InspectorTabs, Section, Field, TextField, SelectField,
-  ToggleRow, Btn, IconBtn, Pill, cx, EmptyState,
-} from "./primitives";
+import type { TableSchema, FieldSchema } from "@/lib/runtime/schema";
 
-// ── Local types ───────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────
+const CARD_W = 260;
+const CARD_HEADER_H = 42;
+const FIELD_H = 30;
+const CARD_FOOTER_H = 36;
 
-type InspTab = "props" | "style" | "events" | "collab";
-type Sel = { tableId: string; fieldName: string } | null;
-
-const FTYPES: FieldSchema["type"][] = ["uuid","text","integer","float","boolean","timestamp","jsonb"];
-const RTYPES: RelationSchema["type"][] = ["one-to-one","one-to-many","many-to-many"];
-
-// ── SQL generation ────────────────────────────────────────────────
-
+// ── SQL generation (preserved export) ────────────────────────────
 export function genSQL(tables: TableSchema[]): string {
   const pgType: Record<string, string> = {
     uuid: "UUID", text: "TEXT", integer: "INTEGER", float: "FLOAT",
@@ -48,206 +36,528 @@ export function genSQL(tables: TableSchema[]): string {
   }).join("\n\n");
 }
 
-// ── TypeChip ──────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────
+type CardPos = { x: number; y: number };
+type DeployResult = {
+  success: boolean;
+  applied: string[];
+  errors: string[];
+  totalTables: number;
+} | null;
 
-const TYPE_COLOR: Record<string, string> = {
-  uuid: "var(--st-brand)", text: "var(--st-success)", integer: "var(--st-warning)",
-  float: "var(--st-warning)", boolean: "#60a5fa", timestamp: "var(--st-text-2)", jsonb: "var(--st-error)",
+// ── Shared style constants ────────────────────────────────────────
+const iconBtn: CSSProperties = {
+  display: "flex", alignItems: "center", justifyContent: "center",
+  width: 28, height: 28, borderRadius: 6, border: "none",
+  background: "none", cursor: "pointer",
 };
 
-function TypeChip({ type }: { type: string }) {
+// ── Field icon ────────────────────────────────────────────────────
+function FieldIcon({ field }: { field: FieldSchema }) {
+  if (field.name === "id") return <Key size={10} style={{ color: "#eab308" }} />;
+  if (field.name.endsWith("_id")) return <Link2 size={10} style={{ color: "#6b7280" }} />;
+  if (field.unique) return <Circle size={10} style={{ color: "#22c55e" }} />;
+  return <span style={{ display: "inline-block", width: 10, height: 10 }} />;
+}
+
+// ── FK bezier relation lines ──────────────────────────────────────
+function FkLines({
+  tables,
+  positions,
+}: {
+  tables: TableSchema[];
+  positions: Record<string, CardPos>;
+}) {
+  const paths: React.ReactNode[] = [];
+
+  tables.forEach((t) => {
+    const src = positions[t.id];
+    if (!src) return;
+
+    t.relations.forEach((r, ri) => {
+      const tgt = tables.find(
+        (x) => x.id === r.targetTable || x.name === r.targetTable
+      );
+      if (!tgt) return;
+      const tgtPos = positions[tgt.id];
+      if (!tgtPos) return;
+
+      const fkIdx = t.fields.findIndex((f) => f.name === r.foreignKey);
+      const tgtFieldIdx = tgt.fields.findIndex(
+        (f) => f.name === (r.targetKey ?? "id")
+      );
+
+      const sy =
+        src.y + CARD_HEADER_H + (Math.max(0, fkIdx) + 0.5) * FIELD_H;
+      const ty =
+        tgtPos.y +
+        CARD_HEADER_H +
+        (Math.max(0, tgtFieldIdx) + 0.5) * FIELD_H;
+
+      const srcRight = src.x + CARD_W;
+      const tgtLeft = tgtPos.x;
+      const tgtRight = tgtPos.x + CARD_W;
+
+      let sx: number, tx: number, cpx1: number, cpx2: number;
+
+      if (tgtLeft >= srcRight - 20) {
+        sx = srcRight;
+        tx = tgtLeft;
+        const dist = Math.max(60, tx - sx);
+        cpx1 = sx + dist * 0.5;
+        cpx2 = tx - dist * 0.5;
+      } else if (tgtRight <= src.x + 20) {
+        sx = src.x;
+        tx = tgtRight;
+        const dist = Math.max(60, sx - tx);
+        cpx1 = sx - dist * 0.5;
+        cpx2 = tx + dist * 0.5;
+      } else {
+        sx = srcRight;
+        tx = tgtLeft;
+        cpx1 = sx + 80;
+        cpx2 = tx - 80;
+      }
+
+      paths.push(
+        <g key={`${t.id}-${ri}`}>
+          <path
+            d={`M ${sx} ${sy} C ${cpx1} ${sy} ${cpx2} ${ty} ${tx} ${ty}`}
+            fill="none"
+            stroke="#22c55e"
+            strokeWidth={1.5}
+            strokeOpacity={0.6}
+          />
+          <circle cx={sx} cy={sy} r={3} fill="#22c55e" fillOpacity={0.8} />
+          <circle cx={tx} cy={ty} r={3} fill="#22c55e" fillOpacity={0.8} />
+        </g>
+      );
+    });
+  });
+
+  const posVals = Object.values(positions);
+  const maxX =
+    Math.max(1400, ...posVals.map((p) => p.x + CARD_W)) + 300;
+  const maxY =
+    Math.max(900, ...posVals.map((p) => p.y + 400)) + 200;
+
   return (
-    <span
-      className="rounded-[var(--st-r-sm)] px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide"
-      style={{ background: "var(--st-surface-2)", color: TYPE_COLOR[type] ?? "var(--st-text-2)" }}
-    >{type}</span>
+    <svg
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        width: maxX,
+        height: maxY,
+        pointerEvents: "none",
+      }}
+    >
+      {paths}
+    </svg>
   );
 }
 
-// ── TableCard ─────────────────────────────────────────────────────
-
-function TableCard({ table, allTables, sel, onSel, onAddField }: {
-  table: TableSchema; allTables: TableSchema[]; sel: Sel;
-  onSel: (s: Sel) => void; onAddField: (id: string) => void;
+// ── ERD Table Card ────────────────────────────────────────────────
+function ErdCard({
+  table,
+  pos,
+  isActive,
+  onHeaderMouseDown,
+  onDelete,
+  onAddField,
+  onActivate,
+}: {
+  table: TableSchema;
+  pos: CardPos;
+  isActive: boolean;
+  onHeaderMouseDown: (e: React.MouseEvent) => void;
+  onDelete: () => void;
+  onAddField: () => void;
+  onActivate: () => void;
 }) {
   return (
     <div
-      className="flex flex-col overflow-hidden rounded-[var(--st-r-lg)]"
-      style={{ background: "var(--st-elevated)", boxShadow: "var(--st-shadow-raised)", border: "1px solid var(--st-border)", minWidth: 260, maxWidth: 320, width: "100%" }}
+      onMouseDown={onActivate}
+      style={{
+        position: "absolute",
+        left: pos.x,
+        top: pos.y,
+        width: CARD_W,
+        userSelect: "none",
+        zIndex: isActive ? 10 : 1,
+      }}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2.5" style={{ borderBottom: "1px solid var(--st-border)", background: "var(--st-surface)" }}>
-        <div className="flex min-w-0 items-center gap-2">
-          <Table2 size={13} style={{ color: "var(--st-brand)", flexShrink: 0 }} />
-          <span className="truncate text-[12.5px] font-semibold font-[family-name:var(--st-mono)]" style={{ color: "var(--st-text)" }}>{table.name}</span>
-          <Pill tone="brand">{table.fields.length} cols</Pill>
-        </div>
-        <IconBtn title="Table settings"><Settings size={13} /></IconBtn>
-      </div>
-      {/* Fields */}
-      <div className="flex flex-col divide-y" style={{ borderColor: "var(--st-border)" }}>
-        {table.fields.map((f) => {
-          const active = sel?.tableId === table.id && sel?.fieldName === f.name;
-          return (
-            <button key={f.name} type="button"
-              onClick={() => onSel(active ? null : { tableId: table.id, fieldName: f.name })}
-              className="flex items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-white/[0.04]"
-              style={{ background: active ? "var(--st-brand-tint)" : undefined, borderLeft: active ? "2px solid var(--st-brand)" : "2px solid transparent" }}
+      <div
+        style={{
+          borderRadius: 8,
+          border: `1px solid ${isActive ? "#22c55e66" : "#222222"}`,
+          overflow: "hidden",
+          background: "#111111",
+          boxShadow: isActive
+            ? "0 0 0 1px #22c55e33, 0 12px 40px rgba(0,0,0,0.7)"
+            : "0 4px 24px rgba(0,0,0,0.6)",
+        }}
+      >
+        {/* Drag handle header */}
+        <div
+          onMouseDown={onHeaderMouseDown}
+          style={{
+            height: CARD_HEADER_H,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "0 10px 0 12px",
+            background: "#161616",
+            borderBottom: "1px solid #222222",
+            cursor: "grab",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              minWidth: 0,
+            }}
+          >
+            <Database
+              size={13}
+              style={{ color: "#22c55e", flexShrink: 0 }}
+            />
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: "#e5e7eb",
+                fontFamily: "var(--st-mono, monospace)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
             >
-              <span className="w-3 shrink-0">
-                {f.name === "id" ? <Key size={11} style={{ color: "var(--st-warning)" }} /> : f.name.endsWith("_id") ? <Link2 size={11} style={{ color: "var(--st-text-3)" }} /> : null}
-              </span>
-              <span className="flex-1 truncate text-[12px] font-[family-name:var(--st-mono)]" style={{ color: "var(--st-text)" }}>{f.name}</span>
-              <TypeChip type={f.type} />
-              <div className="flex items-center gap-1">
-                {f.required && <span title="Required" style={{ color: "var(--st-error)", fontSize: 10 }}>*</span>}
-                {f.unique && <span title="Unique" style={{ color: "var(--st-brand)", fontSize: 9 }}>U</span>}
-              </div>
+              {table.name}
+            </span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <span
+              style={{
+                fontSize: 9,
+                color: "#6b7280",
+                background: "#1e1e1e",
+                borderRadius: 10,
+                padding: "1px 6px",
+              }}
+            >
+              {table.fields.length}
+            </span>
+            <button
+              type="button"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 22,
+                height: 22,
+                borderRadius: 4,
+                border: "none",
+                background: "none",
+                cursor: "pointer",
+                color: "#6b7280",
+              }}
+            >
+              <Trash2 size={11} />
             </button>
-          );
-        })}
-      </div>
-      {/* Relations */}
-      {table.relations.length > 0 && (
-        <div className="flex flex-wrap gap-1 px-3 py-2" style={{ borderTop: "1px solid var(--st-border)" }}>
-          {table.relations.map((r, i) => {
-            const tgt = allTables.find((t) => t.id === r.targetTable || t.name === r.targetTable)?.name ?? r.targetTable;
-            return (
-              <div key={i} className="flex items-center gap-1">
-                <ChevronRight size={10} style={{ color: "var(--st-text-3)" }} />
-                <span className="text-[10px]" style={{ color: "var(--st-text-3)" }}>{r.foreignKey} → {tgt}.{r.targetKey ?? "id"}</span>
-              </div>
-            );
-          })}
+          </div>
         </div>
-      )}
-      {/* Add field */}
-      <div className="px-3 py-2" style={{ borderTop: "1px solid var(--st-border)" }}>
-        <Btn variant="ghost" size="sm" className="w-full justify-center gap-1" onClick={() => onAddField(table.id)} style={{ color: "var(--st-text-3)" }}>
-          <Plus size={12} /> Add Field
-        </Btn>
+
+        {/* Fields list */}
+        <div>
+          {table.fields.map((f) => (
+            <div
+              key={f.name}
+              style={{
+                height: FIELD_H,
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+                padding: "0 10px 0 12px",
+                borderBottom: "1px solid #1a1a1a",
+              }}
+            >
+              <span
+                style={{
+                  width: 14,
+                  flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <FieldIcon field={f} />
+              </span>
+              <span
+                style={{
+                  flex: 1,
+                  fontSize: 11,
+                  color: "#d1d5db",
+                  fontFamily: "var(--st-mono, monospace)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {f.name}
+              </span>
+              <span
+                style={{
+                  fontSize: 9,
+                  color: "#4b5563",
+                  background: "#1a1a1a",
+                  borderRadius: 4,
+                  padding: "1px 5px",
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  flexShrink: 0,
+                }}
+              >
+                {f.type}
+              </span>
+              <span
+                style={{
+                  width: 12,
+                  flexShrink: 0,
+                  fontSize: 10,
+                  color: f.required ? "#f59e0b" : "#2a2a2a",
+                  textAlign: "center",
+                }}
+              >
+                {f.required ? "◆" : "◇"}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Add field footer */}
+        <div
+          style={{
+            height: CARD_FOOTER_H,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderTop: "1px solid #1a1a1a",
+          }}
+        >
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onAddField();
+            }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: 11,
+              color: "#4b5563",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: "4px 8px",
+              borderRadius: 4,
+            }}
+          >
+            <Plus size={10} />
+            Add field
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-// ── FieldInspector ────────────────────────────────────────────────
-
-function FieldInspector({ sel, tables }: { sel: Sel; tables: TableSchema[] }) {
-  const { updateField, addRelation, removeRelation } = useRuntimeStore();
-  const [tab, setTab] = useState<InspTab>("props");
-
-  const table = tables.find((t) => t.id === sel?.tableId);
-  const field = table?.fields.find((f) => f.name === sel?.fieldName);
-
-  const upd = useCallback((updates: Partial<FieldSchema>) => {
-    if (!sel) return;
-    updateField(sel.tableId, sel.fieldName, updates);
-  }, [sel, updateField]);
-
-  const addRel = useCallback(() => {
-    if (!sel) return;
-    const other = tables.find((t) => t.id !== sel.tableId);
-    if (!other) return;
-    addRelation(sel.tableId, { type: "one-to-many", targetTable: other.name, foreignKey: sel.fieldName, targetKey: "id" });
-  }, [sel, tables, addRelation]);
-
-  const inspTabs = [
-    { id: "props" as InspTab, icon: <Sliders size={13} />, label: "Properties" },
-    { id: "style" as InspTab, icon: <Columns size={13} />, label: "Style" },
-    { id: "events" as InspTab, icon: <AlertCircle size={13} />, label: "Events" },
-    { id: "collab" as InspTab, icon: <Users size={13} />, label: "Collaborators" },
-  ];
-
-  // suppress unused cx warning
-  void cx;
-
-  return (
-    <Inspector title="INSPECTOR" tabs={<InspectorTabs tabs={inspTabs} value={tab} onChange={setTab} />}>
-      {!field || !table ? (
-        <div className="flex flex-col items-center justify-center gap-2 px-4 py-12 text-center">
-          <Columns size={28} style={{ color: "var(--st-border-3)" }} />
-          <p className="text-[12px]" style={{ color: "var(--st-text-3)" }}>Select a field to configure</p>
-        </div>
-      ) : (
-        <>
-          <Section title="General">
-            <Field label="Field Name" htmlFor="db-fn">
-              <TextField id="db-fn" mono value={field.name} onChange={(e) => upd({ name: e.target.value })} />
-            </Field>
-            <Field label="Type" htmlFor="db-ft">
-              <SelectField id="db-ft" value={field.type} onChange={(e) => upd({ type: e.target.value as FieldSchema["type"] })}>
-                {FTYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-              </SelectField>
-            </Field>
-          </Section>
-
-          <Section title="Constraints">
-            <ToggleRow label="Required" hint="NOT NULL constraint" checked={field.required} onChange={(v) => upd({ required: v })} />
-            <ToggleRow label="Unique" hint="UNIQUE constraint" checked={field.unique} onChange={(v) => upd({ unique: v })} />
-            <Field label="Default Value">
-              <TextField mono value={String(field.default ?? "")} placeholder="e.g. now(), true, ''" onChange={(e) => upd({ default: e.target.value || undefined })} />
-            </Field>
-          </Section>
-
-          <Section title="Relations" badge={table.relations.length || undefined} right={<Btn variant="ghost" size="sm" onClick={addRel}><Plus size={11} /> Add</Btn>}>
-            {table.relations.length === 0 ? (
-              <p className="text-[11px]" style={{ color: "var(--st-text-3)" }}>No relations yet.</p>
-            ) : (
-              table.relations.map((r, idx) => (
-                <div key={idx} className="mb-2 rounded-[var(--st-r-md)] p-2.5 last:mb-0" style={{ background: "var(--st-surface-2)", border: "1px solid var(--st-border)" }}>
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <SelectField value={r.type} style={{ fontSize: 11 }}
-                      onChange={(e) => {
-                        const u = { ...r, type: e.target.value as RelationSchema["type"] };
-                        removeRelation(table.id, idx);
-                        addRelation(table.id, u);
-                      }}
-                    >
-                      {RTYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                    </SelectField>
-                    <IconBtn onClick={() => removeRelation(table.id, idx)} title="Remove"><Trash2 size={12} style={{ color: "var(--st-error)" }} /></IconBtn>
-                  </div>
-                  <div className="flex items-center gap-1 text-[10.5px]" style={{ color: "var(--st-text-3)" }}>
-                    <span style={{ color: "var(--st-text)" }}>{r.foreignKey}</span>
-                    <ChevronRight size={10} />
-                    <span style={{ color: "var(--st-brand)" }}>{r.targetTable}</span>
-                    <span>.{r.targetKey ?? "id"}</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </Section>
-        </>
-      )}
-    </Inspector>
-  );
-}
-
-// ── Deploy result type ────────────────────────────────────────────
-type DeployResult = { success: boolean; applied: string[]; errors: string[]; totalTables: number } | null;
-
-// ── Main component ────────────────────────────────────────────────
-
+// ── Main component ─────────────────────────────────────────────────
 export function DatabaseEditor({ projectId }: { projectId?: string }) {
-  const { schema, addTable, updateTable, removeTable, addField } = useRuntimeStore();
-
+  const { schema, addTable, removeTable, addField } = useRuntimeStore();
   const tables: TableSchema[] = schema.database?.tables ?? [];
 
-  const [selTableId, setSelTableId] = useState<string | null>(tables[0]?.id ?? null);
-  const [sel, setSel] = useState<Sel>(null);
+  const [positions, setPositions] = useState<Record<string, CardPos>>(() => {
+    const init: Record<string, CardPos> = {};
+    tables.forEach((t, i) => {
+      init[t.id] = {
+        x: 60 + (i % 3) * 320,
+        y: 80 + Math.floor(i / 3) * 320,
+      };
+    });
+    return init;
+  });
+
+  useEffect(() => {
+    setPositions((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      tables.forEach((t, i) => {
+        if (!next[t.id]) {
+          next[t.id] = {
+            x: 60 + (i % 3) * 320,
+            y: 80 + Math.floor(i / 3) * 320,
+          };
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [tables]);
+
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 60, y: 40 });
+  const [activeCard, setActiveCard] = useState<string | null>(null);
   const [rawSQL, setRawSQL] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
   const [deploying, setDeploying] = useState(false);
   const [deployResult, setDeployResult] = useState<DeployResult>(null);
 
+  const dragRef = useRef<{
+    cardId: string;
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+  } | null>(null);
+  const panRef = useRef<{
+    startX: number;
+    startY: number;
+    origPanX: number;
+    origPanY: number;
+  } | null>(null);
+
+  const onWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const factor = e.deltaY > 0 ? 0.9 : 1.1;
+    setZoom((z) => Math.min(2.5, Math.max(0.2, z * factor)));
+  }, []);
+
+  const onCardHeaderMouseDown = useCallback(
+    (cardId: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setActiveCard(cardId);
+      const pos = positions[cardId] ?? { x: 0, y: 0 };
+      dragRef.current = {
+        cardId,
+        startX: e.clientX,
+        startY: e.clientY,
+        origX: pos.x,
+        origY: pos.y,
+      };
+    },
+    [positions]
+  );
+
+  const onCanvasMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.button !== 0) return;
+      setActiveCard(null);
+      panRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        origPanX: pan.x,
+        origPanY: pan.y,
+      };
+    },
+    [pan]
+  );
+
+  const onMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (dragRef.current) {
+        const d = dragRef.current;
+        const dx = (e.clientX - d.startX) / zoom;
+        const dy = (e.clientY - d.startY) / zoom;
+        setPositions((prev) => ({
+          ...prev,
+          [d.cardId]: { x: d.origX + dx, y: d.origY + dy },
+        }));
+      } else if (panRef.current) {
+        const p = panRef.current;
+        setPan({
+          x: p.origPanX + (e.clientX - p.startX),
+          y: p.origPanY + (e.clientY - p.startY),
+        });
+      }
+    },
+    [zoom]
+  );
+
+  const onMouseUp = useCallback(() => {
+    dragRef.current = null;
+    panRef.current = null;
+  }, []);
+
+  const addNewTable = useCallback(() => {
+    const id = uuid();
+    const i = tables.length;
+    addTable({
+      id,
+      name: `table_${i + 1}`,
+      fields: [{ name: "id", type: "uuid", required: true, unique: true }],
+      relations: [],
+      indexes: [],
+      policies: [],
+    });
+    setPositions((prev) => ({
+      ...prev,
+      [id]: { x: 60 + (i % 3) * 320, y: 80 + Math.floor(i / 3) * 320 },
+    }));
+    setActiveCard(id);
+  }, [addTable, tables.length]);
+
+  const deleteTable = useCallback(
+    (id: string) => {
+      removeTable(id);
+      setPositions((prev) => {
+        const n = { ...prev };
+        delete n[id];
+        return n;
+      });
+      if (activeCard === id) setActiveCard(null);
+    },
+    [removeTable, activeCard]
+  );
+
+  const addNewField = useCallback(
+    (tableId: string) => {
+      const tbl = tables.find((t) => t.id === tableId);
+      if (!tbl) return;
+      addField(tableId, {
+        name: `field_${tbl.fields.length + 1}`,
+        type: "text",
+        required: false,
+        unique: false,
+      });
+    },
+    [addField, tables]
+  );
+
   const handleDeploy = useCallback(async () => {
     if (!projectId) {
-      setDeployResult({ success: false, applied: [], errors: ["No projectId — cannot deploy"], totalTables: 0 });
+      setDeployResult({
+        success: false,
+        applied: [],
+        errors: ["No projectId — cannot deploy"],
+        totalTables: 0,
+      });
       return;
     }
     if (!tables.length) {
-      setDeployResult({ success: false, applied: [], errors: ["No tables defined. Add tables first."], totalTables: 0 });
+      setDeployResult({
+        success: false,
+        applied: [],
+        errors: ["No tables defined. Add tables first."],
+        totalTables: 0,
+      });
       return;
     }
     setDeploying(true);
@@ -261,177 +571,642 @@ export function DatabaseEditor({ projectId }: { projectId?: string }) {
       });
       const json = await res.json();
       if (!res.ok) {
-        setDeployResult({ success: false, applied: [], errors: [json.error ?? `HTTP ${res.status}`], totalTables: tables.length });
+        setDeployResult({
+          success: false,
+          applied: [],
+          errors: [json.error ?? `HTTP ${res.status}`],
+          totalTables: tables.length,
+        });
       } else {
         setDeployResult(json);
       }
-    } catch (e: any) {
-      setDeployResult({ success: false, applied: [], errors: [e?.message ?? "Network error — DB bridge unreachable"], totalTables: tables.length });
+    } catch (e: unknown) {
+      const msg =
+        e instanceof Error
+          ? e.message
+          : "Network error — DB bridge unreachable";
+      setDeployResult({
+        success: false,
+        applied: [],
+        errors: [msg],
+        totalTables: tables.length,
+      });
     }
     setDeploying(false);
   }, [projectId, tables, schema.database]);
 
-  const addNewTable = useCallback(() => {
-    const id = uuid();
-    addTable({ id, name: `table_${tables.length + 1}`, fields: [{ name: "id", type: "uuid", required: true, unique: true }], relations: [], indexes: [], policies: [] });
-    setSelTableId(id);
-  }, [addTable, tables.length]);
-
-  const deleteTable = useCallback((id: string) => {
-    removeTable(id);
-    if (selTableId === id) setSelTableId(tables.find((t) => t.id !== id)?.id ?? null);
-    if (sel?.tableId === id) setSel(null);
-  }, [removeTable, selTableId, sel, tables]);
-
-  const addNewField = useCallback((tableId: string) => {
-    const tbl = tables.find((t) => t.id === tableId);
-    if (!tbl) return;
-    const name = `field_${tbl.fields.length + 1}`;
-    addField(tableId, { name, type: "text", required: false, unique: false });
-    setSel({ tableId, fieldName: name });
-  }, [addField, tables]);
-
   const sql = useMemo(() => genSQL(tables), [tables]);
 
-  if (tables.length === 0) {
-    return (
-      <EmptyState
-        icon={<Table2 size={22} />}
-        title="No tables yet"
-        description="Add your first table to define the database schema for this app."
-        action={<Btn variant="primary" size="sm" onClick={addNewTable}>Add Table</Btn>}
-      />
-    );
-  }
-
   return (
-    <div className="flex h-full w-full overflow-hidden" style={{ background: "var(--st-bg)" }}>
-      {/* Sidebar */}
-      <aside className="flex w-56 shrink-0 flex-col border-r" style={{ background: "var(--st-surface)", borderColor: "var(--st-border)" }}>
-        <div className="flex h-11 shrink-0 items-center justify-between border-b px-3" style={{ borderColor: "var(--st-border)" }}>
-          <span className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--st-text-2)" }}>Database</span>
-          <IconBtn onClick={addNewTable} title="New table"><Plus size={14} /></IconBtn>
-        </div>
+    <div
+      style={{
+        position: "relative",
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        width: "100%",
+        background: "#0a0a0a",
+        overflow: "hidden",
+      }}
+    >
+      {/* ── Top toolbar ── */}
+      <div
+        style={{
+          height: 44,
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "0 12px",
+          background: "#0f0f0f",
+          borderBottom: "1px solid #1e1e1e",
+          flexShrink: 0,
+        }}
+      >
+        <Database size={13} style={{ color: "#22c55e" }} />
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: "#4b5563",
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+          }}
+        >
+          Schema
+        </span>
+        <div style={{ flex: 1 }} />
 
-        <div className="min-h-0 flex-1 overflow-y-auto py-1">
-          {tables.length === 0 ? (
-            <p className="px-3 py-4 text-center text-[11px]" style={{ color: "var(--st-text-3)" }}>No tables yet</p>
-          ) : tables.map((t) => {
-            const active = t.id === selTableId;
-            return (
-              <div key={t.id} className="group relative flex cursor-pointer items-center gap-2 px-3 py-2 transition-colors"
-                style={{ background: active ? "var(--st-brand-tint)" : undefined, borderLeft: active ? "2px solid var(--st-brand)" : "2px solid transparent" }}
-                onClick={() => setSelTableId(t.id)}
-              >
-                <Table2 size={12} style={{ color: active ? "var(--st-brand)" : "var(--st-text-3)", flexShrink: 0 }} />
-                {editId === t.id ? (
-                  <input autoFocus
-                    className="flex-1 bg-transparent text-[12px] font-[family-name:var(--st-mono)] outline-none"
-                    style={{ color: "var(--st-text)" }}
-                    defaultValue={t.name}
-                    onBlur={(e) => { if (e.target.value.trim()) updateTable(t.id, { name: e.target.value.trim() }); setEditId(null); }}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur(); }}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                ) : (
-                  <span className="flex-1 truncate text-[12px] font-[family-name:var(--st-mono)]"
-                    style={{ color: active ? "var(--st-text)" : "var(--st-text-2)" }}
-                    onDoubleClick={(e) => { e.stopPropagation(); setEditId(t.id); }}
-                  >{t.name}</span>
-                )}
-                <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[9px] tabular-nums" style={{ background: "var(--st-surface-2)", color: "var(--st-text-3)" }}>{t.fields.length}</span>
-                <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100"
-                  onClick={(e) => { e.stopPropagation(); deleteTable(t.id); }} title="Delete table"
-                >
-                  <Trash2 size={12} style={{ color: "var(--st-error)" }} />
-                </button>
-              </div>
-            );
-          })}
-        </div>
+        <button
+          style={iconBtn}
+          title="Zoom in"
+          onClick={() => setZoom((z) => Math.min(2.5, z + 0.1))}
+        >
+          <ZoomIn size={13} style={{ color: "#6b7280" }} />
+        </button>
+        <span
+          style={{
+            fontSize: 11,
+            color: "#374151",
+            minWidth: 38,
+            textAlign: "center",
+          }}
+        >
+          {Math.round(zoom * 100)}%
+        </span>
+        <button
+          style={iconBtn}
+          title="Zoom out"
+          onClick={() => setZoom((z) => Math.max(0.2, z - 0.1))}
+        >
+          <ZoomOut size={13} style={{ color: "#6b7280" }} />
+        </button>
+        <button
+          style={iconBtn}
+          title="Reset view"
+          onClick={() => {
+            setZoom(1);
+            setPan({ x: 60, y: 40 });
+          }}
+        >
+          <Maximize2 size={13} style={{ color: "#6b7280" }} />
+        </button>
 
-        <div className="flex flex-col gap-1.5 border-t p-2" style={{ borderColor: "var(--st-border)" }}>
-          <Btn variant={rawSQL ? "primary" : "outline"} size="sm" className="w-full justify-center gap-1.5" onClick={() => setRawSQL((v) => !v)}>
-            <Code2 size={12} /> Raw SQL
-          </Btn>
-          <Btn
-            variant="primary"
-            size="sm"
-            className="w-full justify-center gap-1.5"
-            onClick={handleDeploy}
-            disabled={deploying}
-            style={{ background: "var(--st-brand)", opacity: deploying ? 0.6 : 1 }}
-          >
+        <div
+          style={{
+            width: 1,
+            height: 18,
+            background: "#222222",
+            margin: "0 4px",
+          }}
+        />
+
+        <button
+          style={{ ...iconBtn, color: rawSQL ? "#22c55e" : "#6b7280" }}
+          title="Toggle SQL"
+          onClick={() => setRawSQL((v) => !v)}
+        >
+          <Code2 size={13} />
+        </button>
+
+        <div
+          style={{
+            width: 1,
+            height: 18,
+            background: "#222222",
+            margin: "0 4px",
+          }}
+        />
+
+        <button
+          onClick={handleDeploy}
+          disabled={deploying}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "5px 14px",
+            borderRadius: 6,
+            border: "none",
+            background: deploying ? "#14532d" : "#22c55e",
+            color: deploying ? "#86efac" : "#0a0a0a",
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: deploying ? "wait" : "pointer",
+            opacity: deploying ? 0.8 : 1,
+            transition: "background 0.15s, opacity 0.15s",
+          }}
+        >
+          {deploying ? (
+            <RefreshCw
+              size={12}
+              style={{ animation: "spin 0.8s linear infinite" }}
+            />
+          ) : (
             <Rocket size={12} />
-            {deploying ? "Deploying…" : "Deploy DB"}
-          </Btn>
-          {deployResult && (
-            <div
-              className="rounded p-2 text-[10px]"
+          )}
+          {deploying ? "Deploying…" : "Deploy DB"}
+        </button>
+      </div>
+
+      {/* ── Main body ── */}
+      <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+        {/* ── Left sidebar ── */}
+        <aside
+          style={{
+            width: 216,
+            flexShrink: 0,
+            display: "flex",
+            flexDirection: "column",
+            background: "#0f0f0f",
+            borderRight: "1px solid #1e1e1e",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              padding: "12px 14px 4px",
+              fontSize: 10,
+              fontWeight: 700,
+              color: "#374151",
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+            }}
+          >
+            Management
+          </div>
+          <div style={{ padding: "2px 6px 4px" }}>
+            {[
+              { label: "Tables", count: tables.length, active: true },
+              { label: "Functions", count: 0, active: false },
+              { label: "Triggers", count: 0, active: false },
+            ].map((item) => (
+              <div
+                key={item.label}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "6px 8px",
+                  borderRadius: 6,
+                  background: item.active ? "#0d2614" : "none",
+                  cursor: "default",
+                }}
+              >
+                <Database
+                  size={12}
+                  style={{ color: item.active ? "#22c55e" : "#374151" }}
+                />
+                <span
+                  style={{
+                    flex: 1,
+                    fontSize: 12,
+                    color: item.active ? "#d1d5db" : "#4b5563",
+                  }}
+                >
+                  {item.label}
+                </span>
+                {item.count > 0 && (
+                  <span
+                    style={{
+                      fontSize: 9,
+                      color: "#6b7280",
+                      background: "#1a1a1a",
+                      borderRadius: 10,
+                      padding: "1px 6px",
+                    }}
+                  >
+                    {item.count}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div
+            style={{
+              padding: "10px 14px 4px",
+              fontSize: 10,
+              fontWeight: 700,
+              color: "#374151",
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+            }}
+          >
+            Tables
+          </div>
+
+          <div style={{ flex: 1, overflowY: "auto", padding: "2px 6px" }}>
+            {tables.length === 0 ? (
+              <p
+                style={{
+                  padding: "12px 8px",
+                  fontSize: 11,
+                  color: "#374151",
+                  textAlign: "center",
+                }}
+              >
+                No tables yet
+              </p>
+            ) : (
+              tables.map((t) => {
+                const active = activeCard === t.id;
+                return (
+                  <div
+                    key={t.id}
+                    onClick={() => setActiveCard(t.id)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "6px 8px",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      background: active ? "#0d2614" : "none",
+                      borderLeft: `2px solid ${active ? "#22c55e" : "transparent"}`,
+                      transition: "background 0.1s",
+                    }}
+                  >
+                    <Database
+                      size={11}
+                      style={{
+                        color: active ? "#22c55e" : "#374151",
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span
+                      style={{
+                        flex: 1,
+                        fontSize: 11,
+                        color: active ? "#e5e7eb" : "#6b7280",
+                        fontFamily: "var(--st-mono, monospace)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {t.name}
+                    </span>
+                    <span style={{ fontSize: 9, color: "#374151", flexShrink: 0 }}>
+                      {t.fields.length}
+                    </span>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div style={{ padding: 8, borderTop: "1px solid #1e1e1e" }}>
+            <button
+              onClick={addNewTable}
               style={{
-                background: deployResult.success ? "rgba(34,197,94,0.12)" : "rgba(239,68,68,0.12)",
-                color: deployResult.success ? "var(--st-success)" : "var(--st-error)",
-                border: `1px solid ${deployResult.success ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)"}`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+                padding: 8,
+                borderRadius: 6,
+                border: "1px dashed #222222",
+                background: "none",
+                color: "#4b5563",
+                fontSize: 11,
+                cursor: "pointer",
+                width: "100%",
               }}
             >
-              {deployResult.success ? (
-                <>
-                  <p className="font-semibold">✓ Deployed</p>
-                  <p className="mt-0.5 opacity-80">{deployResult.applied.length} migration{deployResult.applied.length !== 1 ? "s" : ""} · {deployResult.totalTables} table{deployResult.totalTables !== 1 ? "s" : ""}</p>
-                  <p className="mt-0.5 opacity-60 font-mono" style={{ fontSize: 9 }}>mint_proj_{projectId?.slice(0, 8)}…_{"{table}"}</p>
-                </>
-              ) : (
-                <>
-                  <p className="font-semibold">✗ Failed</p>
-                  {deployResult.errors.map((e, i) => <p key={i} className="mt-0.5 opacity-80">{e}</p>)}
-                </>
-              )}
-              <button className="mt-1 opacity-40 hover:opacity-80" style={{ fontSize: 9 }} onClick={() => setDeployResult(null)}>Dismiss</button>
-            </div>
-          )}
-        </div>
-      </aside>
-
-      {/* Canvas */}
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden" style={{ background: "var(--st-canvas)" }}>
-        <div className="flex-1 overflow-auto p-6">
-          {tables.length === 0 ? (
-            <div className="flex h-full items-center justify-center">
-              <div className="text-center">
-                <Table2 size={36} style={{ color: "var(--st-border-3)", margin: "0 auto 12px" }} />
-                <p className="text-[13px]" style={{ color: "var(--st-text-3)" }}>No tables yet.</p>
-                <Btn variant="primary" size="sm" className="mt-3" onClick={addNewTable}><Plus size={13} /> New Table</Btn>
-              </div>
-            </div>
-          ) : (
-            <div className="grid gap-5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(260px, 320px))" }}>
-              {tables.map((t) => (
-                <TableCard key={t.id} table={t} allTables={tables} sel={sel}
-                  onSel={(s) => { setSel(s); if (s) setSelTableId(s.tableId); }}
-                  onAddField={addNewField}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {rawSQL && (
-          <div className="shrink-0 border-t" style={{ borderColor: "var(--st-border)", background: "var(--st-surface)", maxHeight: 220 }}>
-            <div className="flex h-8 items-center gap-2 border-b px-3" style={{ borderColor: "var(--st-border)" }}>
-              <Code2 size={12} style={{ color: "var(--st-brand)" }} />
-              <span className="text-[10.5px] font-semibold uppercase tracking-widest" style={{ color: "var(--st-text-2)" }}>Generated SQL</span>
-            </div>
-            <pre className="overflow-auto p-4 text-[11.5px] leading-relaxed" style={{ fontFamily: "var(--st-mono)", color: "var(--st-text-2)", maxHeight: 180, whiteSpace: "pre" }}>
-              {sql}
-            </pre>
+              <Plus size={11} />
+              New Table
+            </button>
           </div>
-        )}
+        </aside>
+
+        {/* ── ERD Canvas ── */}
+        <div
+          style={{
+            flex: 1,
+            position: "relative",
+            overflow: "hidden",
+            background: "#0a0a0a",
+            cursor: "default",
+          }}
+          onWheel={onWheel}
+          onMouseDown={onCanvasMouseDown}
+          onMouseMove={onMouseMove}
+          onMouseUp={onMouseUp}
+          onMouseLeave={onMouseUp}
+        >
+          {/* Dot grid background */}
+          <svg
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              pointerEvents: "none",
+            }}
+          >
+            <defs>
+              <pattern
+                id="erd-dots"
+                x={(pan.x % 24).toString()}
+                y={(pan.y % 24).toString()}
+                width="24"
+                height="24"
+                patternUnits="userSpaceOnUse"
+              >
+                <circle cx="1" cy="1" r="0.8" fill="#1a1a1a" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#erd-dots)" />
+          </svg>
+
+          {/* Transformed canvas */}
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              transformOrigin: "0 0",
+            }}
+          >
+            <FkLines tables={tables} positions={positions} />
+            {tables.map((t) => (
+              <ErdCard
+                key={t.id}
+                table={t}
+                pos={positions[t.id] ?? { x: 0, y: 0 }}
+                isActive={activeCard === t.id}
+                onHeaderMouseDown={(e) => onCardHeaderMouseDown(t.id, e)}
+                onDelete={() => deleteTable(t.id)}
+                onAddField={() => addNewField(t.id)}
+                onActivate={() => setActiveCard(t.id)}
+              />
+            ))}
+          </div>
+
+          {/* Empty state */}
+          {tables.length === 0 && (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 14,
+                pointerEvents: "none",
+              }}
+            >
+              <Database size={40} style={{ color: "#1e1e1e" }} />
+              <p style={{ fontSize: 13, color: "#2a2a2a", margin: 0 }}>
+                No tables defined yet
+              </p>
+              <button
+                onClick={addNewTable}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "8px 16px",
+                  borderRadius: 6,
+                  border: "none",
+                  background: "#22c55e",
+                  color: "#0a0a0a",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  pointerEvents: "all",
+                }}
+              >
+                <Plus size={12} />
+                Add Table
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Inspector */}
-      <div className="w-72 shrink-0">
-        <FieldInspector sel={sel} tables={tables} />
+      {/* ── Raw SQL panel ── */}
+      {rawSQL && (
+        <div
+          style={{
+            borderTop: "1px solid #1e1e1e",
+            background: "#0f0f0f",
+            flexShrink: 0,
+            maxHeight: 200,
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <div
+            style={{
+              height: 32,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "0 12px",
+              borderBottom: "1px solid #1e1e1e",
+              flexShrink: 0,
+            }}
+          >
+            <Code2 size={11} style={{ color: "#22c55e" }} />
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                color: "#374151",
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+              }}
+            >
+              Generated SQL
+            </span>
+          </div>
+          <pre
+            style={{
+              margin: 0,
+              padding: 12,
+              overflow: "auto",
+              flex: 1,
+              fontSize: 11,
+              lineHeight: 1.7,
+              color: "#6b7280",
+              fontFamily: "var(--st-mono, monospace)",
+              whiteSpace: "pre",
+            }}
+          >
+            {sql}
+          </pre>
+        </div>
+      )}
+
+      {/* ── Legend bar ── */}
+      <div
+        style={{
+          height: 32,
+          display: "flex",
+          alignItems: "center",
+          gap: 18,
+          padding: "0 16px",
+          background: "#0a0a0a",
+          borderTop: "1px solid #141414",
+          flexShrink: 0,
+        }}
+      >
+        {[
+          {
+            icon: <Key size={10} style={{ color: "#eab308" }} />,
+            label: "Primary Key",
+          },
+          {
+            icon: <Link2 size={10} style={{ color: "#6b7280" }} />,
+            label: "Foreign Key",
+          },
+          {
+            icon: <Circle size={10} style={{ color: "#22c55e" }} />,
+            label: "Unique",
+          },
+          {
+            icon: (
+              <span style={{ fontSize: 10, color: "#f59e0b", lineHeight: 1 }}>
+                ◆
+              </span>
+            ),
+            label: "Required",
+          },
+          {
+            icon: (
+              <span style={{ fontSize: 10, color: "#2a2a2a", lineHeight: 1 }}>
+                ◇
+              </span>
+            ),
+            label: "Nullable",
+          },
+          {
+            icon: (
+              <span
+                style={{
+                  width: 16,
+                  height: 2,
+                  background: "#22c55e",
+                  display: "inline-block",
+                  borderRadius: 1,
+                  opacity: 0.6,
+                }}
+              />
+            ),
+            label: "FK Relation",
+          },
+        ].map((item) => (
+          <div
+            key={item.label}
+            style={{ display: "flex", alignItems: "center", gap: 5 }}
+          >
+            {item.icon}
+            <span style={{ fontSize: 10, color: "#2a2a2a" }}>
+              {item.label}
+            </span>
+          </div>
+        ))}
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 10, color: "#1a1a1a" }}>
+          Scroll to zoom · Drag canvas to pan · Drag header to move
+        </span>
       </div>
+
+      {/* ── Deploy result toast ── */}
+      {deployResult && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 60,
+            right: 20,
+            zIndex: 200,
+            background: deployResult.success ? "#14532d" : "#450a0a",
+            border: `1px solid ${deployResult.success ? "#166534" : "#7f1d1d"}`,
+            borderRadius: 8,
+            padding: "12px 16px",
+            maxWidth: 320,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.7)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+              gap: 10,
+            }}
+          >
+            <div>
+              <p
+                style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: deployResult.success ? "#4ade80" : "#f87171",
+                  margin: "0 0 4px",
+                }}
+              >
+                {deployResult.success
+                  ? "✓ Deployed successfully"
+                  : "✗ Deploy failed"}
+              </p>
+              {deployResult.success ? (
+                <p style={{ fontSize: 11, color: "#86efac", margin: 0 }}>
+                  {deployResult.applied.length} migration
+                  {deployResult.applied.length !== 1 ? "s" : ""} ·{" "}
+                  {deployResult.totalTables} table
+                  {deployResult.totalTables !== 1 ? "s" : ""}
+                </p>
+              ) : (
+                deployResult.errors.map((err, i) => (
+                  <p key={i} style={{ fontSize: 11, color: "#fca5a5", margin: 0 }}>
+                    {err}
+                  </p>
+                ))
+              )}
+            </div>
+            <button
+              onClick={() => setDeployResult(null)}
+              style={{
+                background: "none",
+                border: "none",
+                color: "#6b7280",
+                cursor: "pointer",
+                fontSize: 16,
+                lineHeight: 1,
+                padding: "0 2px",
+                flexShrink: 0,
+              }}
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
