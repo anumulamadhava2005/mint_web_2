@@ -278,14 +278,16 @@ function StylesPanel({ comp, onUpdateComp }: { comp: ComponentSchema | null; onU
 
 // ── Actions inspector panel ───────────────────────────────────
 
-type ActionType = "navigate" | "setState" | "apiCall" | "showToast" | "openModal";
+type ActionType = "navigate" | "setState" | "apiCall" | "showToast" | "openModal" | "callWorkflow" | "collectForm";
 
 const ACTION_TYPES: { value: ActionType; label: string }[] = [
-  { value: "navigate",  label: "Navigate to screen" },
-  { value: "setState",  label: "Set state variable" },
-  { value: "apiCall",   label: "Call API" },
-  { value: "showToast", label: "Show toast message" },
-  { value: "openModal", label: "Open modal" },
+  { value: "navigate",     label: "Navigate to screen" },
+  { value: "setState",     label: "Set state variable" },
+  { value: "apiCall",      label: "Call API" },
+  { value: "showToast",    label: "Show toast message" },
+  { value: "openModal",    label: "Open modal" },
+  { value: "callWorkflow", label: "Call workflow" },
+  { value: "collectForm",  label: "Collect form values" },
 ];
 
 const EVENT_TYPES = ["onClick", "onChange", "onSubmit", "onMount", "onFocus", "onBlur"];
@@ -297,6 +299,7 @@ function ActionEditor({
   comp: ComponentSchema; onUpdateComp: (id: string, u: Partial<ComponentSchema>) => void;
   screens: ScreenSchema[];
 }) {
+  const workflows = useRuntimeStore((s) => s.schema.workflows ?? []);
   const events = comp.events ?? {};
   const refs = (events[event] ?? []) as any[];
 
@@ -374,6 +377,19 @@ function ActionEditor({
           </SelectField>
         </Field>
       )}
+      {action.actionId === "callWorkflow" && (
+        <Field label="Workflow">
+          <SelectField value={String(action.params?.workflowId ?? "")} onChange={(e) => updateParam("workflowId", e.target.value)}>
+            <option value="">— pick workflow —</option>
+            {(workflows as any[]).map((w: any) => <option key={w.id} value={w.id}>{w.name}</option>)}
+          </SelectField>
+        </Field>
+      )}
+      {action.actionId === "collectForm" && (
+        <Field label="Save to state key">
+          <TextField mono value={String(action.params?.stateKey ?? "")} placeholder="local.formData" onChange={(e) => updateParam("stateKey", e.target.value)} />
+        </Field>
+      )}
     </div>
   );
 }
@@ -384,6 +400,7 @@ function ActionsPanel({ comp, onUpdateComp, screens }: {
   screens: ScreenSchema[];
 }) {
   const [selectedEvent, setSelectedEvent] = useState("onClick");
+  const workflows = useRuntimeStore((s) => s.schema.workflows ?? []);
   if (!comp) return <div className="p-3.5 text-[11px]" style={{ color: "var(--st-text-3)" }}>Select a component to manage event handlers.</div>;
 
   const c = comp; // narrowed non-null ref for closures
@@ -457,6 +474,29 @@ function ActionsPanel({ comp, onUpdateComp, screens }: {
           ))}
         </div>
       )}
+
+      {(() => {
+        const triggered = (workflows as any[]).filter((w: any) =>
+          w.trigger?.config?.componentId === c.id
+        );
+        if (triggered.length === 0) return null;
+        return (
+          <div className="rounded-[var(--st-r-md)] p-2.5 border-t border-[var(--st-border)]" style={{ background: "var(--st-bg)" }}>
+            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.07em]" style={{ color: "var(--st-text-3)" }}>
+              Workflows triggered here
+            </div>
+            {triggered.map((w: any) => (
+              <div key={w.id} className="flex items-center gap-1.5 py-0.5 text-[11px]" style={{ color: "var(--st-brand)" }}>
+                <span>⚡</span>
+                <span>{w.name}</span>
+                <span className="text-[10px]" style={{ color: "var(--st-text-3)" }}>
+                  ({w.trigger?.config?.eventType ?? "onClick"})
+                </span>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
     </div>
   );
 }
