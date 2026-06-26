@@ -16,6 +16,7 @@ import {
 } from "./primitives";
 import { useRuntimeStore } from "@/lib/runtime/runtime-store";
 import type { ScreenSchema, ComponentSchema, ComponentType } from "@/lib/runtime/schema";
+import { ComponentConfigEditor } from "@/components/BackendPanel";
 
 type InspectorTab = "config" | "styles" | "actions";
 type DeviceFrame = "iphone14" | "pixel7" | "ipad" | "desktop";
@@ -123,78 +124,60 @@ function ConfigPanel({
     );
   }
 
-  const props = comp.props;
   return (
     <>
       <Section title="Component">
         <div className="mb-2 flex items-center gap-2">
           <Pill tone="brand">{comp.type}</Pill>
-          <span className="text-[10px]" style={{ color: "var(--st-text-3)" }}>{comp.id}</span>
+          <span className="text-[10px]" style={{ color: "var(--st-text-3)" }}>{comp.id.slice(-6)}</span>
         </div>
       </Section>
-      <Section title="Props">
-        {comp.type === "button" && (
-          <>
-            <Field label="Label">
-              <TextField value={String(props.label ?? "")} onChange={(e) => onUpdateComp(comp.id, { props: { ...props, label: e.target.value } })} />
-            </Field>
-            <Field label="Variant">
-              <SelectField value={String(props.variant ?? "primary")} onChange={(e) => onUpdateComp(comp.id, { props: { ...props, variant: e.target.value } })}>
-                <option value="primary">Primary</option>
-                <option value="outline">Outline</option>
-                <option value="ghost">Ghost</option>
-                <option value="danger">Danger</option>
-              </SelectField>
-            </Field>
-            <ToggleRow label="Disabled" checked={Boolean(props.disabled)} onChange={(v) => onUpdateComp(comp.id, { props: { ...props, disabled: v } })} />
-          </>
-        )}
-        {comp.type === "text" && (
-          <>
-            <Field label="Content">
-              <TextField value={String(props.content ?? "")} onChange={(e) => onUpdateComp(comp.id, { props: { ...props, content: e.target.value } })} />
-            </Field>
-            <Field label="Tag">
-              <SelectField value={String(props.tag ?? "p")} onChange={(e) => onUpdateComp(comp.id, { props: { ...props, tag: e.target.value } })}>
-                <option value="h1">h1</option>
-                <option value="h2">h2</option>
-                <option value="p">p</option>
-                <option value="span">span</option>
-              </SelectField>
-            </Field>
-          </>
-        )}
-        {comp.type === "input" && (
-          <>
-            <Field label="Placeholder">
-              <TextField value={String(props.placeholder ?? "")} onChange={(e) => onUpdateComp(comp.id, { props: { ...props, placeholder: e.target.value } })} />
-            </Field>
-            <Field label="Type">
-              <SelectField value={String(props.inputType ?? "text")} onChange={(e) => onUpdateComp(comp.id, { props: { ...props, inputType: e.target.value } })}>
-                <option value="text">text</option>
-                <option value="email">email</option>
-                <option value="password">password</option>
-                <option value="number">number</option>
-                <option value="tel">tel</option>
-              </SelectField>
-            </Field>
-            <ToggleRow label="Required" checked={Boolean(props.required)} onChange={(v) => onUpdateComp(comp.id, { props: { ...props, required: v } })} />
-          </>
-        )}
-        {(comp.type === "view" || comp.type === "scroll") && (
-          <p className="text-[11px]" style={{ color: "var(--st-text-3)" }}>Container — no configurable props.</p>
-        )}
+      <Section title="Props & Bindings">
+        <ComponentConfigEditor screenId={screen.id} component={comp} />
       </Section>
-      <Section title="Bindings" defaultOpen={false}>
-        {Object.entries(comp.bindings ?? {}).map(([k, v]) => (
-          <div key={k} className="mb-2 flex gap-1.5">
-            <TextField value={k} readOnly className="w-1/3 opacity-60" onChange={() => {}} />
-            <TextField value={v} onChange={(e) => onUpdateComp(comp.id, { bindings: { ...comp.bindings, [k]: e.target.value } })} />
-          </div>
-        ))}
-        {Object.keys(comp.bindings ?? {}).length === 0 && (
-          <p className="text-[11px]" style={{ color: "var(--st-text-3)" }}>No bindings.</p>
+      <Section title="Visibility & Repeat" defaultOpen={false}>
+        <Field label="Show when (expr)" hint="$user.role == 'admin'">
+          <TextField
+            mono
+            value={comp.conditionalRender ?? ""}
+            placeholder="leave empty = always shown"
+            onChange={(e) => onUpdateComp(comp.id, { conditionalRender: e.target.value || undefined })}
+          />
+        </Field>
+        <Field label="Repeat for (list expr)" hint="$local.expenses">
+          <TextField
+            mono
+            value={comp.repeatFor?.items ?? ""}
+            placeholder="$state.items"
+            onChange={(e) =>
+              onUpdateComp(comp.id, {
+                repeatFor: e.target.value ? { items: e.target.value, as: comp.repeatFor?.as ?? "item" } : undefined,
+              })
+            }
+          />
+        </Field>
+        {comp.repeatFor && (
+          <Field label="Loop variable" hint="available as $item inside">
+            <TextField
+              mono
+              value={comp.repeatFor.as ?? "item"}
+              onChange={(e) =>
+                onUpdateComp(comp.id, { repeatFor: { ...comp.repeatFor!, as: e.target.value || "item" } })
+              }
+            />
+          </Field>
         )}
+        <Field label="Required roles (comma-separated)" hint="leave empty = public">
+          <TextField
+            value={(comp.requiredRoles ?? []).join(", ")}
+            placeholder="admin, manager"
+            onChange={(e) =>
+              onUpdateComp(comp.id, {
+                requiredRoles: e.target.value ? e.target.value.split(",").map((r) => r.trim()).filter(Boolean) : undefined,
+              })
+            }
+          />
+        </Field>
       </Section>
     </>
   );
