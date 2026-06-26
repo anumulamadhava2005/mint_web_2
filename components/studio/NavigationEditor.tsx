@@ -318,6 +318,31 @@ export function NavigationEditor() {
                     placeholder="/my-screen"
                     onChange={(e) => setRouteEdits((p) => ({ ...p, [sid]: e.target.value }))}
                     onBlur={(e) => handleUpdateRoute(sid, e.target.value)} />
+                  {(() => {
+                    const currentRoute = routeEdits[sid] ?? selectedScreen.route ?? "";
+                    const paramNames = currentRoute.match(/:([a-zA-Z_][a-zA-Z0-9_]*)/g)?.map((p: string) => p.slice(1)) ?? [];
+                    if (paramNames.length === 0) return (
+                      <p style={{ fontSize: 10, color: "var(--st-text-3)", marginTop: 4 }}>
+                        Tip: use{" "}
+                        <code style={{ fontFamily: "var(--st-mono)", background: "var(--st-bg)", padding: "1px 4px", borderRadius: 3 }}>:id</code>
+                        {" "}for dynamic segments, e.g.{" "}
+                        <code style={{ fontFamily: "var(--st-mono)", background: "var(--st-bg)", padding: "1px 4px", borderRadius: 3 }}>/expenses/:id</code>
+                      </p>
+                    );
+                    return (
+                      <div style={{ marginTop: 6 }}>
+                        <p style={{ fontSize: 10, fontWeight: 600, color: "var(--st-text-3)", marginBottom: 4 }}>
+                          Route params ({paramNames.length})
+                        </p>
+                        {paramNames.map((param: string) => (
+                          <div key={param} style={{ display: "flex", alignItems: "center", gap: 8, borderRadius: "var(--st-r-sm)", padding: "3px 8px", background: "var(--st-bg)", border: "1px solid var(--st-border)", marginBottom: 3 }}>
+                            <code style={{ fontSize: 10, color: "var(--st-brand)", fontFamily: "var(--st-mono)" }}>:{param}</code>
+                            <span style={{ fontSize: 10, color: "var(--st-text-3)" }}>string</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </Field>
                 <Field label="Page title" htmlFor={`title-${sid}`}>
                   <TextField id={`title-${sid}`}

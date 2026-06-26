@@ -645,6 +645,94 @@ ${interactions
         files.push({ path: "lib/schema-db.ts", content: generateSchemaDbLib(rSchema), type: "text" });
       }
 
+      // Per-table REST API routes (collection + [id])
+      const apiTables: any[] = rSchema.database?.tables ?? [];
+      for (const table of apiTables) {
+        const tn = table.name as string;
+        const routeContent = `import { NextRequest, NextResponse } from "next/server";
+
+const DB_URL = process.env.DB_PROXY_URL ?? "http://localhost:3001/api/mint-db";
+const AUTH = process.env.DB_AUTH_TOKEN ?? "";
+
+async function query(text: string, params: unknown[] = []) {
+  const res = await fetch(DB_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: \`Bearer \${AUTH}\` },
+    body: JSON.stringify({ text, params }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function GET(_req: NextRequest) {
+  const { rows } = await query("SELECT * FROM ${tn} ORDER BY created_at DESC LIMIT 100");
+  return NextResponse.json(rows);
+}
+
+export async function POST(req: NextRequest) {
+  const body = await req.json();
+  const keys = Object.keys(body) as string[];
+  const vals = Object.values(body);
+  const cols = keys.join(", ");
+  const placeholders = keys.map((_: string, i: number) => \`$\${i + 1}\`).join(", ");
+  const { rows } = await query(
+    \`INSERT INTO ${tn} (\${cols}) VALUES (\${placeholders}) RETURNING *\`,
+    vals,
+  );
+  return NextResponse.json(rows[0], { status: 201 });
+}
+`;
+        files.push({ path: `app/api/${tn}/route.ts`, content: routeContent, type: "text" });
+
+        const idRouteContent = `import { NextRequest, NextResponse } from "next/server";
+
+const DB_URL = process.env.DB_PROXY_URL ?? "http://localhost:3001/api/mint-db";
+const AUTH = process.env.DB_AUTH_TOKEN ?? "";
+
+async function query(text: string, params: unknown[] = []) {
+  const res = await fetch(DB_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: \`Bearer \${AUTH}\` },
+    body: JSON.stringify({ text, params }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: { id: string } },
+) {
+  const { rows } = await query("SELECT * FROM ${tn} WHERE id = $1", [params.id]);
+  if (!rows[0]) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json(rows[0]);
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: { id: string } },
+) {
+  const body = await req.json();
+  const keys = Object.keys(body) as string[];
+  const sets = keys.map((k: string, i: number) => \`\${k} = $\${i + 1}\`).join(", ");
+  const { rows } = await query(
+    \`UPDATE ${tn} SET \${sets} WHERE id = $\${keys.length + 1} RETURNING *\`,
+    [...Object.values(body), params.id],
+  );
+  return NextResponse.json(rows[0]);
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: { id: string } },
+) {
+  await query("DELETE FROM ${tn} WHERE id = $1", [params.id]);
+  return NextResponse.json({ ok: true });
+}
+`;
+        files.push({ path: `app/api/${tn}/[id]/route.ts`, content: idRouteContent, type: "text" });
+      }
+
       // Auth middleware
       const authEnabled = Array.isArray(rSchema.auth?.providers) && rSchema.auth.providers.some((p: any) => p.enabled);
       if (authEnabled) {
