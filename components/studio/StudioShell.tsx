@@ -300,7 +300,7 @@ export function StudioShell({
           {mode === "state" && <StateManager />}
           {mode === "workflows" && <ActionsEditor mode="workflows" />}
           {mode === "navigation" && <NavigationEditor />}
-          {mode === "database" && <DatabaseEditor />}
+          {mode === "database" && <DatabaseEditor projectId={projectId} />}
           {mode === "auth" && <AuthEditor />}
           {mode === "settings" && <SettingsPanel projectId={projectId} />}
         </main>

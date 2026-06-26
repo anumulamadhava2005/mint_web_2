@@ -10,7 +10,7 @@ import { useState, useCallback, useMemo } from "react";
 import { v4 as uuid } from "uuid";
 import {
   Plus, Trash2, Settings, Key, Link2, Code2, AlertCircle,
-  ChevronRight, Table2, Columns, Sliders, Users,
+  ChevronRight, Table2, Columns, Sliders, Users, Rocket,
 } from "lucide-react";
 import { useRuntimeStore } from "@/lib/runtime/runtime-store";
 import type { TableSchema, FieldSchema, RelationSchema } from "@/lib/runtime/schema";
@@ -224,9 +224,12 @@ function FieldInspector({ sel, tables }: { sel: Sel; tables: TableSchema[] }) {
   );
 }
 
+// ── Deploy result type ────────────────────────────────────────────
+type DeployResult = { success: boolean; applied: string[]; errors: string[]; totalTables: number } | null;
+
 // ── Main component ────────────────────────────────────────────────
 
-export function DatabaseEditor() {
+export function DatabaseEditor({ projectId }: { projectId?: string }) {
   const { schema, addTable, updateTable, removeTable, addField } = useRuntimeStore();
 
   const tables: TableSchema[] = schema.database?.tables ?? [];
@@ -235,6 +238,38 @@ export function DatabaseEditor() {
   const [sel, setSel] = useState<Sel>(null);
   const [rawSQL, setRawSQL] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
+  const [deploying, setDeploying] = useState(false);
+  const [deployResult, setDeployResult] = useState<DeployResult>(null);
+
+  const handleDeploy = useCallback(async () => {
+    if (!projectId) {
+      setDeployResult({ success: false, applied: [], errors: ["No projectId — cannot deploy"], totalTables: 0 });
+      return;
+    }
+    if (!tables.length) {
+      setDeployResult({ success: false, applied: [], errors: ["No tables defined. Add tables first."], totalTables: 0 });
+      return;
+    }
+    setDeploying(true);
+    setDeployResult(null);
+    try {
+      const res = await fetch(`/api/db/migrate/${projectId}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ schema: schema.database }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setDeployResult({ success: false, applied: [], errors: [json.error ?? `HTTP ${res.status}`], totalTables: tables.length });
+      } else {
+        setDeployResult(json);
+      }
+    } catch (e: any) {
+      setDeployResult({ success: false, applied: [], errors: [e?.message ?? "Network error — DB bridge unreachable"], totalTables: tables.length });
+    }
+    setDeploying(false);
+  }, [projectId, tables, schema.database]);
 
   const addNewTable = useCallback(() => {
     const id = uuid();
@@ -315,10 +350,45 @@ export function DatabaseEditor() {
           })}
         </div>
 
-        <div className="border-t p-2" style={{ borderColor: "var(--st-border)" }}>
+        <div className="flex flex-col gap-1.5 border-t p-2" style={{ borderColor: "var(--st-border)" }}>
           <Btn variant={rawSQL ? "primary" : "outline"} size="sm" className="w-full justify-center gap-1.5" onClick={() => setRawSQL((v) => !v)}>
             <Code2 size={12} /> Raw SQL
           </Btn>
+          <Btn
+            variant="primary"
+            size="sm"
+            className="w-full justify-center gap-1.5"
+            onClick={handleDeploy}
+            disabled={deploying}
+            style={{ background: "var(--st-brand)", opacity: deploying ? 0.6 : 1 }}
+          >
+            <Rocket size={12} />
+            {deploying ? "Deploying…" : "Deploy DB"}
+          </Btn>
+          {deployResult && (
+            <div
+              className="rounded p-2 text-[10px]"
+              style={{
+                background: deployResult.success ? "rgba(34,197,94,0.12)" : "rgba(239,68,68,0.12)",
+                color: deployResult.success ? "var(--st-success)" : "var(--st-error)",
+                border: `1px solid ${deployResult.success ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)"}`,
+              }}
+            >
+              {deployResult.success ? (
+                <>
+                  <p className="font-semibold">✓ Deployed</p>
+                  <p className="mt-0.5 opacity-80">{deployResult.applied.length} migration{deployResult.applied.length !== 1 ? "s" : ""} · {deployResult.totalTables} table{deployResult.totalTables !== 1 ? "s" : ""}</p>
+                  <p className="mt-0.5 opacity-60 font-mono" style={{ fontSize: 9 }}>mint_proj_{projectId?.slice(0, 8)}…_{"{table}"}</p>
+                </>
+              ) : (
+                <>
+                  <p className="font-semibold">✗ Failed</p>
+                  {deployResult.errors.map((e, i) => <p key={i} className="mt-0.5 opacity-80">{e}</p>)}
+                </>
+              )}
+              <button className="mt-1 opacity-40 hover:opacity-80" style={{ fontSize: 9 }} onClick={() => setDeployResult(null)}>Dismiss</button>
+            </div>
+          )}
         </div>
       </aside>
 
