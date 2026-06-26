@@ -67,6 +67,8 @@ const publicApiRoutes = [
   "/api/otp/send",
   "/api/otp/verify",
   "/api/crm",
+  "/api/seed-crm",
+  "/api/seed-expense-approval",
   "/api/check-elements",
   "/api/upload",
 ];
