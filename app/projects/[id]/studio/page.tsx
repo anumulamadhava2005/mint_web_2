@@ -40,14 +40,25 @@ export default function StudioPage({ params }: { params: Promise<{ id: string }>
       try {
         const current = useRuntimeStore.getState().schema;
         if (current.id !== projectId) {
-          const saved = (() => {
+          // DB is source of truth; localStorage is a fallback cache.
+          let saved: Record<string, unknown> | undefined;
+          try {
+            const dbRes = await fetch(`/api/runtime-schema/${projectId}`);
+            if (dbRes.ok) {
+              const dbData = await dbRes.json();
+              if (dbData?.schema) saved = dbData.schema;
+            }
+          } catch {
+            // offline — fall through to localStorage
+          }
+          if (!saved) {
             try {
               const raw = window.localStorage.getItem(`mint:schema:${projectId}`);
-              return raw ? JSON.parse(raw) : undefined;
+              saved = raw ? JSON.parse(raw) : undefined;
             } catch {
-              return undefined;
+              // corrupt cache — ignore
             }
-          })();
+          }
           useRuntimeStore.getState().initSchema(projectId, name, saved);
         }
         setReady(true);
