@@ -392,10 +392,8 @@ function AccessMatrix({
 // ── Main component ────────────────────────────────────────────
 
 export function AuthEditor() {
-  const { schema, setAuthConfig } = useRuntimeStore((s) => ({
-    schema: s.schema,
-    setAuthConfig: s.setAuthConfig,
-  }));
+  const schema = useRuntimeStore((s) => s.schema);
+  const setAuthConfig = useRuntimeStore((s) => s.setAuthConfig);
 
   const auth: AuthConfigSchema = schema.auth ?? DEFAULT_AUTH;
 
