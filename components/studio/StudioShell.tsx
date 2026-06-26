@@ -8,7 +8,10 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { useCallback, useEffect, useMemo, useState, useRef, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import PenpotEditor from "@/components/PenpotEditor";
+import PrototypeViewer from "@/components/PrototypeViewer";
+import { useEditorStore } from "@/lib/editorStore";
 import {
   Frame,
   Boxes,
@@ -83,7 +86,7 @@ export function StudioShell({
   projectName: string;
   onExit?: () => void;
 }) {
-  const [mode, setMode] = useState<StudioMode>("screens");
+  const [mode, setMode] = useState<StudioMode>("canvas");
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -293,7 +296,7 @@ export function StudioShell({
 
         {/* editor surface */}
         <main className="relative min-w-0 flex-1 overflow-hidden" style={{ background: "var(--st-canvas)" }}>
-          {mode === "canvas" && <CanvasView projectId={projectId} projectName={projectName} />}
+          {mode === "canvas" && <CanvasView projectId={projectId} projectName={projectName} onSwitchMode={(m) => setMode(m as StudioMode)} />}
           {mode === "screens" && <ScreenManager />}
           {mode === "components" && <ComponentLibrary />}
           {mode === "theme" && <ThemeDesigner />}
@@ -355,7 +358,10 @@ function timedFetch(input: RequestInfo, init?: RequestInit, timeoutMs = 12000): 
   return fetch(input, { ...init, signal: ctrl.signal }).finally(() => clearTimeout(timer));
 }
 
-function CanvasView({ projectId, projectName }: { projectId: string; projectName: string }) {
+function CanvasView({ projectId, projectName, onSwitchMode }: { projectId: string; projectName: string; onSwitchMode: (mode: string) => void }) {
+  const router = useRouter();
+  const viewerMode = useEditorStore((s) => s.viewerMode);
+  const setViewerMode = useEditorStore((s) => s.setViewerMode);
   const [fileId, setFileId] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [slow, setSlow] = useState(false);
@@ -437,12 +443,16 @@ function CanvasView({ projectId, projectName }: { projectId: string; projectName
   }
 
   return (
-    <PenpotEditor
-      fileId={fileId}
-      projectId={projectId}
-      projectName={projectName}
-      onBack={() => {}}
-    />
+    <>
+      <PenpotEditor
+        fileId={fileId}
+        projectId={projectId}
+        projectName={projectName}
+        onBack={() => router.push("/projects")}
+        onSwitchStudioMode={onSwitchMode}
+      />
+      {viewerMode && <PrototypeViewer onClose={() => setViewerMode(false)} />}
+    </>
   );
 }
 

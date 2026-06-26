@@ -926,6 +926,83 @@ const schema = {
   },
 };
 
+// ─── Canvas file ID (stable, derived from PROJECT_ID) ─────────────────
+const FILE_ID = "40780692-dd76-4e25-9fbb-ea194dba9620"; // one digit off from PROJECT_ID
+const PAGE_ID = "40780692-dd76-4e25-9fbb-ea194dba9621";
+const ROOT_FRAME_ID = "00000000-0000-0000-0000-000000000000";
+
+// Build Penpot canvas data — one frame per screen, 390×844, laid out horizontally
+function buildCanvasData() {
+  const FRAME_W = 390;
+  const FRAME_H = 844;
+  const GAP = 100;
+
+  const screenFrames = schema.screens.map((screen, i) => ({
+    id: screen.id,
+    type: "frame",
+    name: screen.name,
+    x: i * (FRAME_W + GAP),
+    y: 0,
+    width: FRAME_W,
+    height: FRAME_H,
+    rotation: 0,
+    opacity: 1,
+    hidden: false,
+    locked: false,
+    parentId: ROOT_FRAME_ID,
+    shapes: [],
+    fills: [{ fillColor: "#FFFFFF", fillOpacity: 1 }],
+    strokes: [],
+    shadow: [],
+    blur: null,
+    layoutProps: {},
+    interactions: [],
+    runtimeBindings: { onMount: screen.onMount?.[0]?.actionId || "" },
+  }));
+
+  const rootFrame = {
+    id: ROOT_FRAME_ID,
+    type: "frame",
+    name: "root",
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+    rotation: 0,
+    opacity: 1,
+    hidden: false,
+    locked: false,
+    parentId: null,
+    shapes: screenFrames.map((f) => f.id),
+    fills: [],
+    strokes: [],
+    shadow: [],
+    blur: null,
+    layoutProps: {},
+    interactions: [],
+  };
+
+  const objects = { [ROOT_FRAME_ID]: rootFrame };
+  for (const f of screenFrames) objects[f.id] = f;
+
+  return {
+    id: FILE_ID,
+    name: schema.name,
+    revn: 0,
+    pages: [PAGE_ID],
+    pagesIndex: {
+      [PAGE_ID]: {
+        id: PAGE_ID,
+        name: "Page 1",
+        objects,
+        flows: [],
+        guides: [],
+        options: {},
+      },
+    },
+  };
+}
+
 // ─── DDL for runtime_schemas ───────────────────────────────────────────
 const CREATE_TABLE_SQL = `
   CREATE TABLE IF NOT EXISTS runtime_schemas (
@@ -936,17 +1013,6 @@ const CREATE_TABLE_SQL = `
   );
 `;
 
-// ─── Upsert SQL ────────────────────────────────────────────────────────
-const UPSERT_SQL = `
-  INSERT INTO runtime_schemas (project_id, schema_json, updated_by)
-  VALUES ($1, $2::jsonb, $3)
-  ON CONFLICT (project_id)
-  DO UPDATE SET
-    schema_json = EXCLUDED.schema_json,
-    updated_at  = now(),
-    updated_by  = EXCLUDED.updated_by
-`;
-
 // ─── Main ──────────────────────────────────────────────────────────────
 async function main() {
   console.log("Connecting to database…");
@@ -954,16 +1020,77 @@ async function main() {
   console.log("Connected.");
 
   try {
+    // ── 1. Resolve owner ───────────────────────────────────────────────
+    const ownerEmail = process.env.SEED_USER_EMAIL;
+    let ownerId = null;
+
+    if (ownerEmail) {
+      const res = await client.query("SELECT id FROM users WHERE email = $1 LIMIT 1", [ownerEmail]);
+      if (res.rows.length === 0) {
+        console.error(`No user found with email: ${ownerEmail}`);
+        process.exit(1);
+      }
+      ownerId = res.rows[0].id;
+      console.log(`Owner resolved: ${ownerEmail} → ${ownerId}`);
+    } else {
+      // Fall back to first user in the database
+      const res = await client.query("SELECT id, email FROM users ORDER BY created_at LIMIT 1");
+      if (res.rows.length === 0) {
+        console.error("No users in database. Create a user first or set SEED_USER_EMAIL.");
+        process.exit(1);
+      }
+      ownerId = res.rows[0].id;
+      console.log(`Owner defaulted to first user: ${res.rows[0].email} → ${ownerId}`);
+    }
+
+    // ── 2. Upsert project ──────────────────────────────────────────────
+    console.log(`Upserting project ${PROJECT_ID}…`);
+    await client.query(
+      `INSERT INTO projects (id, name, description, owner_id, is_public, allow_public_edit)
+       VALUES ($1, $2, $3, $4, false, false)
+       ON CONFLICT (id) DO UPDATE SET
+         name        = EXCLUDED.name,
+         description = EXCLUDED.description`,
+      [PROJECT_ID, schema.name, schema.meta.description, ownerId]
+    );
+    console.log("Project upserted.");
+
+    // ── 3. Upsert canvas file ──────────────────────────────────────────
+    console.log(`Upserting canvas file ${FILE_ID}…`);
+    const canvasData = buildCanvasData();
+    await client.query(
+      `INSERT INTO files (id, project_id, name, revn, data)
+       VALUES ($1, $2, $3, 0, $4::jsonb)
+       ON CONFLICT (id) DO UPDATE SET
+         name = EXCLUDED.name,
+         data = EXCLUDED.data,
+         modified_at = now()`,
+      [FILE_ID, PROJECT_ID, schema.name, JSON.stringify(canvasData)]
+    );
+    console.log(`Canvas file upserted — ${schema.screens.length} screens as frames.`);
+
+    // ── 4. Upsert runtime schema ───────────────────────────────────────
     console.log("Ensuring runtime_schemas table exists…");
     await client.query(CREATE_TABLE_SQL);
-    console.log("Table ready.");
 
-    console.log(`Seeding schema for project ${PROJECT_ID}…`);
-    await client.query(UPSERT_SQL, [PROJECT_ID, JSON.stringify(schema), null]);
-    console.log("Schema seeded successfully.");
+    console.log(`Upserting runtime schema for project ${PROJECT_ID}…`);
+    await client.query(
+      `INSERT INTO runtime_schemas (project_id, schema_json, updated_by)
+       VALUES ($1, $2::jsonb, $3)
+       ON CONFLICT (project_id) DO UPDATE SET
+         schema_json = EXCLUDED.schema_json,
+         updated_at  = now(),
+         updated_by  = EXCLUDED.updated_by`,
+      [PROJECT_ID, JSON.stringify(schema), ownerId]
+    );
+    console.log("Runtime schema upserted.");
+
     console.log("");
-    console.log("Done. Open the project studio to verify:");
-    console.log(`  https://<your-host>/projects/${PROJECT_ID}/studio`);
+    console.log("✅ Seed complete. Open the project:");
+    console.log(`  /projects/${PROJECT_ID}/studio`);
+    console.log("");
+    console.log(`  Canvas file ID : ${FILE_ID}`);
+    console.log(`  Screens seeded : ${schema.screens.map((s) => s.name).join(", ")}`);
   } finally {
     await client.end();
   }
