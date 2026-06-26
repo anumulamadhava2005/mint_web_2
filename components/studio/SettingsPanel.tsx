@@ -229,6 +229,7 @@ export function SettingsPanel({ projectId }: { projectId: string }) {
       try {
         const parsed = JSON.parse(ev.target?.result as string);
         useRuntimeStore.getState().initSchema(parsed.id ?? projectId, parsed.name ?? name, parsed);
+        useRuntimeStore.setState({ dirty: true });
         showToast("Project imported");
       } catch {
         showToast("Invalid JSON file");

@@ -5,60 +5,17 @@
 // Left sidebar: screens + layers | Center: device preview | Right: inspector
 // ═══════════════════════════════════════════════════════════════
 
-import { useState, useEffect } from "react";
+import { useState, type CSSProperties } from "react";
 import {
   Frame, Layers, Plus, Pencil, Trash2, ZoomIn, ZoomOut,
   Rocket, Minus, Type, Square, MousePointer, AlignLeft,
 } from "lucide-react";
 import {
   Inspector, InspectorTabs, Section, Field, TextField,
-  SelectField, ToggleRow, Btn, IconBtn, Pill, cx,
+  SelectField, ToggleRow, Btn, IconBtn, Pill, cx, EmptyState,
 } from "./primitives";
 import { useRuntimeStore } from "@/lib/runtime/runtime-store";
 import type { ScreenSchema, ComponentSchema, ComponentType } from "@/lib/runtime/schema";
-
-// ── Default seed data ─────────────────────────────────────────
-
-const SEED_SCREENS: ScreenSchema[] = [
-  {
-    id: "screen-home",
-    name: "Home",
-    route: "/home",
-    components: [
-      { id: "c1", type: "view", props: {}, bindings: {}, style: {}, events: {} },
-      { id: "c2", type: "text", props: { content: "Welcome back" }, bindings: {}, style: {}, events: {} },
-      { id: "c3", type: "button", props: { label: "Get Started", variant: "primary" }, bindings: {}, style: {}, events: {} },
-    ],
-    localState: [],
-    actions: [],
-  },
-  {
-    id: "screen-login",
-    name: "Login",
-    route: "/login",
-    components: [
-      { id: "c4", type: "view", props: {}, bindings: {}, style: {}, events: {} },
-      { id: "c5", type: "text", props: { content: "Sign In" }, bindings: {}, style: {}, events: {} },
-      { id: "c6", type: "input", props: { placeholder: "Email", inputType: "email" }, bindings: {}, style: {}, events: {} },
-      { id: "c7", type: "input", props: { placeholder: "Password", inputType: "password" }, bindings: {}, style: {}, events: {} },
-      { id: "c8", type: "button", props: { label: "Sign In", variant: "primary" }, bindings: {}, style: {}, events: {} },
-    ],
-    localState: [],
-    actions: [],
-  },
-  {
-    id: "screen-dashboard",
-    name: "Dashboard",
-    route: "/dashboard",
-    components: [
-      { id: "c9", type: "view", props: {}, bindings: {}, style: {}, events: {} },
-      { id: "c10", type: "text", props: { content: "Dashboard" }, bindings: {}, style: {}, events: {} },
-      { id: "c11", type: "button", props: { label: "Logout", variant: "outline" }, bindings: {}, style: {}, events: {} },
-    ],
-    localState: [],
-    actions: [],
-  },
-];
 
 type InspectorTab = "config" | "styles" | "actions";
 type DeviceFrame = "iphone14" | "pixel7" | "ipad" | "desktop";
@@ -305,7 +262,7 @@ function StylesPanel({ comp, onUpdateComp }: { comp: ComponentSchema | null; onU
           <TextField type="number" value={String(typography.fontSize ?? "")} placeholder="14" onChange={(e) => upd({ typography: { ...typography, fontSize: Number(e.target.value) } })} />
         </Field>
         <Field label="Font Weight">
-          <SelectField value={String(typography.fontWeight ?? "400")} onChange={(e) => upd({ typography: { ...typography, fontWeight: e.target.value } })}>
+          <SelectField value={String(typography.fontWeight ?? "400")} onChange={(e) => upd({ typography: { ...typography, fontWeight: e.target.value as typeof typography.fontWeight } })}>
             <option value="400">Regular</option>
             <option value="500">Medium</option>
             <option value="600">Semibold</option>
@@ -388,24 +345,13 @@ function ActionsPanel({ comp, onUpdateComp }: { comp: ComponentSchema | null; on
 export function ScreenManager() {
   const { schema, addScreen, updateScreen, removeScreen, updateComponent } = useRuntimeStore();
 
-  const [seeded, setSeeded] = useState(false);
-  const [selectedScreenId, setSelectedScreenId] = useState<string>("screen-home");
+  const [selectedScreenId, setSelectedScreenId] = useState<string>("");
   const [selectedCompId, setSelectedCompId] = useState<string | null>(null);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("config");
   const [zoom, setZoom] = useState(0.7);
   const [device, setDevice] = useState<DeviceFrame>("iphone14");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-
-  // Seed default screens once on mount
-  useEffect(() => {
-    if (seeded) return;
-    setSeeded(true);
-    if (schema.screens.length === 0) {
-      SEED_SCREENS.forEach((s) => addScreen(s));
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const screens = schema.screens as ScreenSchema[];
   const activeScreen = screens.find((s) => s.id === selectedScreenId) ?? screens[0] ?? null;
@@ -475,7 +421,14 @@ export function ScreenManager() {
 
         {/* Screen list */}
         <div className="overflow-y-auto" style={{ maxHeight: "45%" }}>
-          {screens.map((s) => {
+          {screens.length === 0 ? (
+            <EmptyState
+              icon={<Frame size={22} />}
+              title="No screens yet"
+              description="Create your first screen to start designing your app flow."
+              action={<Btn variant="primary" size="sm" onClick={handleAddScreen}>Add Screen</Btn>}
+            />
+          ) : screens.map((s) => {
             const active = s.id === selectedScreenId;
             return (
               <div

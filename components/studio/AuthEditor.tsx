@@ -42,7 +42,7 @@ const DEFAULT_AUTH: AuthConfigSchema = {
     { type: "apple", enabled: false },
   ],
   sessionType: "jwt",
-  tokenExpiry: 7,
+  tokenExpiry: 86400,
   refreshEnabled: true,
   rbac: {
     roles: ["admin", "user", "moderator"],

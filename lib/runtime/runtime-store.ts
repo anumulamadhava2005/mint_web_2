@@ -166,6 +166,12 @@ function createDefaultSchema(projectId: string, projectName: string): AppSchema 
       initialRoute: "/",
       routes: [],
     },
+    auth: {
+      providers: [{ type: "email" as const, enabled: true }],
+      sessionType: "jwt" as const,
+      tokenExpiry: 86400,
+      refreshEnabled: true,
+    },
   };
 }
 
@@ -589,7 +595,7 @@ export const useRuntimeStore = create<RuntimeSchemaState>()(
           s.schema.auth = {
             providers: [],
             sessionType: "jwt",
-            tokenExpiry: 3600,
+            tokenExpiry: 86400,
             refreshEnabled: true,
           } as any;
         }

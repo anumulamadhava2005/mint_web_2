@@ -16,7 +16,7 @@ import { useRuntimeStore } from "@/lib/runtime/runtime-store";
 import type { TableSchema, FieldSchema, RelationSchema } from "@/lib/runtime/schema";
 import {
   Inspector, InspectorTabs, Section, Field, TextField, SelectField,
-  ToggleRow, Btn, IconBtn, Pill, cx,
+  ToggleRow, Btn, IconBtn, Pill, cx, EmptyState,
 } from "./primitives";
 
 // ── Local types ───────────────────────────────────────────────────
@@ -27,46 +27,9 @@ type Sel = { tableId: string; fieldName: string } | null;
 const FTYPES: FieldSchema["type"][] = ["uuid","text","integer","float","boolean","timestamp","jsonb"];
 const RTYPES: RelationSchema["type"][] = ["one-to-one","one-to-many","many-to-many"];
 
-// ── Seed data ─────────────────────────────────────────────────────
-
-const SEEDS: TableSchema[] = [
-  {
-    id: "tbl-users", name: "users", indexes: [], policies: [],
-    fields: [
-      { name: "id", type: "uuid", required: true, unique: true },
-      { name: "email", type: "text", required: true, unique: true },
-      { name: "name", type: "text", required: true, unique: false },
-      { name: "role", type: "text", required: false, unique: false },
-      { name: "created_at", type: "timestamp", required: true, unique: false },
-    ],
-    relations: [],
-  },
-  {
-    id: "tbl-posts", name: "posts", indexes: [], policies: [],
-    fields: [
-      { name: "id", type: "uuid", required: true, unique: true },
-      { name: "user_id", type: "uuid", required: true, unique: false },
-      { name: "title", type: "text", required: true, unique: false },
-      { name: "content", type: "text", required: false, unique: false },
-      { name: "published", type: "boolean", required: false, unique: false },
-      { name: "created_at", type: "timestamp", required: true, unique: false },
-    ],
-    relations: [{ type: "one-to-many", targetTable: "users", foreignKey: "user_id", targetKey: "id" }],
-  },
-  {
-    id: "tbl-categories", name: "categories", indexes: [], policies: [],
-    fields: [
-      { name: "id", type: "uuid", required: true, unique: true },
-      { name: "name", type: "text", required: true, unique: false },
-      { name: "slug", type: "text", required: true, unique: true },
-    ],
-    relations: [],
-  },
-];
-
 // ── SQL generation ────────────────────────────────────────────────
 
-function genSQL(tables: TableSchema[]): string {
+export function genSQL(tables: TableSchema[]): string {
   const pgType: Record<string, string> = {
     uuid: "UUID", text: "TEXT", integer: "INTEGER", float: "FLOAT",
     boolean: "BOOLEAN", timestamp: "TIMESTAMPTZ", jsonb: "JSONB",
@@ -264,15 +227,7 @@ function FieldInspector({ sel, tables }: { sel: Sel; tables: TableSchema[] }) {
 // ── Main component ────────────────────────────────────────────────
 
 export function DatabaseEditor() {
-  const { schema, addTable, updateTable, removeTable, addField, setDatabaseConfig } = useRuntimeStore();
-
-  // Seed once if empty
-  useMemo(() => {
-    if (!schema.database || schema.database.tables.length === 0) {
-      setDatabaseConfig({ provider: "mint", tables: SEEDS });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const { schema, addTable, updateTable, removeTable, addField } = useRuntimeStore();
 
   const tables: TableSchema[] = schema.database?.tables ?? [];
 
@@ -302,6 +257,17 @@ export function DatabaseEditor() {
   }, [addField, tables]);
 
   const sql = useMemo(() => genSQL(tables), [tables]);
+
+  if (tables.length === 0) {
+    return (
+      <EmptyState
+        icon={<Table2 size={22} />}
+        title="No tables yet"
+        description="Add your first table to define the database schema for this app."
+        action={<Btn variant="primary" size="sm" onClick={addNewTable}>Add Table</Btn>}
+      />
+    );
+  }
 
   return (
     <div className="flex h-full w-full overflow-hidden" style={{ background: "var(--st-bg)" }}>

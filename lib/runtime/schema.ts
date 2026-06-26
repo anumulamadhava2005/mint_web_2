@@ -257,13 +257,15 @@ export interface WorkflowNode {
 }
 
 export type WorkflowNodeType =
+  // Entry point
+  | "trigger"
   // Logic
   | "condition" | "switch" | "loop" | "transform" | "delay" | "parallel"
   | "forEach" | "map" | "filter" | "debounce"
   // State
   | "setState" | "resetState" | "removeState"
   // Backend
-  | "apiCall" | "dbQuery" | "dbMutate" | "authCheck"
+  | "api" | "apiCall" | "dbQuery" | "dbMutate" | "authCheck" | "execute-query"
   // UI
   | "navigate" | "showModal" | "updateState" | "toast"
   // Utility
@@ -309,6 +311,7 @@ export interface ThemeSchema {
 export interface AuthConfigSchema {
   providers: AuthProvider[];
   sessionType: "jwt" | "cookie" | "session";
+  /** Token expiry in seconds (e.g. 86400 = 1 day, 3600 = 1 hour) */
   tokenExpiry: number;
   refreshEnabled: boolean;
   rbac?: { roles: string[]; defaultRole: string };

@@ -15,7 +15,7 @@ import { useRuntimeStore } from "@/lib/runtime/runtime-store";
 import type { ScreenSchema } from "@/lib/runtime/schema";
 import {
   Inspector, InspectorTabs, Section, Field,
-  TextField, SelectField, ToggleRow, Btn, IconBtn, Pill,
+  TextField, SelectField, ToggleRow, Btn, IconBtn, Pill, EmptyState,
 } from "./primitives";
 
 // ── Types ──────────────────────────────────────────────────────
@@ -30,12 +30,6 @@ const DEFAULT_POSITIONS: Record<string, CardPos> = {
   login: { x: 100, y: 100 }, dashboard: { x: 350, y: 100 },
   profile: { x: 350, y: 260 }, admin: { x: 600, y: 100 },
 };
-const DEFAULT_SCREENS: ScreenSchema[] = [
-  { id: "login",     name: "Login",     route: "/login",     components: [], localState: [], actions: [] },
-  { id: "dashboard", name: "Dashboard", route: "/dashboard", components: [], localState: [], actions: [] },
-  { id: "profile",   name: "Profile",   route: "/profile",   components: [], localState: [], actions: [] },
-  { id: "admin",     name: "Admin",     route: "/admin",     components: [], localState: [], actions: [] },
-];
 const DEFAULT_EDGES: NavEdge[] = [
   { id: "e1", fromId: "login",     toId: "dashboard", label: "on auth" },
   { id: "e2", fromId: "dashboard", toId: "profile",   label: "" },
@@ -149,9 +143,7 @@ export function NavigationEditor() {
   const { schema, addScreen, updateScreen, removeScreen } = useRuntimeStore();
   const storeScreens = schema.screens ?? [];
 
-  const [localScreens, setLocalScreens] = useState<ScreenSchema[]>(
-    storeScreens.length > 0 ? storeScreens : DEFAULT_SCREENS
-  );
+  const [localScreens, setLocalScreens] = useState<ScreenSchema[]>(storeScreens);
   const [positions, setPositions] = useState<Record<string, CardPos>>(DEFAULT_POSITIONS);
   const [authInfo, setAuthInfo] = useState<Record<string, { required: boolean; roles: string[] }>>(DEFAULT_AUTH);
   const [edges] = useState<NavEdge[]>(DEFAULT_EDGES);
@@ -212,6 +204,21 @@ export function NavigationEditor() {
   ];
 
   const sid = selectedId ?? "";
+
+  if (localScreens.length === 0) {
+    return (
+      <EmptyState
+        icon={<Frame size={22} />}
+        title="No screens to route"
+        description="Add screens in Screen Manager first, then come back to wire up your navigation graph."
+        action={
+          <Btn variant="primary" size="sm" onClick={handleAddScreen}>
+            Add First Screen
+          </Btn>
+        }
+      />
+    );
+  }
 
   return (
     <div className="flex h-full w-full flex-col" style={{ background: "var(--st-bg)", color: "var(--st-text)" }}>

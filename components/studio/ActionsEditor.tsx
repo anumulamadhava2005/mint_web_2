@@ -7,7 +7,7 @@
 // bezier edges. Inspector adapts to selected node type.
 // ═══════════════════════════════════════════════════════════════
 
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { v4 as uuid } from "uuid";
 import {
   Plus,
@@ -40,34 +40,13 @@ import {
   ToggleRow,
   Btn,
   IconBtn,
+  EmptyState,
 } from "./primitives";
 
 // ── Constants ────────────────────────────────────────────────────
 
 const NODE_W = 192;
 const NODE_H_BASE = 88;
-const DEFAULT_FLOW_ID = "flow_submit_order";
-
-function buildDefaultFlow(): WorkflowSchema {
-  return {
-    id: DEFAULT_FLOW_ID,
-    name: "SubmitOrder_Flow",
-    trigger: { type: "event", event: "click" },
-    nodes: [
-      { id: "n1", type: "trigger",        config: { element: "btn_submit" },                        position: { x: 200, y: 20  } },
-      { id: "n2", type: "api",            config: { method: "POST", endpoint: "/api/v1/orders" },   position: { x: 200, y: 130 } },
-      { id: "n3", type: "condition",      config: { expression: "response.status == 200" },         position: { x: 200, y: 240 } },
-      { id: "n4", type: "navigate",       config: { route: "SuccessScreen" },                       position: { x: 100, y: 380 } },
-      { id: "n5", type: "toast",          config: { toastType: "error", message: "response.error" }, position: { x: 300, y: 380 } },
-    ],
-    edges: [
-      { id: "e1", from: "n1", to: "n2" },
-      { id: "e2", from: "n2", to: "n3" },
-      { id: "e3", from: "n3", to: "n4", label: "True"  },
-      { id: "e4", from: "n3", to: "n5", label: "False" },
-    ],
-  };
-}
 
 // ── Node meta ────────────────────────────────────────────────────
 
@@ -108,7 +87,7 @@ function NodeCard({
   const [menuOpen, setMenuOpen] = useState(false);
 
   const bodyRows: [string, string][] = (() => {
-    const c = node.config ?? {};
+    const c = (node.config ?? {}) as Record<string, string>;
     switch (node.type) {
       case "trigger":       return [["Element", c.element ?? ""]];
       case "api":           return [["Method", c.method ?? "GET"], ["Endpoint", c.endpoint ?? ""]];
@@ -126,8 +105,8 @@ function NodeCard({
       onClick={(e) => { e.stopPropagation(); onSelect(); }}
       style={{
         position: "absolute",
-        left: node.position.x,
-        top: node.position.y,
+        left: node.position?.x ?? 0,
+        top: node.position?.y ?? 0,
         width: NODE_W,
         background: "var(--st-elevated)",
         border: `1.5px solid ${selected ? "var(--st-brand)" : "var(--st-border)"}`,
@@ -229,7 +208,7 @@ function NodeInspector({ node, workflowId }: { node: WorkflowNode; workflowId: s
   const [throttleMs,   setThrottleMs]   = useState("300");
   const [headers,      setHeaders]      = useState<{ k: string; v: string }[]>([]);
 
-  const c = node.config ?? {};
+  const c = (node.config ?? {}) as Record<string, string>;
 
   return (
     <>
@@ -417,21 +396,11 @@ function BottomBar({ workflow }: { workflow: WorkflowSchema | null }) {
 
 // ── Main export ───────────────────────────────────────────────────
 
-export function ActionsEditor() {
+export function ActionsEditor({ mode = "actions" }: { mode?: "actions" | "workflows" }) {
   const { schema, addWorkflow, removeWorkflow, updateWorkflow, addWorkflowNode, removeWorkflowNode } = useRuntimeStore();
   const workflows = schema.workflows as WorkflowSchema[];
 
-  // Seed default flow once
-  const seeded = useRef(false);
-  useEffect(() => {
-    if (seeded.current) return;
-    seeded.current = true;
-    if (!workflows.find((w) => w.id === DEFAULT_FLOW_ID)) {
-      addWorkflow(buildDefaultFlow());
-    }
-  }, [addWorkflow, workflows]);
-
-  const [selectedFlowId, setSelectedFlowId] = useState<string>(DEFAULT_FLOW_ID);
+  const [selectedFlowId, setSelectedFlowId] = useState<string>(workflows[0]?.id ?? "");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [zoom, setZoom]                     = useState(1);
   const [inspTab, setInspTab]               = useState<InspTab>("props");
@@ -446,7 +415,7 @@ export function ActionsEditor() {
 
   function addFlow() {
     const id = `flow_${uuid().slice(0, 8)}`;
-    addWorkflow({ id, name: "New Flow", trigger: { type: "event", event: "click" }, nodes: [], edges: [] });
+    addWorkflow({ id, name: "New Flow", trigger: { type: "event", config: { event: "click" } }, nodes: [], edges: [] });
     setSelectedFlowId(id);
     setSelectedNodeId(null);
   }
@@ -488,10 +457,10 @@ export function ActionsEditor() {
     const src = workflow?.nodes.find((n) => n.id === edge.from);
     const tgt = workflow?.nodes.find((n) => n.id === edge.to);
     if (!src || !tgt) return null;
-    const x1 = src.position.x + NODE_W / 2;
-    const y1 = src.position.y + NODE_H_BASE;
-    const x2 = tgt.position.x + NODE_W / 2;
-    const y2 = tgt.position.y;
+    const x1 = (src.position?.x ?? 0) + NODE_W / 2;
+    const y1 = (src.position?.y ?? 0) + NODE_H_BASE;
+    const x2 = (tgt.position?.x ?? 0) + NODE_W / 2;
+    const y2 = tgt.position?.y ?? 0;
     return { d: bezierPath(x1, y1, x2, y2), mx: (x1 + x2) / 2, my: (y1 + y2) / 2, label: edge.label };
   }
 
@@ -504,7 +473,7 @@ export function ActionsEditor() {
         {/* Left sidebar */}
         <div style={{ width: 224, flexShrink: 0, borderRight: "1px solid var(--st-border)", background: "var(--st-surface)", display: "flex", flexDirection: "column" }}>
           <div style={{ height: 44, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 12px", borderBottom: "1px solid var(--st-border)", flexShrink: 0 }}>
-            <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", color: "var(--st-text-2)" }}>FLOWS</span>
+            <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", color: "var(--st-text-2)" }}>{mode === "workflows" ? "FLOWS" : "ACTIONS"}</span>
             <IconBtn onClick={addFlow} title="New flow"><Plus size={14} /></IconBtn>
           </div>
 
@@ -540,9 +509,12 @@ export function ActionsEditor() {
               );
             })}
             {workflows.length === 0 && (
-              <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--st-text-3)", fontSize: 12 }}>
-                No flows yet.<br />Click + to create one.
-              </div>
+              <EmptyState
+                icon={<GitBranch size={22} />}
+                title="No flows yet"
+                description="Create your first flow to wire up actions and logic for your app."
+                action={<Btn variant="primary" size="sm" onClick={addFlow}>New Flow</Btn>}
+              />
             )}
           </div>
         </div>

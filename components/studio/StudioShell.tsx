@@ -13,7 +13,6 @@ import {
   Boxes,
   Palette,
   Variable,
-  Zap,
   Workflow as WorkflowIcon,
   Navigation,
   Database,
@@ -44,7 +43,6 @@ export type StudioMode =
   | "components"
   | "theme"
   | "state"
-  | "actions"
   | "workflows"
   | "navigation"
   | "database"
@@ -63,7 +61,6 @@ const MODES: ModeDef[] = [
   { id: "components", label: "Component Library", icon: <Boxes size={17} />, built: true },
   { id: "theme", label: "Theme Designer", icon: <Palette size={17} />, built: true },
   { id: "state", label: "State Manager", icon: <Variable size={17} />, built: true },
-  { id: "actions", label: "Action Editor", icon: <Zap size={17} />, built: true },
   { id: "workflows", label: "Workflow & Logic", icon: <WorkflowIcon size={17} />, built: true },
   { id: "navigation", label: "Navigation Editor", icon: <Navigation size={17} />, built: true },
   { id: "database", label: "Database & Schema", icon: <Database size={17} />, built: true },
@@ -112,12 +109,22 @@ export function StudioShell({
     window.setTimeout(() => setToast(null), 2200);
   }, []);
 
-  const handlePublish = useCallback(() => {
+  const handlePublish = useCallback(async () => {
     try {
       const json = exportSchema();
       // Persist a local snapshot so the action has real, observable effect
       // even without the deploy backend wired up in this build.
       window.localStorage.setItem(`mint:schema:${projectId}`, json);
+      // Save schema to DB via runtime-schema API
+      try {
+        await fetch(`/api/runtime-schema/${projectId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: json,
+        });
+      } catch {
+        // non-blocking — localStorage snapshot already saved
+      }
       useRuntimeStore.setState({ dirty: false });
       flashToast("Schema published · snapshot saved");
     } catch {
@@ -179,7 +186,7 @@ export function StudioShell({
           </span>
         </button>
 
-        <div className="flex items-center gap-1.5 text-[12px]" style={{ color: "var(--st-text-3)" }}>
+        <div className="flex items-center gap-1.5 text-[12.5px]" style={{ color: "var(--st-text-3)" }}>
           <span>/</span>
           <span className="max-w-[160px] truncate" style={{ color: "var(--st-text-2)" }}>
             {projectName}
@@ -191,11 +198,12 @@ export function StudioShell({
         {/* search */}
         <button
           onClick={() => setPaletteOpen(true)}
+          aria-label="Search or run a command (⌘K)"
           className="ml-auto flex h-7 w-full max-w-[300px] items-center gap-2 rounded-[var(--st-r-md)] px-2.5 transition-colors"
           style={{ background: "var(--st-bg)", boxShadow: "inset 0 0 0 1px var(--st-border)" }}
         >
           <Search size={13} style={{ color: "var(--st-text-3)" }} />
-          <span className="text-[12px]" style={{ color: "var(--st-text-3)" }}>
+          <span className="text-[12.5px]" style={{ color: "var(--st-text-3)" }}>
             Search or run a command…
           </span>
           <kbd
@@ -257,8 +265,7 @@ export function StudioShell({
           {mode === "components" && <ComponentLibrary />}
           {mode === "theme" && <ThemeDesigner />}
           {mode === "state" && <StateManager />}
-          {mode === "actions" && <ActionsEditor />}
-          {mode === "workflows" && <ActionsEditor />}
+          {mode === "workflows" && <ActionsEditor mode="workflows" />}
           {mode === "navigation" && <NavigationEditor />}
           {mode === "database" && <DatabaseEditor />}
           {mode === "auth" && <AuthEditor />}
