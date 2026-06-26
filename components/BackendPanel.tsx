@@ -19,9 +19,13 @@ const FIELD_TYPES = ["text","integer","float","boolean","date","datetime","json"
 
 const EMPTY: any[] = [];
 
+type DeployResult = { success: boolean; applied: string[]; errors: string[]; totalTables: number } | null;
+
 export default function BackendPanel({ projectId, frames = [] }: { projectId: string; frames?: CanvasFrame[] }) {
   const [subTab, setSubTab] = useState<SubTab>("screens");
   const [saving, setSaving] = useState(false);
+  const [deploying, setDeploying] = useState(false);
+  const [deployResult, setDeployResult] = useState<DeployResult>(null);
   const schema = useRuntimeStore((s) => s.schema);
   const dirty = useRuntimeStore((s) => s.dirty);
   const initSchema = useRuntimeStore((s) => s.initSchema);
@@ -60,17 +64,30 @@ export default function BackendPanel({ projectId, frames = [] }: { projectId: st
   }, [projectId, schema]);
 
   const handleDeploy = useCallback(async () => {
-    if (!schema.database?.tables?.length) return;
-    setSaving(true);
+    const tables = schema.database?.tables;
+    if (!tables?.length) {
+      setDeployResult({ success: false, applied: [], errors: ["No tables defined in the database schema. Add tables in the DB tab first."], totalTables: 0 });
+      return;
+    }
+    setDeploying(true);
+    setDeployResult(null);
     try {
-      await fetch(`/api/db/migrate/${projectId}`, {
+      const res = await fetch(`/api/db/migrate/${projectId}`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ schema: schema.database }),
       });
-    } catch {}
-    setSaving(false);
+      const json = await res.json();
+      if (!res.ok) {
+        setDeployResult({ success: false, applied: [], errors: [json.error ?? `HTTP ${res.status}`], totalTables: tables.length });
+      } else {
+        setDeployResult(json);
+      }
+    } catch (e: any) {
+      setDeployResult({ success: false, applied: [], errors: [e?.message ?? "Network error — DB bridge unreachable"], totalTables: tables.length });
+    }
+    setDeploying(false);
   }, [projectId, schema]);
 
   const tabs: { id: SubTab; label: string }[] = [
@@ -94,18 +111,37 @@ export default function BackendPanel({ projectId, frames = [] }: { projectId: st
 
       {/* Save / Deploy bar */}
       <div className="flex items-center gap-1 border-b border-zinc-700/50 px-2 py-1.5">
-        <button onClick={handleSave} disabled={saving}
+        <button onClick={handleSave} disabled={saving || deploying}
           className="flex items-center gap-1 rounded bg-emerald-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-emerald-500 disabled:opacity-50">
           <SaveIcon /> {saving ? "Saving..." : "Save"}
         </button>
         {subTab === "database" && (
-          <button onClick={handleDeploy} disabled={saving}
+          <button onClick={handleDeploy} disabled={saving || deploying}
             className="flex items-center gap-1 rounded bg-indigo-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-indigo-500 disabled:opacity-50">
-            <DBIcon /> Deploy
+            <DBIcon /> {deploying ? "Deploying..." : "Deploy"}
           </button>
         )}
         {dirty && <span className="ml-auto text-[10px] text-amber-400">● unsaved</span>}
       </div>
+
+      {/* Deploy result banner */}
+      {deployResult && (
+        <div className={`mx-2 mt-1.5 rounded px-2 py-1.5 text-[10px] ${deployResult.success ? "bg-emerald-900/40 text-emerald-300" : "bg-red-900/30 text-red-300"}`}>
+          {deployResult.success ? (
+            <>
+              <p className="font-semibold">✓ Deploy successful</p>
+              <p>{deployResult.applied.length} migration{deployResult.applied.length !== 1 ? "s" : ""} applied · {deployResult.totalTables} table{deployResult.totalTables !== 1 ? "s" : ""}</p>
+              <p className="text-[9px] opacity-70 mt-0.5">Tables created as mint_proj_{"{projectId}"}_{"{table_name}"}</p>
+            </>
+          ) : (
+            <>
+              <p className="font-semibold">✗ Deploy failed</p>
+              {deployResult.errors.map((e, i) => <p key={i} className="mt-0.5 opacity-80">{e}</p>)}
+            </>
+          )}
+          <button onClick={() => setDeployResult(null)} className="mt-1 text-[9px] opacity-50 hover:opacity-100">Dismiss</button>
+        </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-2">

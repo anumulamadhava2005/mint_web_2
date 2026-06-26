@@ -349,45 +349,60 @@ export function StudioShell({
   );
 }
 
+function timedFetch(input: RequestInfo, init?: RequestInit, timeoutMs = 12000): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = window.setTimeout(() => ctrl.abort(), timeoutMs);
+  return fetch(input, { ...init, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+}
+
 function CanvasView({ projectId, projectName }: { projectId: string; projectName: string }) {
   const [fileId, setFileId] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [slow, setSlow] = useState(false);
   const loadedFor = useRef<string | null>(null);
 
   useEffect(() => {
     if (loadedFor.current === projectId) return;
     loadedFor.current = projectId;
     let cancelled = false;
+    const slowTimer = window.setTimeout(() => { if (!cancelled) setSlow(true); }, 4000);
 
     (async () => {
       try {
-        const res = await fetch(`/api/files?projectId=${projectId}`, { credentials: "include" });
-        if (!res.ok) throw new Error(`Failed to load files (${res.status})`);
+        const res = await timedFetch(`/api/files?projectId=${projectId}`, { credentials: "include" });
+        if (!res.ok) throw new Error(`Files API returned ${res.status} — check that you're logged in`);
         const data = await res.json();
 
         let id: string | undefined;
         if (data.files?.length > 0) {
           id = data.files[0].id;
         } else {
-          const createRes = await fetch("/api/files", {
+          const createRes = await timedFetch("/api/files", {
             method: "POST",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ projectId, name: "Design File", data: {} }),
           });
-          if (!createRes.ok) throw new Error(`Failed to create file (${createRes.status})`);
+          if (!createRes.ok) throw new Error(`Could not create design file (${createRes.status})`);
           const newFile = await createRes.json();
           id = newFile.file?.id;
         }
 
         if (id && !cancelled) setFileId(id);
-        else if (!cancelled) throw new Error("No file id returned");
+        else if (!cancelled) throw new Error("No file ID returned from server");
       } catch (e: any) {
-        if (!cancelled) setLoadError(e.message ?? "Canvas failed to load");
+        if (!cancelled) {
+          const msg = e?.name === "AbortError"
+            ? "Canvas timed out — the DB bridge may be unreachable. Check that api.mintit.pro is online."
+            : (e.message ?? "Canvas failed to load");
+          setLoadError(msg);
+        }
+      } finally {
+        clearTimeout(slowTimer);
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => { cancelled = true; clearTimeout(slowTimer); };
   }, [projectId]);
 
   if (loadError) {
@@ -411,6 +426,11 @@ function CanvasView({ projectId, projectName }: { projectId: string; projectName
         <div className="flex flex-col items-center gap-3">
           <div className="h-7 w-7 animate-spin rounded-full border-2 border-violet-400 border-t-transparent" />
           <p className="text-sm text-zinc-500">Loading canvas…</p>
+          {slow && (
+            <p className="max-w-xs text-center text-xs text-amber-400">
+              Taking longer than usual — DB bridge may be slow or unreachable.
+            </p>
+          )}
         </div>
       </div>
     );
