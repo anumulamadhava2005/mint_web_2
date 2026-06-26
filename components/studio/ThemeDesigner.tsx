@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Download, Undo2, Plus, Circle, Type, ArrowLeftRight, ChevronDown } from "lucide-react";
+import { Download, Undo2, Plus, Circle, Type, ArrowLeftRight, ChevronDown, Layers } from "lucide-react";
 import { Segmented, Toggle, Btn, IconBtn, Pill, Field, TextField } from "./primitives";
 import { useRuntimeStore } from "@/lib/runtime/runtime-store";
+import type { ScreenSchema } from "@/lib/runtime/schema";
 
 type Viewport = "Desktop" | "Tablet" | "Mobile";
 interface ColorToken { name: string; hex: string; }
@@ -229,14 +230,100 @@ function TokenInspector({ token, onUpdate, onNameChange }: {
   );
 }
 
+// ── Apply Theme Modal ─────────────────────────────────────────
+
+function ApplyThemeModal({
+  screens,
+  selectedIds,
+  onToggle,
+  onApplyAll,
+  onApply,
+  onClose,
+}: {
+  screens: ScreenSchema[];
+  selectedIds: string[];
+  onToggle: (id: string) => void;
+  onApplyAll: () => void;
+  onApply: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}>
+      <div className="flex w-80 flex-col rounded-[var(--st-r-xl)] shadow-2xl" style={{ background: "var(--st-surface)", boxShadow: "0 24px 48px rgba(0,0,0,0.4), inset 0 0 0 1px var(--st-border)" }}>
+        <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: "var(--st-border)" }}>
+          <span className="text-[13px] font-semibold" style={{ color: "var(--st-text)" }}>Apply Theme to Screens</span>
+          <button onClick={onClose} className="text-[11px] transition-opacity hover:opacity-70" style={{ color: "var(--st-text-3)" }}>✕</button>
+        </div>
+        <div className="flex max-h-64 flex-col overflow-y-auto p-3">
+          {screens.length === 0 ? (
+            <p className="py-4 text-center text-[12px]" style={{ color: "var(--st-text-3)" }}>
+              No screens yet. Create screens in Screen Manager first.
+            </p>
+          ) : screens.map((s) => {
+            const checked = selectedIds.includes(s.id);
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => onToggle(s.id)}
+                className="flex items-center gap-3 rounded-[var(--st-r-md)] px-2.5 py-2 transition-colors hover:bg-white/[0.04]"
+              >
+                <div
+                  className="flex h-4 w-4 shrink-0 items-center justify-center rounded"
+                  style={{
+                    background: checked ? "var(--st-brand)" : "transparent",
+                    boxShadow: `inset 0 0 0 1.5px ${checked ? "var(--st-brand)" : "var(--st-border-2)"}`,
+                  }}
+                >
+                  {checked && <span style={{ color: "#fff", fontSize: 10 }}>✓</span>}
+                </div>
+                <div className="min-w-0 flex-1 text-left">
+                  <div className="truncate text-[12px] font-medium" style={{ color: "var(--st-text)" }}>{s.name}</div>
+                  <div className="font-mono text-[10px]" style={{ color: "var(--st-text-3)" }}>{s.route}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex items-center gap-2 border-t p-3" style={{ borderColor: "var(--st-border)" }}>
+          <button
+            type="button"
+            onClick={onApplyAll}
+            className="text-[11.5px] transition-opacity hover:opacity-80"
+            style={{ color: "var(--st-brand)" }}
+          >
+            Select all
+          </button>
+          <div className="flex-1" />
+          <button type="button" onClick={onClose} className="rounded-[var(--st-r-md)] px-3 py-1.5 text-[11.5px] transition-colors hover:bg-white/[0.05]" style={{ color: "var(--st-text-2)" }}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onApply}
+            disabled={selectedIds.length === 0}
+            className="rounded-[var(--st-r-md)] px-3 py-1.5 text-[11.5px] font-semibold transition-opacity disabled:opacity-40"
+            style={{ background: "var(--st-brand)", color: "#fff" }}
+          >
+            Apply to {selectedIds.length} screen{selectedIds.length !== 1 ? "s" : ""}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main export ───────────────────────────────────────────────
 
 export function ThemeDesigner() {
-  const { schema, updateTheme } = useRuntimeStore();
+  const { schema, updateTheme, updateScreen } = useRuntimeStore();
   const [viewport, setViewport] = useState<Viewport>("Desktop");
   const [selectedToken, setSelectedToken] = useState<string | null>(null);
   const [selectedRadius, setSelectedRadius] = useState("xl");
+  const [applyModalOpen, setApplyModalOpen] = useState(false);
+  const [selectedScreenIds, setSelectedScreenIds] = useState<string[]>([]);
 
+  const screens = schema.screens as ScreenSchema[];
   const rawColors = schema.theme?.colors ?? {};
   const colorTokens: ColorToken[] = Object.keys(rawColors).length > 0
     ? Object.entries(rawColors).map(([name, hex]) => ({ name, hex }))
@@ -268,6 +355,21 @@ export function ThemeDesigner() {
     a.href = url; a.download = "theme-tokens.json"; a.click();
     URL.revokeObjectURL(url);
   }
+  function handleToggleScreen(id: string) {
+    setSelectedScreenIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  }
+  function handleSelectAll() {
+    setSelectedScreenIds(screens.map((s) => s.id));
+  }
+  function handleApplyToScreens() {
+    const themeColors = Object.fromEntries(colorTokens.map((t) => [`--color-${t.name}`, t.hex]));
+    selectedScreenIds.forEach((sid) => {
+      const screen = screens.find((s) => s.id === sid);
+      if (screen) updateScreen(sid, { meta: { ...screen.meta, themeOverrides: themeColors } });
+    });
+    setApplyModalOpen(false);
+    setSelectedScreenIds([]);
+  }
 
   const activeToken = selectedToken ? (colorTokens.find((t) => t.name === selectedToken) ?? null) : null;
 
@@ -283,10 +385,24 @@ export function ThemeDesigner() {
           />
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          <Btn variant="primary" size="sm" onClick={() => { setApplyModalOpen(true); setSelectedScreenIds([]); }}>
+            <Layers size={12} />Apply to Screens
+          </Btn>
           <Btn variant="outline" size="sm" onClick={handleExport}><Download size={12} />Export</Btn>
           <Btn variant="ghost" size="sm" onClick={handleRevert}><Undo2 size={12} />Revert</Btn>
         </div>
       </div>
+
+      {applyModalOpen && (
+        <ApplyThemeModal
+          screens={screens}
+          selectedIds={selectedScreenIds}
+          onToggle={handleToggleScreen}
+          onApplyAll={handleSelectAll}
+          onApply={handleApplyToScreens}
+          onClose={() => setApplyModalOpen(false)}
+        />
+      )}
 
       {/* Main area */}
       <div className="flex min-h-0 flex-1">

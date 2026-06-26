@@ -24,6 +24,7 @@ import {
   PanelLeft,
   Rocket,
   Check,
+  Monitor,
 } from "lucide-react";
 import { useRuntimeStore } from "@/lib/runtime/runtime-store";
 import { StateManager } from "./StateManager";
@@ -39,6 +40,7 @@ import { CommandPalette, type Command } from "./CommandPalette";
 import { Btn, cx } from "./primitives";
 
 export type StudioMode =
+  | "canvas"
   | "screens"
   | "components"
   | "theme"
@@ -57,6 +59,7 @@ interface ModeDef {
 }
 
 const MODES: ModeDef[] = [
+  { id: "canvas", label: "Design Canvas", icon: <Monitor size={17} />, built: true },
   { id: "screens", label: "Screen Manager", icon: <Frame size={17} />, built: true },
   { id: "components", label: "Component Library", icon: <Boxes size={17} />, built: true },
   { id: "theme", label: "Theme Designer", icon: <Palette size={17} />, built: true },
@@ -261,6 +264,7 @@ export function StudioShell({
 
         {/* editor surface */}
         <main className="relative min-w-0 flex-1 overflow-hidden" style={{ background: "var(--st-canvas)" }}>
+          {mode === "canvas" && <CanvasView projectId={projectId} projectName={projectName} />}
           {mode === "screens" && <ScreenManager />}
           {mode === "components" && <ComponentLibrary />}
           {mode === "theme" && <ThemeDesigner />}
@@ -312,6 +316,106 @@ export function StudioShell({
           {toast}
         </div>
       )}
+    </div>
+  );
+}
+
+function CanvasView({ projectId, projectName: _projectName }: { projectId: string; projectName: string }) {
+  const screens = useRuntimeStore((s) => s.schema.screens);
+  const activeScreenId = useRuntimeStore((s) => s.activeScreenId);
+  const setActiveScreenId = useRuntimeStore((s) => s.setActiveScreenId);
+  const activeScreen = screens.find((s) => s.id === activeScreenId) ?? screens[0] ?? null;
+
+  return (
+    <div className="flex h-full flex-col" style={{ background: "var(--st-bg)" }}>
+      <div className="flex h-11 shrink-0 items-center gap-3 border-b px-4" style={{ borderColor: "var(--st-border)", background: "var(--st-surface)" }}>
+        <span className="text-[12.5px] font-semibold" style={{ color: "var(--st-text)" }}>Design Canvas</span>
+        <div className="flex-1" />
+        <a
+          href={`/projects/${projectId}`}
+          className="flex items-center gap-1.5 rounded-[var(--st-r-md)] px-3 py-1.5 text-[11.5px] font-semibold transition-opacity hover:opacity-80"
+          style={{ background: "var(--st-brand)", color: "#fff", textDecoration: "none" }}
+        >
+          <Monitor size={12} />
+          Open full canvas
+        </a>
+      </div>
+
+      <div className="flex flex-1 overflow-hidden">
+        <aside className="flex w-48 shrink-0 flex-col border-r overflow-y-auto" style={{ borderColor: "var(--st-border)", background: "var(--st-surface)" }}>
+          <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--st-text-3)" }}>Screens</div>
+          {screens.length === 0 ? (
+            <p className="px-3 py-2 text-[11px]" style={{ color: "var(--st-text-3)" }}>No screens yet. Use Screen Manager to create screens.</p>
+          ) : screens.map((s) => {
+            const active = s.id === (activeScreen?.id ?? "");
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setActiveScreenId(s.id)}
+                className="cursor-pointer px-3 py-2 text-left text-[11.5px] font-medium truncate w-full"
+                style={{
+                  background: active ? "var(--st-brand-tint)" : "transparent",
+                  borderLeft: active ? "2px solid var(--st-brand)" : "2px solid transparent",
+                  color: active ? "var(--st-brand)" : "var(--st-text-2)",
+                }}
+              >
+                {s.name}
+              </button>
+            );
+          })}
+        </aside>
+
+        <div className="flex flex-1 flex-col items-center justify-center overflow-auto gap-4 p-8" style={{ background: "var(--st-canvas, #1a1a2e)" }}>
+          {activeScreen ? (
+            <>
+              <div className="text-[12.5px] font-semibold" style={{ color: "rgba(255,255,255,0.5)" }}>
+                {activeScreen.name} — {activeScreen.components.length} component{activeScreen.components.length !== 1 ? "s" : ""}
+              </div>
+              <div style={{ width: 375, background: "#1a1a2e", padding: 12, borderRadius: 40, boxShadow: "0 32px 80px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,255,255,0.08)" }}>
+                <div style={{ width: "100%", background: "#ffffff", borderRadius: 28, minHeight: 600, padding: "24px 16px", display: "flex", flexDirection: "column" }}>
+                  <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 4 }}>{activeScreen.route}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "#111827", marginBottom: 16 }}>{activeScreen.name}</div>
+                  {activeScreen.components.length === 0 ? (
+                    <p style={{ fontSize: 12, color: "#9ca3af", textAlign: "center", marginTop: 40 }}>
+                      No components yet — go to Component Library to add components to this screen.
+                    </p>
+                  ) : activeScreen.components.map((comp) => (
+                    <div key={comp.id} style={{ marginBottom: 8 }}>
+                      {comp.type === "button" && (
+                        <div style={{ background: "#6366f1", color: "#fff", borderRadius: 8, padding: "10px 20px", textAlign: "center", fontSize: 14, fontWeight: 600 }}>
+                          {String(comp.props.label ?? "Button")}
+                        </div>
+                      )}
+                      {comp.type === "text" && (
+                        <p style={{ fontSize: 16, fontWeight: 500, color: "#111", margin: 0 }}>{String(comp.props.content ?? "Text")}</p>
+                      )}
+                      {comp.type === "input" && (
+                        <div style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "10px 14px", fontSize: 14, color: "#9ca3af" }}>
+                          {String(comp.props.placeholder ?? "Input field")}
+                        </div>
+                      )}
+                      {!["button", "text", "input"].includes(comp.type) && (
+                        <div style={{ border: "1.5px dashed #d1d5db", borderRadius: 8, padding: "10px 12px", color: "#9ca3af", fontSize: 12 }}>
+                          {comp.type}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="text-center">
+              <Monitor size={32} style={{ color: "rgba(255,255,255,0.2)", margin: "0 auto 12px" }} />
+              <p className="text-[13px] font-medium" style={{ color: "rgba(255,255,255,0.4)" }}>No screens yet</p>
+              <p className="mt-1 text-[12px]" style={{ color: "rgba(255,255,255,0.25)" }}>
+                Create screens in Screen Manager, then add components from Component Library.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

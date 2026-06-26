@@ -295,55 +295,193 @@ function StylesPanel({ comp, onUpdateComp }: { comp: ComponentSchema | null; onU
 
 // ── Actions inspector panel ───────────────────────────────────
 
-function ActionsPanel({ comp, onUpdateComp }: { comp: ComponentSchema | null; onUpdateComp: (id: string, u: Partial<ComponentSchema>) => void }) {
-  if (!comp) return <div className="p-3.5 text-[11px]" style={{ color: "var(--st-text-3)" }}>Select a component to manage event handlers.</div>;
+type ActionType = "navigate" | "setState" | "apiCall" | "showToast" | "openModal";
 
+const ACTION_TYPES: { value: ActionType; label: string }[] = [
+  { value: "navigate",  label: "Navigate to screen" },
+  { value: "setState",  label: "Set state variable" },
+  { value: "apiCall",   label: "Call API" },
+  { value: "showToast", label: "Show toast message" },
+  { value: "openModal", label: "Open modal" },
+];
+
+const EVENT_TYPES = ["onClick", "onChange", "onSubmit", "onMount", "onFocus", "onBlur"];
+
+function ActionEditor({
+  action, index, event, comp, onUpdateComp, screens,
+}: {
+  action: any; index: number; event: string;
+  comp: ComponentSchema; onUpdateComp: (id: string, u: Partial<ComponentSchema>) => void;
+  screens: ScreenSchema[];
+}) {
   const events = comp.events ?? {};
+  const refs = (events[event] ?? []) as any[];
+
+  function updateParam(key: string, val: unknown) {
+    const newRefs = refs.map((r: any, i: number) => i === index ? { ...r, params: { ...r.params, [key]: val } } : r);
+    onUpdateComp(comp.id, { events: { ...events, [event]: newRefs } });
+  }
+  function updateType(newType: string) {
+    const newRefs = refs.map((r: any, i: number) => i === index ? { actionId: newType, params: {} } : r);
+    onUpdateComp(comp.id, { events: { ...events, [event]: newRefs } });
+  }
+  function remove() {
+    const newRefs = refs.filter((_: any, i: number) => i !== index);
+    const newEvents = { ...events, [event]: newRefs };
+    if (newRefs.length === 0) delete newEvents[event];
+    onUpdateComp(comp.id, { events: newEvents });
+  }
 
   return (
-    <Section title="Event Handlers" right={
-      <IconBtn title="Add onClick handler" onClick={() => {
-        const updated = { ...events, onClick: [...(events.onClick ?? []), { actionId: "navigate", params: { to: "/" } }] };
-        onUpdateComp(comp.id, { events: updated });
-      }}>
-        <Plus size={13} />
-      </IconBtn>
-    }>
-      {Object.keys(events).length === 0 && (
-        <p className="text-[11px]" style={{ color: "var(--st-text-3)" }}>No handlers. Click + to add one.</p>
+    <div className="mb-2 rounded-[var(--st-r-md)] p-2.5" style={{ background: "var(--st-bg)", boxShadow: "inset 0 0 0 1px var(--st-border)" }}>
+      <div className="mb-2 flex items-center gap-1.5">
+        <SelectField value={action.actionId ?? "navigate"} onChange={(e) => updateType(e.target.value)} className="flex-1">
+          {ACTION_TYPES.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+        </SelectField>
+        <IconBtn title="Remove action" style={{ width: 20, height: 20, color: "var(--st-error)" }} onClick={remove}>
+          <Minus size={10} />
+        </IconBtn>
+      </div>
+      {action.actionId === "navigate" && (
+        <Field label="Target screen">
+          <SelectField value={String(action.params?.to ?? "")} onChange={(e) => updateParam("to", e.target.value)}>
+            <option value="">— select screen —</option>
+            {screens.map((s) => <option key={s.id} value={s.route}>{s.name} ({s.route})</option>)}
+          </SelectField>
+        </Field>
       )}
-      {Object.entries(events).map(([event, refs]) => (
-        <div key={event} className="mb-3">
-          <div className="mb-1.5 text-[10.5px] font-semibold" style={{ color: "var(--st-text-2)" }}>{event}</div>
-          {(refs ?? []).map((ref: any, i: number) => (
-            <div key={i} className="mb-1.5 flex items-center gap-1.5 rounded-[var(--st-r-md)] px-2 py-1.5" style={{ background: "var(--st-bg)" }}>
-              <span className="flex-1 font-mono text-[11px]" style={{ color: "var(--st-text)" }}>
-                {ref.actionId}{ref.params?.to ? `('${ref.params.to}')` : "()"}
-              </span>
-              <IconBtn
-                title="Remove"
-                style={{ width: 20, height: 20, color: "var(--st-error)" }}
-                onClick={() => {
-                  const newRefs = (refs as any[]).filter((_: any, j: number) => j !== i);
-                  const newEvents = { ...events, [event]: newRefs };
-                  if (newRefs.length === 0) delete newEvents[event];
-                  onUpdateComp(comp.id, { events: newEvents });
+      {action.actionId === "setState" && (
+        <div className="flex flex-col gap-1.5">
+          <Field label="State key">
+            <TextField value={String(action.params?.key ?? "")} placeholder="e.g. isLoggedIn" onChange={(e) => updateParam("key", e.target.value)} />
+          </Field>
+          <Field label="Value">
+            <TextField value={String(action.params?.value ?? "")} placeholder='e.g. true or "Hello"' onChange={(e) => updateParam("value", e.target.value)} />
+          </Field>
+        </div>
+      )}
+      {action.actionId === "apiCall" && (
+        <div className="flex flex-col gap-1.5">
+          <Field label="URL">
+            <TextField value={String(action.params?.url ?? "")} placeholder="https://api.example.com/data" mono onChange={(e) => updateParam("url", e.target.value)} />
+          </Field>
+          <Field label="Method">
+            <SelectField value={String(action.params?.method ?? "GET")} onChange={(e) => updateParam("method", e.target.value)}>
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+              <option value="DELETE">DELETE</option>
+            </SelectField>
+          </Field>
+          <Field label="Save result to state">
+            <TextField value={String(action.params?.saveAs ?? "")} placeholder="e.g. userData" onChange={(e) => updateParam("saveAs", e.target.value)} />
+          </Field>
+        </div>
+      )}
+      {action.actionId === "showToast" && (
+        <Field label="Message">
+          <TextField value={String(action.params?.message ?? "")} placeholder="Operation successful!" onChange={(e) => updateParam("message", e.target.value)} />
+        </Field>
+      )}
+      {action.actionId === "openModal" && (
+        <Field label="Modal screen">
+          <SelectField value={String(action.params?.screenId ?? "")} onChange={(e) => updateParam("screenId", e.target.value)}>
+            <option value="">— select modal screen —</option>
+            {screens.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </SelectField>
+        </Field>
+      )}
+    </div>
+  );
+}
+
+function ActionsPanel({ comp, onUpdateComp, screens }: {
+  comp: ComponentSchema | null;
+  onUpdateComp: (id: string, u: Partial<ComponentSchema>) => void;
+  screens: ScreenSchema[];
+}) {
+  const [selectedEvent, setSelectedEvent] = useState("onClick");
+  if (!comp) return <div className="p-3.5 text-[11px]" style={{ color: "var(--st-text-3)" }}>Select a component to manage event handlers.</div>;
+
+  const c = comp; // narrowed non-null ref for closures
+  const events = c.events ?? {};
+  const currentRefs = (events[selectedEvent] ?? []) as any[];
+
+  function addAction() {
+    const newRefs = [...currentRefs, { actionId: "navigate", params: { to: "/" } }];
+    onUpdateComp(c.id, { events: { ...events, [selectedEvent]: newRefs } });
+  }
+
+  const hasAnyEvents = Object.keys(events).length > 0;
+
+  return (
+    <div className="flex flex-col gap-3 p-3.5">
+      <div>
+        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.07em]" style={{ color: "var(--st-text-3)" }}>Event</div>
+        <div className="flex flex-wrap gap-1">
+          {EVENT_TYPES.map((evt) => {
+            const hasHandler = (events[evt]?.length ?? 0) > 0;
+            return (
+              <button
+                key={evt}
+                type="button"
+                onClick={() => setSelectedEvent(evt)}
+                className="rounded px-2 py-0.5 text-[10.5px] font-medium transition-colors"
+                style={{
+                  background: selectedEvent === evt ? "var(--st-brand)" : "var(--st-surface)",
+                  color: selectedEvent === evt ? "#fff" : hasHandler ? "var(--st-brand)" : "var(--st-text-2)",
+                  boxShadow: `inset 0 0 0 1px ${selectedEvent === evt ? "transparent" : "var(--st-border)"}`,
                 }}
               >
-                <Minus size={10} />
-              </IconBtn>
+                {evt}{hasHandler ? " •" : ""}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.07em]" style={{ color: "var(--st-text-3)" }}>
+            Actions for {selectedEvent}
+          </span>
+          <IconBtn title={`Add action to ${selectedEvent}`} onClick={addAction}>
+            <Plus size={13} />
+          </IconBtn>
+        </div>
+        {currentRefs.length === 0 ? (
+          <div className="rounded-[var(--st-r-md)] p-3 text-center" style={{ background: "var(--st-bg)", boxShadow: "inset 0 0 0 1px var(--st-border)" }}>
+            <p className="text-[11px]" style={{ color: "var(--st-text-3)" }}>No actions for {selectedEvent}.</p>
+            <button type="button" onClick={addAction} className="mt-1 text-[11px] transition-opacity hover:opacity-80" style={{ color: "var(--st-brand)" }}>
+              + Add action
+            </button>
+          </div>
+        ) : (
+          currentRefs.map((action: any, i: number) => (
+            <ActionEditor key={i} action={action} index={i} event={selectedEvent} comp={comp} onUpdateComp={onUpdateComp} screens={screens} />
+          ))
+        )}
+      </div>
+
+      {hasAnyEvents && (
+        <div className="rounded-[var(--st-r-md)] p-2.5" style={{ background: "var(--st-bg)" }}>
+          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.07em]" style={{ color: "var(--st-text-3)" }}>All handlers</div>
+          {Object.entries(events).map(([evt, refs]) => (
+            <div key={evt} className="flex items-center gap-1.5 py-0.5">
+              <span className="font-mono text-[10px]" style={{ color: "var(--st-brand)" }}>{evt}</span>
+              <span className="text-[10px]" style={{ color: "var(--st-text-3)" }}>→ {(refs as any[]).map((r: any) => r.actionId).join(", ")}</span>
             </div>
           ))}
         </div>
-      ))}
-    </Section>
+      )}
+    </div>
   );
 }
 
 // ── Main component ────────────────────────────────────────────
 
 export function ScreenManager() {
-  const { schema, addScreen, updateScreen, removeScreen, updateComponent } = useRuntimeStore();
+  const { schema, addScreen, updateScreen, removeScreen, updateComponent, setActiveScreenId } = useRuntimeStore();
 
   const [selectedScreenId, setSelectedScreenId] = useState<string>("");
   const [selectedCompId, setSelectedCompId] = useState<string | null>(null);
@@ -438,7 +576,7 @@ export function ScreenManager() {
                   background: active ? "var(--st-brand-tint)" : "transparent",
                   borderLeft: active ? "2px solid var(--st-brand)" : "2px solid transparent",
                 }}
-                onClick={() => { setSelectedScreenId(s.id); setSelectedCompId(null); }}
+                onClick={() => { setSelectedScreenId(s.id); setSelectedCompId(null); setActiveScreenId(s.id); }}
               >
                 <Frame size={13} style={{ color: active ? "var(--st-brand)" : "var(--st-text-3)", flexShrink: 0 }} />
                 <div className="min-w-0 flex-1">
@@ -632,7 +770,7 @@ export function ScreenManager() {
             <StylesPanel comp={selectedComp} onUpdateComp={handleUpdateComp} />
           )}
           {inspectorTab === "actions" && (
-            <ActionsPanel comp={selectedComp} onUpdateComp={handleUpdateComp} />
+            <ActionsPanel comp={selectedComp} onUpdateComp={handleUpdateComp} screens={screens} />
           )}
         </Inspector>
       )}

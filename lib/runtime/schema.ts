@@ -34,7 +34,7 @@ export interface ScreenSchema {
   actions: ActionSchema[];
   onMount?: ActionRef[];
   onUnmount?: ActionRef[];
-  meta?: { title?: string; description?: string };
+  meta?: { title?: string; description?: string; themeOverrides?: Record<string, string> };
 }
 
 // ── Component Schema ─────────────────────────────────────────

@@ -115,6 +115,10 @@ export interface RuntimeSchemaState {
   // UI
   setActiveTab: (tab: RuntimeSchemaState["activeTab"]) => void;
 
+  // Active screen selection (shared between ComponentLibrary and ScreenManager)
+  activeScreenId: string;
+  setActiveScreenId: (id: string) => void;
+
   // Serialization
   getSchema: () => AppSchema;
   exportSchema: () => string;
@@ -182,6 +186,7 @@ export const useRuntimeStore = create<RuntimeSchemaState>()(
     schema: createDefaultSchema("", "Untitled"),
     dirty: false,
     activeTab: "state",
+    activeScreenId: "",
 
     // ── Init ─────────────────────────────────────────────────
     initSchema: (projectId, projectName, saved) => {
@@ -606,6 +611,7 @@ export const useRuntimeStore = create<RuntimeSchemaState>()(
 
     // ── UI ───────────────────────────────────────────────────
     setActiveTab: (tab) => set((s) => { s.activeTab = tab; }),
+    setActiveScreenId: (id) => set((s) => { s.activeScreenId = id; }),
 
     // ── Serialization ────────────────────────────────────────
     getSchema: () => get().schema,

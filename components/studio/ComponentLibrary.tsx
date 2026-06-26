@@ -41,8 +41,11 @@ import {
   AlignJustify,
   Rows3,
   Plus,
+  Frame,
+  CheckCircle2,
 } from "lucide-react";
 import { TextField, Btn, IconBtn, Pill, cx } from "./primitives";
+import { useRuntimeStore } from "@/lib/runtime/runtime-store";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -233,6 +236,30 @@ function CompactRow({ comp, onSelect }: { comp: ComponentDef; onSelect: (c: Comp
 }
 
 function DetailDrawer({ comp, onClose }: { comp: ComponentDef; onClose: () => void }) {
+  const addComponent = useRuntimeStore((s) => s.addComponent);
+  const activeScreenId = useRuntimeStore((s) => s.activeScreenId);
+  const screens = useRuntimeStore((s) => s.schema.screens);
+  const activeScreenName = screens.find((s) => s.id === activeScreenId)?.name;
+
+  const [propValues, setPropValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries((comp.props ?? []).map((p) => [p.name, p.default]))
+  );
+  const [added, setAdded] = useState(false);
+
+  function handleAdd() {
+    if (!activeScreenId) return;
+    addComponent(activeScreenId, {
+      id: `comp-${comp.id}-${Date.now()}`,
+      type: comp.id as any,
+      props: propValues,
+      bindings: {},
+      style: {},
+      events: {},
+    });
+    setAdded(true);
+    setTimeout(() => { setAdded(false); onClose(); }, 600);
+  }
+
   return (
     <div
       className="absolute right-0 top-0 z-10 flex h-full w-64 shrink-0 flex-col border-l"
@@ -256,32 +283,80 @@ function DetailDrawer({ comp, onClose }: { comp: ComponentDef; onClose: () => vo
         </IconBtn>
       </div>
 
+      {/* Target screen indicator */}
+      <div className="flex items-center gap-1.5 border-b px-3.5 py-2" style={{ borderColor: "var(--st-border)" }}>
+        <Frame size={11} style={{ color: activeScreenId ? "var(--st-brand)" : "var(--st-error)" }} />
+        <span className="text-[10.5px]" style={{ color: activeScreenId ? "var(--st-text-2)" : "var(--st-error)" }}>
+          {activeScreenName ?? "No screen selected — open Screen Manager first"}
+        </span>
+      </div>
+
       {/* Description */}
       <div className="border-b px-3.5 py-3" style={{ borderColor: "var(--st-border)" }}>
         <p className="text-[11.5px] leading-relaxed" style={{ color: "var(--st-text-2)" }}>{comp.description}</p>
       </div>
 
-      {/* Props */}
-      {comp.props && comp.props.length > 0 && (
-        <div className="flex-1 overflow-y-auto px-3.5 py-3">
-          <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--st-text-3)" }}>Props</div>
-          <div className="flex flex-col gap-1">
-            {comp.props.map((p) => (
-              <div key={p.name} className="flex items-center gap-1.5 rounded px-2 py-1.5" style={{ background: "var(--st-bg)" }}>
-                <span className="flex-1 text-[11px] font-medium" style={{ color: "var(--st-text)" }}>{p.name}</span>
-                <span className="text-[10px]" style={{ color: "var(--st-brand)" }}>{p.type}</span>
-                <span className="font-mono text-[10px]" style={{ color: "var(--st-text-3)" }}>{p.default || "—"}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Props — editable */}
+      <div className="flex-1 overflow-y-auto px-3.5 py-3">
+        {comp.props && comp.props.length > 0 ? (
+          <>
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--st-text-3)" }}>Props</div>
+            <div className="flex flex-col gap-2">
+              {comp.props.map((p) => (
+                <div key={p.name}>
+                  <div className="mb-1 flex items-center gap-1.5">
+                    <span className="text-[11px] font-medium" style={{ color: "var(--st-text)" }}>{p.name}</span>
+                    <span className="text-[9.5px]" style={{ color: "var(--st-brand)" }}>{p.type}</span>
+                  </div>
+                  {p.type === "boolean" ? (
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={propValues[p.name] === "true"}
+                        onChange={(e) => setPropValues((v) => ({ ...v, [p.name]: String(e.target.checked) }))}
+                        className="h-3.5 w-3.5 rounded"
+                        style={{ accentColor: "var(--st-brand)" }}
+                      />
+                      <span className="text-[11px]" style={{ color: "var(--st-text-2)" }}>
+                        {propValues[p.name] === "true" ? "true" : "false"}
+                      </span>
+                    </label>
+                  ) : p.type === "array" || p.type === "object" || p.type === "expression" ? (
+                    <div className="rounded px-2 py-1.5 font-mono text-[10px]" style={{ background: "var(--st-bg)", color: "var(--st-text-3)" }}>
+                      {p.type} — set at runtime
+                    </div>
+                  ) : (
+                    <TextField
+                      value={propValues[p.name] ?? ""}
+                      placeholder={p.default || p.name}
+                      onChange={(e) => setPropValues((v) => ({ ...v, [p.name]: e.target.value }))}
+                      className="text-[11.5px]"
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="text-[11px]" style={{ color: "var(--st-text-3)" }}>No configurable props.</p>
+        )}
+      </div>
 
       {/* Actions */}
       <div className="flex flex-col gap-2 border-t px-3.5 py-3" style={{ borderColor: "var(--st-border)" }}>
-        <Btn variant="primary" className="w-full justify-center">
-          <Plus size={13} />
-          Add to Screen
+        {!activeScreenId && (
+          <p className="text-center text-[10.5px]" style={{ color: "var(--st-error)" }}>
+            Select a screen in Screen Manager first
+          </p>
+        )}
+        <Btn
+          variant="primary"
+          className="w-full justify-center"
+          onClick={handleAdd}
+          disabled={!activeScreenId || added}
+        >
+          {added ? <CheckCircle2 size={13} /> : <Plus size={13} />}
+          {added ? "Added!" : "Add to Screen"}
         </Btn>
         <button
           className="flex items-center justify-center gap-1.5 text-[11.5px] transition-opacity hover:opacity-80"
