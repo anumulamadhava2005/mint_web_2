@@ -197,6 +197,7 @@ const INSP_TABS: { id: InspTab; icon: React.ReactNode; label: string }[] = [
 
 function NodeInspector({ node, workflowId }: { node: WorkflowNode; workflowId: string }) {
   const updateWorkflowNode = useRuntimeStore((s) => s.updateWorkflowNode);
+  const screens = useRuntimeStore((s) => s.schema.screens);
 
   function setConfig(key: string, value: string) {
     updateWorkflowNode(workflowId, node.id, { config: { ...node.config, [key]: value } });
@@ -252,6 +253,9 @@ function NodeInspector({ node, workflowId }: { node: WorkflowNode; workflowId: s
                 style={{ width: "100%", borderRadius: "var(--st-r-md)", padding: "6px 10px", fontSize: 11.5, fontFamily: "var(--st-mono)", background: "var(--st-bg)", color: "var(--st-text)", boxShadow: "inset 0 0 0 1px var(--st-border-2)", border: "none", outline: "none", resize: "vertical" }}
               />
             </Field>
+            <Field label="Save result to ($state key)">
+              <TextField value={c.outputStateKey ?? ""} onChange={(e) => setConfig("outputStateKey", e.target.value)} placeholder="local.data" mono />
+            </Field>
             <Field label="Headers">
               {headers.map((h, i) => (
                 <div key={i} style={{ display: "flex", gap: 4, marginBottom: 4 }}>
@@ -294,9 +298,41 @@ function NodeInspector({ node, workflowId }: { node: WorkflowNode; workflowId: s
         )}
 
         {node.type === "trigger" && (
-          <Field label="Element">
-            <TextField value={c.element ?? ""} onChange={(e) => setConfig("element", e.target.value)} placeholder="btn_id" mono />
-          </Field>
+          <>
+            <Field label="Trigger type">
+              <SelectField value={c.triggerKind ?? "event"} onChange={(e) => setConfig("triggerKind", e.target.value)}>
+                <option value="event">Component event</option>
+                <option value="mount">Screen mount</option>
+                <option value="stateChange">State change</option>
+                <option value="manual">Manual / test</option>
+              </SelectField>
+            </Field>
+            {(c.triggerKind ?? "event") === "event" && (
+              <>
+                <Field label="Screen">
+                  <SelectField value={c.screenId ?? ""} onChange={(e) => setConfig("screenId", e.target.value)}>
+                    <option value="">Any screen</option>
+                    {screens.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </SelectField>
+                </Field>
+                <Field label="Component ID (opt)">
+                  <TextField value={c.componentId ?? ""} onChange={(e) => setConfig("componentId", e.target.value)} placeholder="btn_save" mono />
+                </Field>
+                <Field label="Event">
+                  <SelectField value={c.eventType ?? "onClick"} onChange={(e) => setConfig("eventType", e.target.value)}>
+                    {["onClick","onChange","onSubmit","onMount","onFocus","onBlur"].map((ev) => (
+                      <option key={ev} value={ev}>{ev}</option>
+                    ))}
+                  </SelectField>
+                </Field>
+              </>
+            )}
+            {(c.triggerKind ?? "event") === "stateChange" && (
+              <Field label="Watch expression">
+                <TextField value={c.watchExpr ?? ""} onChange={(e) => setConfig("watchExpr", e.target.value)} placeholder="$user.role" mono />
+              </Field>
+            )}
+          </>
         )}
 
         {node.type === "execute-query" && (
