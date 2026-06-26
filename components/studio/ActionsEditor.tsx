@@ -670,7 +670,7 @@ export function ActionsEditor({ mode = "actions" }: { mode?: "actions" | "workfl
                     const ep = edgeMeta(edge);
                     if (!ep) return null;
                     return (
-                      <g key={edge.id}>
+                      <g key={edge.id ?? `${edge.from}-${edge.to}`}>
                         <path d={ep.d} fill="none" stroke="var(--st-border-2)" strokeWidth={1.5} markerEnd="url(#ae-arrow)" />
                         {ep.label && (
                           <text x={ep.mx} y={ep.my - 4} textAnchor="middle" fontSize={9.5} fill="var(--st-text-3)" fontWeight={600}>

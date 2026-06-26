@@ -143,10 +143,9 @@ export function NavigationEditor() {
   const { schema, addScreen, updateScreen, removeScreen } = useRuntimeStore();
   const storeScreens = schema.screens ?? [];
 
-  const [localScreens, setLocalScreens] = useState<ScreenSchema[]>(storeScreens);
-  const [positions, setPositions] = useState<Record<string, CardPos>>(DEFAULT_POSITIONS);
+  const [positions, setPositions] = useState<Record<string, CardPos>>({});
   const [authInfo, setAuthInfo] = useState<Record<string, { required: boolean; roles: string[] }>>(DEFAULT_AUTH);
-  const [edges] = useState<NavEdge[]>(DEFAULT_EDGES);
+  const [edges] = useState<NavEdge[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("props");
@@ -157,38 +156,35 @@ export function NavigationEditor() {
   const [rolesInput, setRolesInput] = useState<Record<string, string>>({});
 
   const selectedScreen = useMemo(
-    () => localScreens.find((s) => s.id === selectedId) ?? null,
-    [localScreens, selectedId]
+    () => storeScreens.find((s) => s.id === selectedId) ?? null,
+    [storeScreens, selectedId]
   );
   const filteredScreens = useMemo(
     () => searchQuery.trim()
-      ? localScreens.filter((s) =>
+      ? storeScreens.filter((s) =>
           s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          s.route.toLowerCase().includes(searchQuery.toLowerCase()))
-      : localScreens,
-    [localScreens, searchQuery]
+          (s.route ?? "").toLowerCase().includes(searchQuery.toLowerCase()))
+      : storeScreens,
+    [storeScreens, searchQuery]
   );
   const authGuardedCount = useMemo(
     () => Object.values(authInfo).filter((a) => a.required).length, [authInfo]
   );
 
   const handleAddScreen = useCallback(() => {
-    const id = uuid(), idx = localScreens.length + 1;
+    const id = uuid(), idx = storeScreens.length + 1;
     const s: ScreenSchema = { id, name: `Screen ${idx}`, route: `/screen-${idx}`, components: [], localState: [], actions: [] };
-    setLocalScreens((p) => [...p, s]);
     setPositions((p) => ({ ...p, [id]: { x: 120 + Math.random() * 280, y: 120 + Math.random() * 200 } }));
     setAuthInfo((p) => ({ ...p, [id]: { required: false, roles: [] } }));
     addScreen(s); setSelectedId(id);
-  }, [localScreens.length, addScreen]);
+  }, [storeScreens.length, addScreen]);
 
   const handleRemoveScreen = useCallback((id: string) => {
-    setLocalScreens((p) => p.filter((s) => s.id !== id));
     removeScreen(id);
     if (selectedId === id) setSelectedId(null);
   }, [removeScreen, selectedId]);
 
   const handleUpdateRoute = useCallback((id: string, route: string) => {
-    setLocalScreens((p) => p.map((s) => s.id === id ? { ...s, route } : s));
     updateScreen(id, { route });
   }, [updateScreen]);
 
@@ -205,7 +201,7 @@ export function NavigationEditor() {
 
   const sid = selectedId ?? "";
 
-  if (localScreens.length === 0) {
+  if (storeScreens.length === 0) {
     return (
       <EmptyState
         icon={<Frame size={22} />}
@@ -266,9 +262,9 @@ export function NavigationEditor() {
           {/* Zoom layer */}
           <div style={{ position: "absolute", inset: 0, transform: `scale(${zoom})`, transformOrigin: "top left" }}>
             <ConnectionLines edges={edges} positions={positions} />
-            {filteredScreens.map((screen) => (
+            {filteredScreens.map((screen, idx) => (
               <ScreenCard key={screen.id} screen={screen}
-                pos={positions[screen.id] ?? { x: 100, y: 100 }}
+                pos={positions[screen.id] ?? { x: 80 + (idx % 3) * 260, y: 80 + Math.floor(idx / 3) * 160 }}
                 selected={selectedId === screen.id}
                 authInfo={authInfo[screen.id] ?? { required: false, roles: [] }}
                 onSelect={() => setSelectedId(screen.id)}
@@ -411,8 +407,8 @@ export function NavigationEditor() {
                 <div className="mb-2 text-[10.5px] font-semibold uppercase tracking-widest" style={{ color: "var(--st-text-3)" }}>
                   Navigation Graph
                 </div>
-                <StatRow label="Screens" value={localScreens.length} />
-                <StatRow label="Routes" value={localScreens.length} />
+                <StatRow label="Screens" value={storeScreens.length} />
+                <StatRow label="Routes" value={storeScreens.length} />
                 <StatRow label="Auth-guarded" value={authGuardedCount} tone="warning" />
                 <StatRow label="Connections" value={edges.length} />
               </div>
