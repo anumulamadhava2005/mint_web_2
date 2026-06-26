@@ -8,6 +8,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { useCallback, useEffect, useMemo, useState, useRef, type ReactNode } from "react";
+import { useWorkspaceStore } from "@/lib/penpot/store";
 import { useRouter } from "next/navigation";
 import PenpotEditor from "@/components/PenpotEditor";
 import PrototypeViewer from "@/components/PrototypeViewer";
@@ -352,95 +353,39 @@ export function StudioShell({
   );
 }
 
-function timedFetch(input: RequestInfo, init?: RequestInit, timeoutMs = 12000): Promise<Response> {
-  const ctrl = new AbortController();
-  const timer = window.setTimeout(() => ctrl.abort(), timeoutMs);
-  return fetch(input, { ...init, signal: ctrl.signal }).finally(() => clearTimeout(timer));
-}
-
 function CanvasView({ projectId, projectName, onSwitchMode }: { projectId: string; projectName: string; onSwitchMode: (mode: string) => void }) {
   const router = useRouter();
   const viewerMode = useEditorStore((s) => s.viewerMode);
   const setViewerMode = useEditorStore((s) => s.setViewerMode);
+  const screens = useRuntimeStore((s) => s.schema.screens);
+  const initWorkspaceFromScreens = useWorkspaceStore((s) => s.initWorkspaceFromScreens);
+  const mergeFileChildShapes = useWorkspaceStore((s) => s.mergeFileChildShapes);
   const [fileId, setFileId] = useState("");
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [slow, setSlow] = useState(false);
   const loadedFor = useRef<string | null>(null);
 
   useEffect(() => {
     if (loadedFor.current === projectId) return;
     loadedFor.current = projectId;
-    let cancelled = false;
-    const slowTimer = window.setTimeout(() => { if (!cancelled) setSlow(true); }, 4000);
 
+    // Build canvas frames from runtime screens immediately — no loading wait.
+    const screenDefs = screens.map((s) => ({ id: s.id, name: s.name }));
+    initWorkspaceFromScreens(screenDefs, projectId);
+
+    // Fetch existing file in background: merges child shapes + wires real fileId for saves.
     (async () => {
       try {
-        const res = await timedFetch(`/api/files?projectId=${projectId}`, { credentials: "include" });
-        if (!res.ok) throw new Error(`Files API returned ${res.status} — check that you're logged in`);
+        const res = await fetch(`/api/files?projectId=${projectId}`, { credentials: "include" });
+        if (!res.ok) return;
         const data = await res.json();
-
-        let id: string | undefined;
-        if (data.files?.length > 0) {
-          id = data.files[0].id;
-        } else {
-          const createRes = await timedFetch("/api/files", {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ projectId, name: "Design File", data: {} }),
-          });
-          if (!createRes.ok) throw new Error(`Could not create design file (${createRes.status})`);
-          const newFile = await createRes.json();
-          id = newFile.file?.id;
-        }
-
-        if (id && !cancelled) setFileId(id);
-        else if (!cancelled) throw new Error("No file ID returned from server");
-      } catch (e: any) {
-        if (!cancelled) {
-          const msg = e?.name === "AbortError"
-            ? "Canvas timed out — the DB bridge may be unreachable. Check that api.mintit.pro is online."
-            : (e.message ?? "Canvas failed to load");
-          setLoadError(msg);
-        }
-      } finally {
-        clearTimeout(slowTimer);
+        const id: string | undefined = data.files?.[0]?.id;
+        if (!id) return;
+        setFileId(id);
+        await mergeFileChildShapes(id);
+      } catch {
+        // Non-blocking — canvas works fine without the file.
       }
     })();
-
-    return () => { cancelled = true; clearTimeout(slowTimer); };
-  }, [projectId]);
-
-  if (loadError) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-3" style={{ background: "#2c2c2c" }}>
-        <p className="text-sm text-red-400">{loadError}</p>
-        <button
-          className="rounded px-3 py-1.5 text-xs font-medium text-white"
-          style={{ background: "#7c3aed" }}
-          onClick={() => { loadedFor.current = null; setLoadError(null); setFileId(""); }}
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
-
-  if (!fileId) {
-    return (
-      <div className="flex h-full items-center justify-center" style={{ background: "#2c2c2c" }}>
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-7 w-7 animate-spin rounded-full border-2 border-violet-400 border-t-transparent" />
-          <p className="text-sm text-zinc-500">Loading canvas…</p>
-          {slow && (
-            <p className="max-w-xs text-center text-xs text-amber-400">
-              Taking longer than usual — DB bridge may be slow or unreachable.
-            </p>
-          )}
-        </div>
-      </div>
-    );
-  }
+  }, [projectId, screens, initWorkspaceFromScreens, mergeFileChildShapes]);
 
   return (
     <>

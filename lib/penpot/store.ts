@@ -108,6 +108,10 @@ export interface WorkspaceState {
 
   // File operations
   initWorkspace: (fileId: UUID) => Promise<void>;
+  /** Build canvas frames from runtime screens (synchronous, no DB needed). */
+  initWorkspaceFromScreens: (screens: Array<{id: string; name: string}>, projectId: string) => void;
+  /** After initWorkspaceFromScreens, merge child shapes + real fileId from existing file. */
+  mergeFileChildShapes: (fileId: UUID) => Promise<void>;
   saveFile: () => Promise<void>;
 
   // Page operations
@@ -301,9 +305,102 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       }
     },
 
+    initWorkspaceFromScreens: (screens, projectId) => {
+      const FRAME_W = 390, FRAME_H = 844, GAP = 100;
+      const pageId = `${projectId}-p1`;
+
+      const objects: Record<string, any> = {
+        [ROOT_FRAME_ID]: {
+          id: ROOT_FRAME_ID, type: "frame", name: "Root Frame",
+          x: 0, y: 0, width: 0, height: 0,
+          rotation: 0, opacity: 1, parentId: null, frameId: ROOT_FRAME_ID,
+          shapes: screens.map((s) => s.id),
+          fills: [], strokes: [],
+        },
+      };
+
+      for (let i = 0; i < screens.length; i++) {
+        const s = screens[i];
+        objects[s.id] = {
+          id: s.id, type: "frame", name: s.name,
+          x: i * (FRAME_W + GAP), y: 0, width: FRAME_W, height: FRAME_H,
+          rotation: 0, opacity: 1, hidden: false, locked: false,
+          parentId: ROOT_FRAME_ID, frameId: ROOT_FRAME_ID,
+          shapes: [], fills: [{ fillColor: "#FFFFFF", fillOpacity: 1 }],
+          strokes: [], shadow: [], blur: null, layoutProps: {},
+          interactions: [], showContent: true,
+        };
+      }
+
+      set((state) => {
+        state.file = {
+          id: `${projectId}-canvas`,
+          name: "Design Canvas",
+          projectId,
+          revn: 0,
+          pages: [pageId],
+          pagesIndex: {
+            [pageId]: { id: pageId, name: "Page 1", objects, flows: [] },
+          },
+          colors: {}, typographies: {}, components: {},
+        } as any;
+        state.currentPageId = pageId;
+      });
+    },
+
+    mergeFileChildShapes: async (fileId) => {
+      try {
+        const { file: rawFile } = await repo.getFile(fileId);
+        const fileData =
+          typeof rawFile.data === "string" ? JSON.parse(rawFile.data) : rawFile.data;
+        const srcPageId = fileData?.pages?.[0];
+        if (!srcPageId) return;
+        const srcObjects: Record<string, any> = fileData?.pagesIndex?.[srcPageId]?.objects || {};
+
+        set((state) => {
+          if (!state.file || !state.currentPageId) return;
+          const page = state.file.pagesIndex[state.currentPageId];
+          if (!page) return;
+
+          // Wire real fileId so saves go to the actual DB record
+          state.file.id = fileId;
+
+          const rootShapes: string[] = page.objects[ROOT_FRAME_ID]?.shapes || [];
+          for (const frameId of rootShapes) {
+            const srcFrame: any = srcObjects[frameId];
+            if (!srcFrame) continue;
+            const dstFrame = page.objects[frameId];
+            if (!dstFrame) continue;
+
+            // Preserve canvas position if file has one
+            if (srcFrame.x !== undefined) dstFrame.x = srcFrame.x;
+            if (srcFrame.y !== undefined) dstFrame.y = srcFrame.y;
+            if (srcFrame.fills?.length) dstFrame.fills = srcFrame.fills;
+
+            // Copy child shapes
+            if (srcFrame.shapes?.length) {
+              dstFrame.shapes = srcFrame.shapes;
+              for (const childId of srcFrame.shapes as string[]) {
+                if (srcObjects[childId]) page.objects[childId] = srcObjects[childId] as any;
+              }
+            }
+          }
+        });
+      } catch (e) {
+        console.error("mergeFileChildShapes failed:", e);
+      }
+    },
+
     saveFile: async () => {
       const { file, sessionId } = get();
       if (!file) return;
+
+      // Synthetic ID means canvas was init'd from runtime screens but file not yet fetched —
+      // suppress the save rather than hitting a 404 on the files API.
+      if (file.id.endsWith("-canvas")) {
+        set((state) => { state.saving = false; state.dirty = false; state.lastSaved = new Date().toISOString(); });
+        return;
+      }
 
       // Skip save if no changes in undo stack since last save
       set((state) => { state.saving = true; });

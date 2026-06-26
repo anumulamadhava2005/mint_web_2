@@ -66,7 +66,8 @@ export default function PenpotEditor({
   const setViewerMode = useEditorStore((s) => s.setViewerMode);
 
   const setProfile = useWorkspaceStore((s) => s.setProfile);
-  const [loading, setLoading] = useState(true);
+  // False from the start if workspace was pre-loaded from runtime screens.
+  const [loading, setLoading] = useState(() => !useWorkspaceStore.getState().file);
   const [convertOpen, setConvertOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [committing, setCommitting] = useState(false);
@@ -317,19 +318,23 @@ export default function PenpotEditor({
     }
   }, [file, projectId, fileId, commitFramework]);
 
-  // Initialize workspace on mount + set profile for collaboration
+  // Initialize workspace + set profile for collaboration.
+  // When CanvasView pre-loads the workspace from runtime screens, we skip initWorkspace
+  // and just wire up the profile (needed for collaboration). fileId arriving later only
+  // updates file.id for saves (handled by mergeFileChildShapes in CanvasView).
   useEffect(() => {
-    if (!fileId) return;
     let cancelled = false;
     (async () => {
       try {
-        // Fetch user profile so collaboration hook can connect
         const { getProfile } = await import("@/lib/penpot/repo");
         const res = await getProfile();
         if (!cancelled && res?.user) {
           setProfile({ id: res.user.id, email: res.user.email });
         }
-        await initWorkspace(fileId);
+        // Only fall back to traditional file-based init if canvas wasn't pre-loaded.
+        if (fileId && !useWorkspaceStore.getState().file) {
+          await initWorkspace(fileId);
+        }
       } catch (e) {
         console.error("Failed to init:", e);
       } finally {
@@ -337,7 +342,8 @@ export default function PenpotEditor({
       }
     })();
     return () => { cancelled = true; };
-  }, [fileId, initWorkspace, setProfile]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initWorkspace, setProfile]);
 
   // Auto-save on interval (only when dirty)
   const dirty = useWorkspaceStore((s) => s.dirty);
