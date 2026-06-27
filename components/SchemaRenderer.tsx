@@ -188,7 +188,15 @@ function RenderNode({
     // ── Leaf primitives ───────────────────────────────────────
     case "text": {
       const value = resolved.text ?? resolved.value ?? props.text ?? props.value;
-      return <span style={css}>{value != null ? String(value) : null}</span>;
+      const text = value != null ? String(value) : null;
+      const role = (props.textRole ?? props._textRole) as string | undefined;
+      if (role === "h1") return <h1 style={css}>{text}</h1>;
+      if (role === "h2") return <h2 style={css}>{text}</h2>;
+      if (role === "h3") return <h3 style={css}>{text}</h3>;
+      if (role === "p") return <p style={css}>{text}</p>;
+      if (role === "label") return <label style={css}>{text}</label>;
+      if (role === "code") return <code style={css}>{text}</code>;
+      return <span style={css}>{text}</span>;
     }
 
     case "button": {
@@ -307,7 +315,7 @@ function RenderNode({
         <img
           src={String(src)}
           alt={props.alt != null ? String(props.alt) : ""}
-          style={{ width: "100%", height, objectFit: (props.fit as React.CSSProperties["objectFit"]) ?? "cover", borderRadius: radius, display: "block", ...css }}
+          style={{ width: "100%", height, objectFit: ((props.imageFit ?? props.fit) as React.CSSProperties["objectFit"]) ?? "cover", borderRadius: radius, display: "block", ...css }}
         />
       );
     }
@@ -364,6 +372,75 @@ function RenderNode({
           ) : null}
         </div>
       );
+    }
+
+    // ── Free-form frame layer ─────────────────────────────────
+    case "frame": {
+      const inputType = (props.inputType ?? props._inputType) as string | undefined;
+
+      if (inputType === "textarea") {
+        const bind = valueBinding(component);
+        const value = resolved.value ?? props.value;
+        const onChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+          const v = e.target.value;
+          if (bind) engine.createTwoWayHandler(bind)(v);
+          if (runtime && component.events?.onChange?.length) void runtime.dispatch(component.events.onChange, e, { ...context, value: v });
+        };
+        const common = { style: css, placeholder: props.placeholder != null ? String(props.placeholder) : "" };
+        return bind || (runtime && component.events?.onChange)
+          ? <textarea {...common} value={value != null ? String(value) : ""} onChange={onChange} />
+          : <textarea {...common} defaultValue={value != null ? String(value) : ""} />;
+      }
+
+      if (inputType && inputType !== "select") {
+        const bind = valueBinding(component);
+        const value = resolved.value ?? props.value;
+        const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+          const v = e.target.value;
+          if (bind) engine.createTwoWayHandler(bind)(v);
+          if (runtime && component.events?.onChange?.length) void runtime.dispatch(component.events.onChange, e, { ...context, value: v });
+        };
+        const common = { style: css, placeholder: props.placeholder != null ? String(props.placeholder) : "", type: inputType };
+        return bind || (runtime && component.events?.onChange)
+          ? <input {...common} value={value != null ? String(value) : ""} onChange={onChange} />
+          : <input {...common} defaultValue={value != null ? String(value) : ""} />;
+      }
+
+      if (inputType === "select") {
+        const raw = (props.selectOptions ?? props.options ?? []) as unknown[];
+        const options = raw.map((o) => typeof o === "string" ? { value: o, label: o } : o as { value: unknown; label?: unknown });
+        const bind = valueBinding(component);
+        const value = resolved.value ?? props.value;
+        const onChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+          const v = e.target.value;
+          if (bind) engine.createTwoWayHandler(bind)(v);
+          if (runtime && component.events?.onChange?.length) void runtime.dispatch(component.events.onChange, e, { ...context, value: v });
+        };
+        return (
+          <select style={css} value={value != null ? String(value) : ""} onChange={onChange}>
+            {props.placeholder != null && <option value="">{String(props.placeholder)}</option>}
+            {options.map((o, i) => <option key={i} value={String((o as { value: unknown }).value)}>{String((o as { value: unknown; label?: unknown }).label ?? (o as { value: unknown }).value)}</option>)}
+          </select>
+        );
+      }
+
+      if (component.repeatFor) {
+        const items = engine.resolveListItems(component);
+        const as = component.repeatFor.as;
+        const children = component.children ?? [];
+        return (
+          <div data-type="frame" style={css} onClick={onClick}>
+            {items.map((item, i) => (
+              <React.Fragment key={i}>
+                {children.map((ch) => (
+                  <RenderNode key={ch.id} component={ch} engine={engine} runtime={runtime} projectId={projectId} context={{ ...context, [as]: item }} />
+                ))}
+              </React.Fragment>
+            ))}
+          </div>
+        );
+      }
+      return <Container component={component} engine={engine} runtime={runtime} projectId={projectId} context={context} onClick={onClick} css={css} />;
     }
 
     // ── Containers (view/scroll/card/form/modal/…) ────────────

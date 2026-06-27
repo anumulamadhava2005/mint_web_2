@@ -56,6 +56,9 @@ export interface ComponentSchema {
 }
 
 export type ComponentType =
+  // Free-form design primitives (new model)
+  | "frame" | "rect" | "line" | "group"
+  // Legacy predefined types (backward compat)
   | "view" | "text" | "button" | "input" | "image"
   | "scroll" | "list" | "grid" | "card" | "modal"
   | "form" | "select" | "checkbox" | "radio" | "switch"
@@ -78,6 +81,46 @@ export type ComponentType =
   | "delayNode" | "debounceNode" | "transformNode";
 
 export type PropValue = string | number | boolean | null | PropValue[] | { [key: string]: PropValue };
+
+// ── Layer System (Free-Form Design Model) ────────────────────
+// Replaces the predefined component palette with Figma-style primitives.
+// Users draw layers freely and wire data via bindings.
+
+export type LayerType = "frame" | "text" | "rect" | "image" | "line" | "group";
+
+export interface LayerContent {
+  // text layer content
+  text?: string;
+  textRole?: "h1" | "h2" | "h3" | "p" | "span" | "label" | "code";
+  // image layer content
+  src?: string;
+  imageFit?: "cover" | "contain" | "fill" | "none";
+  // frame interactivity — when set, the frame renders as an input element
+  inputType?: "text" | "email" | "password" | "number" | "textarea" | "checkbox" | "select";
+  placeholder?: string;
+  selectOptions?: string[];
+  // frame layout mode
+  layoutMode?: "none" | "flex-row" | "flex-col";
+  // semantic role hint for code export (doesn't affect canvas rendering)
+  semanticRole?: "button" | "link" | "nav" | "section" | "header" | "footer" | "form" | "list" | "list-item";
+}
+
+/** A single visual layer in the free-form design model.
+ *  Replaces ComponentSchema for new screens; existing screens use ComponentSchema. */
+export interface LayerSchema {
+  id: string;
+  name: string;
+  type: LayerType;
+  content?: LayerContent;
+  children?: LayerSchema[];
+  style: StyleSchema;
+  // Binding layer — any dot-path to style/content can be a bound expression
+  bindings?: Record<string, string>;
+  conditionalRender?: string;
+  repeatFor?: { items: string; as: string; key?: string };
+  events?: Record<string, ActionRef[]>;
+  requiredRoles?: string[];
+}
 
 // ── Style Schema ─────────────────────────────────────────────
 

@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useState, useRef, type ReactNode } fro
 import { useWorkspaceStore } from "@/lib/penpot/store";
 import { useRouter } from "next/navigation";
 import PenpotEditor from "@/components/PenpotEditor";
+import FigmaEditor from "@/components/figma/FigmaEditor";
 import PrototypeViewer from "@/components/PrototypeViewer";
 import { useEditorStore } from "@/lib/editorStore";
 import {
@@ -43,6 +44,7 @@ import { CommandPalette, type Command } from "./CommandPalette";
 import { StudioPreview } from "./StudioPreview";
 import { SchemaCanvas } from "./SchemaCanvas";
 import { Btn, cx } from "./primitives";
+import { useFigmaRuntimeSync } from "@/hooks/useFigmaRuntimeSync";
 
 export type StudioMode =
   | "canvas"
@@ -91,6 +93,9 @@ export function StudioShell({
   const dirty = useRuntimeStore((s) => s.dirty);
   const stateCount = useRuntimeStore((s) => s.schema.globalState.length);
   const exportSchema = useRuntimeStore((s) => s.exportSchema);
+
+  // Sync Figma canvas frames → runtime schema screens (one-way)
+  useFigmaRuntimeSync();
 
   const activeMode = useMemo(
     () => [...MODES, SETTINGS_MODE].find((m) => m.id === mode) ?? MODES[0],
@@ -387,14 +392,13 @@ function CanvasView({ projectId, projectName, onSwitchMode }: { projectId: strin
   const [fileId, setFileId] = useState("");
   const loadedFor = useRef<string | null>(null);
 
-  // Canvas surface flag: "schema" = schema-as-truth WYSIWYG (primary),
-  // "design" = legacy Penpot free-form. Defaults to schema; the runtime
-  // schema is the sole source of truth now.
-  const [canvasMode, setCanvasMode] = useState<"design" | "schema">(() => {
-    if (typeof window === "undefined") return "schema";
-    return (window.localStorage.getItem(`mint:canvasMode:${projectId}`) as "design" | "schema") || "schema";
+  // Canvas surface flag: "figma" = new Figma-style canvas (default),
+  // "schema" = schema-as-truth WYSIWYG, "design" = legacy Penpot free-form.
+  const [canvasMode, setCanvasMode] = useState<"figma" | "design" | "schema">(() => {
+    if (typeof window === "undefined") return "figma";
+    return (window.localStorage.getItem(`mint:canvasMode:${projectId}`) as "figma" | "design" | "schema") || "figma";
   });
-  const switchCanvasMode = (m: "design" | "schema") => {
+  const switchCanvasMode = (m: "figma" | "design" | "schema") => {
     setCanvasMode(m);
     try { window.localStorage.setItem(`mint:canvasMode:${projectId}`, m); } catch { /* ignore */ }
   };
@@ -427,7 +431,9 @@ function CanvasView({ projectId, projectName, onSwitchMode }: { projectId: strin
 
   return (
     <>
-      {canvasMode === "schema" ? (
+      {canvasMode === "figma" ? (
+        <FigmaEditor projectId={projectId} embedded={true} />
+      ) : canvasMode === "schema" ? (
         <SchemaCanvas projectId={projectId} fileId={fileId} />
       ) : (
         <PenpotEditor
@@ -439,17 +445,21 @@ function CanvasView({ projectId, projectName, onSwitchMode }: { projectId: strin
         />
       )}
 
-      {/* Surface toggle (Phase-2 schema-as-truth canvas, behind a flag) */}
+      {/* Surface toggle — Figma canvas (new default), Schema canvas, Design (legacy Penpot) */}
       <div className="absolute bottom-3 left-3 z-30 flex items-center gap-0.5 rounded-[var(--st-r-md)] p-0.5" style={{ background: "var(--st-elevated)", border: "1px solid var(--st-border-2)", boxShadow: "var(--st-shadow-floating)" }}>
-        {(["schema", "design"] as const).map((m) => (
+        {(["figma", "schema", "design"] as const).map((m) => (
           <button
             key={m}
             onClick={() => switchCanvasMode(m)}
             className="st-pressable rounded-[var(--st-r-sm)] px-2.5 py-1 text-[11.5px] font-medium active:scale-[0.96]"
             style={{ background: canvasMode === m ? "var(--st-brand)" : "transparent", color: canvasMode === m ? "#fff" : "var(--st-text-3)" }}
-            title={m === "schema" ? "Schema canvas — edits the runtime directly (source of truth)" : "Legacy free-form design canvas (Penpot)"}
+            title={
+              m === "figma" ? "Figma-style canvas — new visual design surface" :
+              m === "schema" ? "Schema canvas — edits the runtime directly (source of truth)" :
+              "Legacy free-form design canvas (Penpot)"
+            }
           >
-            {m === "schema" ? "Schema" : "Design (legacy)"}
+            {m === "figma" ? "Canvas" : m === "schema" ? "Schema" : "Design (legacy)"}
           </button>
         ))}
       </div>

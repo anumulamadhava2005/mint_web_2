@@ -10,18 +10,18 @@
 // ═══════════════════════════════════════════════════════════════
 
 import React from "react";
-import { Trash2, Undo2, Redo2, ZoomIn, ZoomOut, Maximize, Plus, Layers, LayoutGrid, Check, Download, GitCommitHorizontal, Loader2, Monitor } from "lucide-react";
+import { Trash2, Undo2, Redo2, ZoomIn, ZoomOut, Maximize, Plus, Layers, LayoutGrid, Check, Download, GitCommitHorizontal, Loader2, Monitor, Database, Globe, Variable } from "lucide-react";
 import { useRuntimeStore } from "@/lib/runtime/runtime-store";
 import SchemaRenderer from "@/components/SchemaRenderer";
 import { styleToCss } from "@/lib/runtime/styleToCss";
-import { PALETTE_CATEGORIES, createComponentForType, type PaletteEntry } from "./componentFactory";
+import { PALETTE_CATEGORIES, createComponentForType, type PaletteEntry, LAYER_TOOLS, createLayer, layerToComponent } from "./componentFactory";
 import {
   boxOf, isContainer, clone, findNode, findPath, parentIdOf,
   mutate, mutateMany, removeNodes, insertNode, reparentNode, regenIds, containerAt,
   flowLayout,
   type Box,
 } from "./canvasTree";
-import type { ComponentSchema, PropValue, StyleSchema, TypographyStyle } from "@/lib/runtime/schema";
+import type { ComponentSchema, PropValue, StyleSchema, TypographyStyle, StateNodeSchema, StateType, AsyncStateConfig, LayerType } from "@/lib/runtime/schema";
 
 const DEFAULT_W  = 390;
 const DEFAULT_H  = 844;
@@ -45,6 +45,7 @@ type Drag =
   | { mode: "resize-art"; sid: string; startX: number; startY: number; startW: number; startH: number }
   | { mode: "pan"; startX: number; startY: number; panX: number; panY: number }
   | { mode: "marquee"; x0: number; y0: number }
+  | { mode: "draw"; tool: LayerType; x0: number; y0: number }
   | null;
 
 function renderClone(c: ComponentSchema): ComponentSchema {
@@ -92,9 +93,10 @@ export function SchemaCanvas({ projectId, fileId }: { projectId?: string; fileId
   const theme         = useRuntimeStore((s) => s.schema.theme);
   const storeActiveId = useRuntimeStore((s) => s.activeScreenId);
   const setActiveScreenId = useRuntimeStore((s) => s.setActiveScreenId);
-  const updateScreen  = useRuntimeStore((s) => s.updateScreen);
-  const addScreen     = useRuntimeStore((s) => s.addScreen);
-  const removeScreen  = useRuntimeStore((s) => s.removeScreen);
+  const updateScreen    = useRuntimeStore((s) => s.updateScreen);
+  const addScreen       = useRuntimeStore((s) => s.addScreen);
+  const removeScreen    = useRuntimeStore((s) => s.removeScreen);
+  const addScreenState  = useRuntimeStore((s) => s.addScreenState);
 
   const activeScreen = screens.find((s) => s.id === storeActiveId) ?? screens[0] ?? null;
   const screenId = activeScreen?.id ?? "";
@@ -106,12 +108,14 @@ export function SchemaCanvas({ projectId, fileId }: { projectId?: string; fileId
   const ART_H = artH(screenId);
 
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [activeTool, setActiveTool] = React.useState<"select" | LayerType>("select");
+  const [drawPreview, setDrawPreview] = React.useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [zoom, setZoom]   = React.useState(0.65);
   const [pan, setPan]     = React.useState({ x: STAGE_PAD, y: STAGE_PAD });
   const [marquee, setMarquee] = React.useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [guides, setGuides]   = React.useState<{ v: number[]; h: number[] }>({ v: [], h: [] });
   const [paletteDragPos, setPaletteDragPos] = React.useState<{ entry: PaletteEntry; x: number; y: number } | null>(null);
-  const [inspectorTab, setInspectorTab] = React.useState<"inspect" | "layers" | "screens">("inspect");
+  const [inspectorTab, setInspectorTab] = React.useState<"inspect" | "layers" | "screens" | "data">("inspect");
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
   const [renameValue, setRenameValue] = React.useState("");
   const [framework, setFramework] = React.useState<Framework>("react-native");
@@ -218,6 +222,10 @@ export function SchemaCanvas({ projectId, fileId }: { projectId?: string; fileId
       const p = toArt(e.clientX, e.clientY);
       setMarquee({ x: Math.min(d.x0, p.x), y: Math.min(d.y0, p.y), w: Math.abs(p.x - d.x0), h: Math.abs(p.y - d.y0) }); return;
     }
+    if (d.mode === "draw") {
+      const p = toArt(e.clientX, e.clientY);
+      setDrawPreview({ x: Math.min(d.x0, p.x), y: Math.min(d.y0, p.y), w: Math.abs(p.x - d.x0), h: Math.abs(p.y - d.y0) }); return;
+    }
     if (d.mode === "resize") {
       const cur = toArt(e.clientX, e.clientY);
       const w = Math.max(16, Math.round(d.startW + (cur.x - d.startX)));
@@ -253,6 +261,23 @@ export function SchemaCanvas({ projectId, fileId }: { projectId?: string; fileId
     if (d?.mode === "pan") {
       const dist = Math.hypot(e.clientX - d.startX, e.clientY - d.startY);
       if (dist < 4) setSelectedIds(new Set());
+      return;
+    }
+    if (d?.mode === "draw") {
+      setDrawPreview(null);
+      const p = toArt(e.clientX, e.clientY);
+      const x = Math.min(d.x0, p.x);
+      const y = Math.min(d.y0, p.y);
+      const rawW = Math.abs(p.x - d.x0);
+      const rawH = Math.abs(p.y - d.y0);
+      const tool = LAYER_TOOLS.find((t) => t.type === d.tool);
+      const w = rawW < 8 ? (tool?.defaultW ?? 160) : Math.max(8, Math.round(rawW));
+      const h = rawH < 8 ? (tool?.defaultH ?? 40) : Math.max(4, Math.round(rawH));
+      const layer = createLayer(d.tool, Math.round(x), Math.round(y), w, h);
+      const comp = layerToComponent(layer);
+      commit(insertNode(getTree(), null, comp), true);
+      selectOnly(comp.id);
+      setActiveTool("select");
       return;
     }
     if (d?.mode === "marquee") {
@@ -314,6 +339,13 @@ export function SchemaCanvas({ projectId, fileId }: { projectId?: string; fileId
     const p = toArt(e.clientX, e.clientY);
     if (!e.shiftKey) setSelectedIds(new Set());
     dragRef.current = { mode: "marquee", x0: p.x, y0: p.y };
+    window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
+  };
+
+  const startDraw = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const p = toArt(e.clientX, e.clientY);
+    dragRef.current = { mode: "draw", tool: activeTool as LayerType, x0: p.x, y0: p.y };
     window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
   };
 
@@ -438,7 +470,12 @@ export function SchemaCanvas({ projectId, fileId }: { projectId?: string; fileId
       else if (mod && e.key === "a") { e.preventDefault(); setSelectedIds(new Set(tree.map((n) => n.id))); }
       else if (mod && e.key === "[") { e.preventDefault(); sendBackward(); }
       else if (mod && e.key === "]") { e.preventDefault(); bringForward(); }
-      else if (e.key === "Escape") setSelectedIds(new Set());
+      else if (e.key === "Escape") { setSelectedIds(new Set()); setActiveTool("select"); }
+      else if (!mod && e.key === "v") setActiveTool("select");
+      else if (!mod && e.key === "f") setActiveTool("frame");
+      else if (!mod && e.key === "r") setActiveTool("rect");
+      else if (!mod && e.key === "i") setActiveTool("image");
+      else if (!mod && e.key === "l") setActiveTool("line");
     };
     const onKeyUp = (e: KeyboardEvent) => { if (e.code === "Space") spaceRef.current = false; };
     window.addEventListener("keydown", onKey); window.addEventListener("keyup", onKeyUp);
@@ -499,8 +536,8 @@ export function SchemaCanvas({ projectId, fileId }: { projectId?: string; fileId
       a.click();
       URL.revokeObjectURL(url);
       flashCanvasToast(`Exported as ${framework}`);
-    } catch (e: any) {
-      flashCanvasToast(e.message || "Export failed");
+    } catch (e) {
+      flashCanvasToast(e instanceof Error ? e.message : "Export failed");
     } finally {
       setExporting(false);
     }
@@ -526,8 +563,8 @@ export function SchemaCanvas({ projectId, fileId }: { projectId?: string; fileId
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       flashCanvasToast(`Committed v${data.version} · ${data.fileCount} file${data.fileCount !== 1 ? "s" : ""} changed`);
-    } catch (e: any) {
-      flashCanvasToast(e.message || "Commit failed");
+    } catch (e) {
+      flashCanvasToast(e instanceof Error ? e.message : "Commit failed");
     } finally {
       setCommitting(false);
     }
@@ -536,7 +573,66 @@ export function SchemaCanvas({ projectId, fileId }: { projectId?: string; fileId
   if (screens.length === 0) {
     return (
       <div className="flex h-full items-center justify-center" style={{ background: "var(--st-canvas)" }}>
-        <p className="text-[13px]" style={{ color: "var(--st-text-3)" }}>No screens yet. Switch to the Screens tab in the right panel to add one.</p>
+        <div style={{ textAlign: "center", maxWidth: 400 }}>
+          {/* Icon */}
+          <div style={{
+            width: 64, height: 64, borderRadius: 16, margin: "0 auto 20px",
+            background: "var(--st-surface)", border: "1px solid var(--st-border)",
+            display: "grid", placeItems: "center", fontSize: 28,
+          }}>
+            🖼️
+          </div>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--st-text)", marginBottom: 8 }}>
+            Start with a frame
+          </h2>
+          <p style={{ fontSize: 13, color: "var(--st-text-3)", lineHeight: 1.6, marginBottom: 28 }}>
+            Pick a device frame to begin. You can add more frames and resize them at any time.
+          </p>
+
+          {/* Frame presets grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
+            {FRAME_PRESETS.map((p) => (
+              <button key={p.name}
+                onClick={() => {
+                  addScreen({ id: `screen-${Date.now()}`, name: p.name, route: "/", components: [], localState: [], actions: [], width: p.w, height: p.h });
+                }}
+                style={{
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 5,
+                  padding: "12px 8px", borderRadius: 10, cursor: "pointer",
+                  background: "var(--st-surface)", border: "1px solid var(--st-border)",
+                  transition: "border-color 120ms, background 120ms",
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--st-brand)"; (e.currentTarget as HTMLButtonElement).style.background = "var(--st-elevated)"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--st-border)"; (e.currentTarget as HTMLButtonElement).style.background = "var(--st-surface)"; }}
+              >
+                <span style={{ fontSize: 20 }}>{p.icon}</span>
+                <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--st-text)" }}>{p.name}</span>
+                <span style={{ fontSize: 10, color: "var(--st-text-3)", fontFamily: "var(--st-mono)" }}>{p.w}×{p.h}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Custom size */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}>
+            <input type="number" value={presetCustomW} onChange={(e) => setPresetCustomW(Number(e.target.value))}
+              style={{ width: 64, padding: "6px 8px", borderRadius: 6, fontSize: 12, textAlign: "center",
+                background: "var(--st-surface)", border: "1px solid var(--st-border-2)", color: "var(--st-text)", outline: "none" }} />
+            <span style={{ fontSize: 11, color: "var(--st-text-3)" }}>×</span>
+            <input type="number" value={presetCustomH} onChange={(e) => setPresetCustomH(Number(e.target.value))}
+              style={{ width: 64, padding: "6px 8px", borderRadius: 6, fontSize: 12, textAlign: "center",
+                background: "var(--st-surface)", border: "1px solid var(--st-border-2)", color: "var(--st-text)", outline: "none" }} />
+            <button
+              onClick={() => {
+                addScreen({ id: `screen-${Date.now()}`, name: "Screen 1", route: "/", components: [], localState: [], actions: [], width: presetCustomW, height: presetCustomH });
+              }}
+              style={{
+                padding: "6px 16px", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                background: "var(--st-brand)", color: "#fff", border: "none",
+              }}>
+              Custom
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -544,6 +640,7 @@ export function SchemaCanvas({ projectId, fileId }: { projectId?: string; fileId
   // ── Frame renderers ───────────────────────────────────────────
   const renderFrame = (c: ComponentSchema): React.ReactNode => {
     const b = box(c); const sel = selectedIds.has(c.id); const cont = isContainer(c);
+    const boundCount = Object.values(c.bindings ?? {}).filter(Boolean).length;
     return (
       <div key={c.id}
         style={{ ...(cont ? styleToCss(c.style) : {}), position: "absolute", left: b.left, top: b.top, width: b.width, height: b.height, padding: 0,
@@ -553,6 +650,14 @@ export function SchemaCanvas({ projectId, fileId }: { projectId?: string; fileId
           ? (c.children ?? []).map((ch) => renderFrame(ch))
           : <div style={{ width: "100%", height: "100%", pointerEvents: "none", overflow: "hidden" }}><SchemaRenderer components={[renderClone(c)]} /></div>
         }
+        {boundCount > 0 && (
+          <div style={{
+            position: "absolute", top: 2, right: sel ? 8 : 2, zIndex: 10,
+            background: "rgba(99,102,241,0.85)", color: "#fff",
+            borderRadius: 3, padding: "1px 4px", fontSize: 9,
+            fontFamily: "var(--st-mono)", pointerEvents: "none", lineHeight: 1.4,
+          }}>{"{}"}</div>
+        )}
         {sel && selectedIds.size === 1 && (
           <div onMouseDown={(e) => startResize(e, c)}
             style={{ position: "absolute", right: -5, bottom: -5, width: 10, height: 10, background: "#6366f1", borderRadius: 2, cursor: "nwse-resize" }} />
@@ -577,32 +682,83 @@ export function SchemaCanvas({ projectId, fileId }: { projectId?: string; fileId
 
   return (
     <div className="flex h-full min-h-0 overflow-hidden">
-      {/* ── Component Palette ──────────────────────────────────── */}
+      {/* ── Layer Tools ──────────────────────────────────────── */}
       <aside className="flex w-48 shrink-0 flex-col overflow-y-auto border-r" style={{ borderColor: "var(--st-border)", background: "var(--st-surface)" }}>
+        {/* Draw tools header */}
         <div className="sticky top-0 z-10 border-b px-3 py-2.5" style={{ borderColor: "var(--st-border)", background: "var(--st-surface)" }}>
-          <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--st-text-3)" }}>Components</span>
+          <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em]" style={{ color: "var(--st-text-3)" }}>Draw</span>
         </div>
-        {PALETTE_CATEGORIES.map((cat) => (
-          <div key={cat.label}>
-            <div className="px-3 pb-0.5 pt-3 text-[9.5px] font-semibold uppercase tracking-[0.07em]" style={{ color: "var(--st-text-3)" }}>
-              {cat.label}
+        {/* Tool strip: Select + 5 draw tools */}
+        <div className="p-2" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          {/* Select tool */}
+          <button
+            title="Select [V]"
+            onClick={() => setActiveTool("select")}
+            style={{
+              display: "flex", alignItems: "center", gap: 8, padding: "7px 10px",
+              borderRadius: 7, cursor: "pointer", fontSize: 12, fontWeight: 500,
+              background: activeTool === "select" ? "var(--st-brand-tint)" : "var(--st-bg)",
+              border: `1px solid ${activeTool === "select" ? "var(--st-brand)" : "var(--st-border-2)"}`,
+              color: activeTool === "select" ? "var(--st-brand)" : "var(--st-text-2)",
+            }}
+          >
+            <span style={{ fontSize: 13, width: 16, textAlign: "center" }}>↖</span>
+            <span>Select</span>
+            <span style={{ marginLeft: "auto", fontSize: 9, opacity: 0.5 }}>[V]</span>
+          </button>
+
+          {/* Draw tools */}
+          {LAYER_TOOLS.map((tool) => {
+            const icon = tool.type === "frame" ? "⬜" : tool.type === "text" ? "T" : tool.type === "rect" ? "▭" : tool.type === "image" ? "⬡" : "─";
+            const isActive = activeTool === tool.type;
+            return (
+              <button
+                key={tool.type}
+                title={`${tool.label} [${tool.shortcut}] — ${tool.description}`}
+                onClick={() => setActiveTool(tool.type)}
+                onMouseDown={(e) => {
+                  if (activeTool === "select") {
+                    const entry: PaletteEntry = {
+                      id: tool.type, label: tool.label, icon,
+                      type: tool.type as PaletteEntry["type"],
+                      w: tool.defaultW, h: tool.defaultH,
+                    };
+                    startPaletteDrag(e, entry);
+                  }
+                }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8, padding: "7px 10px",
+                  borderRadius: 7, cursor: "pointer", fontSize: 12, fontWeight: 500,
+                  background: isActive ? "var(--st-brand-tint)" : "var(--st-bg)",
+                  border: `1px solid ${isActive ? "var(--st-brand)" : "var(--st-border-2)"}`,
+                  color: isActive ? "var(--st-brand)" : "var(--st-text-2)",
+                }}
+              >
+                <span style={{ fontSize: 13, width: 16, textAlign: "center" }}>{icon}</span>
+                <span>{tool.label}</span>
+                <span style={{ marginLeft: "auto", fontSize: 9, opacity: 0.5 }}>[{tool.shortcut}]</span>
+              </button>
+            );
+          })}
+        </div>
+        {/* Legacy components — collapsed list for backward compat */}
+        <div className="border-t px-3 pb-1 pt-2.5" style={{ borderColor: "var(--st-border)" }}>
+          <span className="text-[9.5px] font-semibold uppercase tracking-[0.07em]" style={{ color: "var(--st-text-3)" }}>Legacy Components</span>
+        </div>
+        <div className="flex flex-col gap-0.5 px-2 pb-3">
+          {PALETTE_CATEGORIES.flatMap((cat) => cat.entries).map((entry) => (
+            <div
+              key={entry.id}
+              onClick={() => handleAdd(entry)}
+              onMouseDown={(e) => startPaletteDrag(e, entry)}
+              className="flex cursor-grab items-center gap-2 rounded-md px-2 py-1.5 text-[11.5px] hover:bg-white/[0.05] active:cursor-grabbing"
+              style={{ color: "var(--st-text-2)" }}
+            >
+              <span className="w-4 text-center text-[12px]">{entry.icon}</span>
+              <span>{entry.label}</span>
             </div>
-            <div className="grid grid-cols-2 gap-1 px-2 pb-1">
-              {cat.entries.map((entry) => (
-                <button key={entry.id}
-                  onMouseDown={(e) => startPaletteDrag(e, entry)}
-                  onClick={() => handleAdd(entry)}
-                  title="Click to add · Drag to canvas"
-                  className="st-pressable flex cursor-grab flex-col items-center gap-1 rounded-[var(--st-r-md)] px-1 py-2 text-center active:scale-[0.96] active:cursor-grabbing hover:bg-white/[0.06]"
-                  style={{ color: "var(--st-text-2)", border: "1px solid var(--st-border)" }}>
-                  <span className="text-[15px]">{entry.icon}</span>
-                  <span className="text-[10px] font-medium leading-tight">{entry.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-        <div className="h-4 shrink-0" />
+          ))}
+        </div>
       </aside>
 
       {/* ── Canvas area ────────────────────────────────────────── */}
@@ -703,11 +859,12 @@ export function SchemaCanvas({ projectId, fileId }: { projectId?: string; fileId
                       boxShadow: isActive
                         ? "0 0 0 2px #6366f1, 0 8px 40px rgba(0,0,0,0.55)"
                         : "0 4px 24px rgba(0,0,0,0.35)",
-                      cursor: isActive ? "default" : "pointer",
+                      cursor: !isActive ? "pointer" : activeTool !== "select" ? "crosshair" : "default",
                       transition: "box-shadow 150ms ease",
                     }}
                     onMouseDown={(e) => {
                       if (!isActive) { e.stopPropagation(); setActiveScreenId(screen.id); setSelectedIds(new Set()); return; }
+                      if (activeTool !== "select") { startDraw(e); return; }
                       startMarquee(e);
                     }}>
 
@@ -725,6 +882,16 @@ export function SchemaCanvas({ projectId, fileId }: { projectId?: string; fileId
                     {isActive && marquee && (
                       <div style={{ position: "absolute", left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h,
                         background: "rgba(99,102,241,0.12)", border: "1px solid #6366f1", pointerEvents: "none" }} />
+                    )}
+                    {isActive && drawPreview && (
+                      <>
+                        <div style={{ position: "absolute", left: drawPreview.x, top: drawPreview.y, width: drawPreview.w, height: drawPreview.h,
+                          background: "rgba(99,102,241,0.08)", border: "1.5px dashed #6366f1", pointerEvents: "none" }} />
+                        <div style={{ position: "absolute", left: drawPreview.x + drawPreview.w + 4, top: drawPreview.y,
+                          background: "#6366f1", color: "#fff", fontSize: 10, padding: "1px 5px", borderRadius: 4, pointerEvents: "none", whiteSpace: "nowrap" }}>
+                          {Math.round(drawPreview.w)} × {Math.round(drawPreview.h)}
+                        </div>
+                      </>
                     )}
                   </div>
 
@@ -747,7 +914,10 @@ export function SchemaCanvas({ projectId, fileId }: { projectId?: string; fileId
           </div>
 
           <div className="pointer-events-none absolute bottom-2 left-2 text-[10.5px]" style={{ color: "var(--st-text-3)" }}>
-            Drag to pan · Scroll to pan · ⌘-scroll zoom · ⌘Z undo · ⌘D duplicate · ⌘[ ] layer order
+            {activeTool !== "select"
+              ? `Drawing: ${LAYER_TOOLS.find(t => t.type === activeTool)?.label ?? activeTool} — click-drag to place · [V] or [Esc] to select`
+              : "Drag to pan · Scroll to pan · ⌘-scroll zoom · ⌘Z undo · ⌘D duplicate · ⌘[ ] layer order"
+            }
           </div>
         </div>
       </div>
@@ -756,12 +926,13 @@ export function SchemaCanvas({ projectId, fileId }: { projectId?: string; fileId
       <div className="flex w-60 shrink-0 flex-col border-l" style={{ borderColor: "var(--st-border)", background: "var(--st-surface)" }}>
         {/* Tab bar */}
         <div className="flex h-9 shrink-0 items-center border-b" style={{ borderColor: "var(--st-border)" }}>
-          {([
+          {(([
             ["inspect", <LayoutGrid key="inspect" size={12} />, "Inspect"],
             ["layers",  <Layers    key="layers"  size={12} />, "Layers"],
             ["screens", <Monitor   key="screens" size={12} />, "Screens"],
-          ] as const).map(([tab, icon, label]) => (
-            <button key={tab} onClick={() => setInspectorTab(tab)}
+            ["data",    <Database  key="data"    size={12} />, "Data"],
+          ]) as [string, React.ReactNode, string][]).map(([tab, icon, label]) => (
+            <button key={tab} onClick={() => setInspectorTab(tab as "inspect" | "layers" | "screens" | "data")}
               className="flex flex-1 items-center justify-center gap-1 h-full text-[11px] font-medium border-b-2"
               style={{
                 color: inspectorTab === tab ? "var(--st-brand)" : "var(--st-text-3)",
@@ -784,6 +955,10 @@ export function SchemaCanvas({ projectId, fileId }: { projectId?: string; fileId
             ) : single ? (
               <Inspector key={single.id} comp={single} resolvedBox={box(single)}
                 globalActions={globalActions as { id: string; name: string }[]}
+                stateVars={[
+                  ...(activeScreen?.localState ?? []).map((s) => s.name),
+                  "currentUser", "isLoggedIn", "userRole", "params",
+                ]}
                 onPos={(l, t) => editNode(single.id, (n) => { n.style = { ...n.style, layout: { ...(n.style?.layout ?? {}), position: "absolute", left: l, top: t } }; })}
                 onSize={(w, h) => editNode(single.id, (n) => { n.style = { ...n.style, sizing: { ...(n.style?.sizing ?? {}), width: w, height: h } }; })}
                 onStyleCommit={(patch) => editNode(single.id, (n) => {
@@ -799,6 +974,8 @@ export function SchemaCanvas({ projectId, fileId }: { projectId?: string; fileId
                 })}
                 onProp={(k, v) => editNode(single.id, (n) => { n.props = { ...n.props, [k]: v }; })}
                 onBind={(k, v) => editNode(single.id, (n) => { const b = { ...(n.bindings ?? {}) }; if (v) b[k] = v; else delete b[k]; n.bindings = b; })}
+                onVisibility={(expr) => editNode(single.id, (n) => { n.conditionalRender = expr || undefined; })}
+                onRepeat={(items, as_) => editNode(single.id, (n) => { if (!items) { n.repeatFor = undefined; return; } n.repeatFor = { items, as: as_ || "item" }; })}
                 onClickAction={(a) => editNode(single.id, (n) => { n.events = { ...(n.events ?? {}), onClick: a ? [a] : [] }; })}
                 onDelete={deleteSelection}
               />
@@ -975,6 +1152,25 @@ export function SchemaCanvas({ projectId, fileId }: { projectId?: string; fileId
             </div>
           </div>
         )}
+
+        {/* Data tab */}
+        {inspectorTab === "data" && (
+          <DataPanel
+            screenId={screenId}
+            localState={(activeScreen?.localState ?? []) as StateNodeSchema[]}
+            onAddState={(node) => addScreenState(screenId, node)}
+            onUpdateState={(id, updates) => {
+              const next = (activeScreen?.localState ?? []).map((s) =>
+                s.id === id ? { ...s, ...updates } : s
+              );
+              updateScreen(screenId, { localState: next as StateNodeSchema[] });
+            }}
+            onRemoveState={(id) => {
+              const next = (activeScreen?.localState ?? []).filter((s) => s.id !== id);
+              updateScreen(screenId, { localState: next as StateNodeSchema[] });
+            }}
+          />
+        )}
       </div>
 
       {/* Drag ghost */}
@@ -1072,6 +1268,193 @@ function LayerTree({ nodes, selectedIds, onSelect, depth }: {
   );
 }
 
+// ── DataPanel ─────────────────────────────────────────────────────
+interface DataPanelProps {
+  screenId: string;
+  localState: StateNodeSchema[];
+  onAddState: (node: StateNodeSchema) => void;
+  onUpdateState: (id: string, updates: Partial<StateNodeSchema>) => void;
+  onRemoveState: (id: string) => void;
+}
+
+function DataPanel({ localState, onAddState, onUpdateState, onRemoveState }: DataPanelProps) {
+  const [addingApi, setAddingApi] = React.useState(false);
+  const [newApiName, setNewApiName] = React.useState("");
+  const [newApiEndpoint, setNewApiEndpoint] = React.useState("");
+  const [newApiMethod, setNewApiMethod] = React.useState<"GET" | "POST">("GET");
+
+  const regularVars = localState.filter((s) => !s.async);
+  const apiSources  = localState.filter((s) => !!s.async);
+
+  function mkId() {
+    return `state-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  }
+
+  function addVar() {
+    const n = regularVars.length + 1;
+    onAddState({ id: mkId(), name: `variable${n}`, scope: "local", defaultValue: "", type: "string" });
+  }
+
+  function addApiSource() {
+    if (!newApiName.trim() || !newApiEndpoint.trim()) return;
+    onAddState({
+      id: mkId(), name: newApiName.trim(), scope: "local", defaultValue: null, type: "any",
+      async: { source: newApiEndpoint.trim(), autoFetch: true },
+    });
+    setNewApiName(""); setNewApiEndpoint(""); setAddingApi(false);
+  }
+
+  const sectionTitle: React.CSSProperties = {
+    fontSize: 9, fontWeight: 700, textTransform: "uppercase",
+    letterSpacing: "0.08em", color: "var(--st-text-3)", padding: "10px 12px 5px",
+  };
+  const rowStyle: React.CSSProperties = {
+    display: "flex", alignItems: "center", gap: 5,
+    padding: "5px 10px", borderBottom: "1px solid var(--st-border)",
+  };
+  const inputStyle: React.CSSProperties = {
+    flex: 1, padding: "3px 6px", borderRadius: 4, fontSize: 11,
+    background: "var(--st-bg)", border: "1px solid var(--st-border-2)",
+    color: "var(--st-text)", outline: "none", minWidth: 0,
+  };
+  const addBtn: React.CSSProperties = {
+    display: "flex", alignItems: "center", gap: 4, width: "calc(100% - 20px)",
+    margin: "6px 10px", padding: "5px 8px", borderRadius: 6, fontSize: 11,
+    cursor: "pointer", background: "transparent",
+    border: "1px dashed var(--st-border-2)", color: "var(--st-text-3)", justifyContent: "center",
+  };
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", fontSize: 12 }}>
+
+      {/* State Variables */}
+      <div style={sectionTitle}>
+        <Variable size={9} style={{ display: "inline", marginRight: 4 }} />
+        State Variables
+      </div>
+      {regularVars.length === 0 && (
+        <p style={{ padding: "4px 12px 8px", fontSize: 11, color: "var(--st-text-3)" }}>
+          No variables yet. Add one to use in bindings.
+        </p>
+      )}
+      {regularVars.map((sv) => (
+        <div key={sv.id} style={rowStyle}>
+          <input
+            style={{ ...inputStyle, width: 70, flex: "none" }}
+            defaultValue={sv.name} placeholder="name"
+            onBlur={(e) => { const v = e.target.value.trim().replace(/\s+/g, "_"); if (v && v !== sv.name) onUpdateState(sv.id, { name: v }); }}
+          />
+          <select
+            defaultValue={sv.type ?? "string"}
+            onChange={(e) => onUpdateState(sv.id, { type: e.target.value as StateType })}
+            style={{ ...inputStyle, flex: "none", width: 60, cursor: "pointer" }}
+          >
+            {["string","number","boolean","object","array"].map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <input
+            style={inputStyle}
+            defaultValue={sv.defaultValue != null ? String(sv.defaultValue) : ""}
+            placeholder="default"
+            onBlur={(e) => {
+              const raw = e.target.value;
+              let parsed: unknown = raw;
+              if (sv.type === "number") parsed = raw === "" ? 0 : Number(raw);
+              else if (sv.type === "boolean") parsed = raw === "true";
+              else if (sv.type === "object" || sv.type === "array") { try { parsed = JSON.parse(raw); } catch { parsed = null; } }
+              onUpdateState(sv.id, { defaultValue: parsed });
+            }}
+          />
+          <button onClick={() => onRemoveState(sv.id)}
+            style={{ flexShrink: 0, background: "none", border: "none", cursor: "pointer", color: "var(--st-text-3)", padding: 2, borderRadius: 4, display: "grid", placeItems: "center" }}>
+            <Trash2 size={11} />
+          </button>
+        </div>
+      ))}
+      <button onClick={addVar} style={addBtn}><Plus size={10} />Add variable</button>
+
+      {/* API Sources */}
+      <div style={{ ...sectionTitle, marginTop: 8 }}>
+        <Globe size={9} style={{ display: "inline", marginRight: 4 }} />
+        API Sources
+      </div>
+      {apiSources.length === 0 && (
+        <p style={{ padding: "4px 12px 8px", fontSize: 11, color: "var(--st-text-3)" }}>
+          No API sources yet. Connect an endpoint to populate data.
+        </p>
+      )}
+      {apiSources.map((src) => (
+        <div key={src.id} style={{ ...rowStyle, flexDirection: "column", alignItems: "stretch", gap: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{ fontSize: 10, fontFamily: "var(--st-mono)", color: "var(--st-brand)", background: "rgba(99,102,241,0.1)", padding: "2px 6px", borderRadius: 4, flexShrink: 0 }}>
+              ${src.name}
+            </span>
+            <span style={{ flex: 1, fontSize: 10, color: "var(--st-text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--st-mono)" }}>
+              {(src.async?.source as string) ?? ""}
+            </span>
+            <button
+              onClick={() => onUpdateState(src.id, { async: { ...src.async, autoFetch: !src.async?.autoFetch } as AsyncStateConfig })}
+              title={src.async?.autoFetch ? "Auto-fetch on" : "Auto-fetch off"}
+              style={{ flexShrink: 0, fontSize: 9, padding: "2px 6px", borderRadius: 4, cursor: "pointer",
+                background: src.async?.autoFetch ? "rgba(16,185,129,0.15)" : "var(--st-bg)",
+                border: `1px solid ${src.async?.autoFetch ? "#10b981" : "var(--st-border-2)"}`,
+                color: src.async?.autoFetch ? "#10b981" : "var(--st-text-3)" }}>
+              {src.async?.autoFetch ? "auto" : "manual"}
+            </button>
+            <button onClick={() => onRemoveState(src.id)}
+              style={{ flexShrink: 0, background: "none", border: "none", cursor: "pointer", color: "var(--st-text-3)", padding: 2, borderRadius: 4, display: "grid", placeItems: "center" }}>
+              <Trash2 size={11} />
+            </button>
+          </div>
+        </div>
+      ))}
+
+      {addingApi ? (
+        <div style={{ margin: "6px 10px", padding: "10px", borderRadius: 8, background: "var(--st-bg)", border: "1px solid var(--st-border-2)" }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: "var(--st-text-3)", marginBottom: 8 }}>New API Source</div>
+          <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+            <select value={newApiMethod} onChange={(e) => setNewApiMethod(e.target.value as "GET" | "POST")}
+              style={{ ...inputStyle, flex: "none", width: 52, cursor: "pointer" }}>
+              <option>GET</option><option>POST</option>
+            </select>
+            <input style={inputStyle} value={newApiEndpoint} onChange={(e) => setNewApiEndpoint(e.target.value)} placeholder="/api/products" />
+          </div>
+          <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+            <span style={{ fontSize: 10, color: "var(--st-text-3)", lineHeight: "26px", flexShrink: 0 }}>Variable:</span>
+            <input style={inputStyle} value={newApiName} onChange={(e) => setNewApiName(e.target.value.replace(/\s/g, ""))} placeholder="products" />
+          </div>
+          <div style={{ display: "flex", gap: 4 }}>
+            <button onClick={addApiSource}
+              style={{ flex: 1, padding: "5px", borderRadius: 6, fontSize: 11, fontWeight: 600, background: "var(--st-brand)", color: "#fff", border: "none", cursor: "pointer" }}>
+              Add
+            </button>
+            <button onClick={() => { setAddingApi(false); setNewApiName(""); setNewApiEndpoint(""); }}
+              style={{ padding: "5px 10px", borderRadius: 6, fontSize: 11, background: "transparent", border: "1px solid var(--st-border-2)", color: "var(--st-text-3)", cursor: "pointer" }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setAddingApi(true)} style={addBtn}><Plus size={10} />Add API source</button>
+      )}
+
+      {/* Built-in context */}
+      <div style={{ ...sectionTitle, marginTop: 8 }}>Built-in Context</div>
+      {([
+        ["$currentUser", "Authenticated user object"],
+        ["$isLoggedIn",  "Boolean auth status"],
+        ["$userRole",    "Current user role string"],
+        ["$params",      "Route params (e.g. $params.id)"],
+      ] as [string, string][]).map(([name, desc]) => (
+        <div key={name} style={{ padding: "4px 12px", display: "flex", alignItems: "baseline", gap: 6 }}>
+          <span style={{ fontSize: 10.5, fontFamily: "var(--st-mono)", color: "var(--st-brand)", flexShrink: 0 }}>{name}</span>
+          <span style={{ fontSize: 10, color: "var(--st-text-3)" }}>{desc}</span>
+        </div>
+      ))}
+      <div style={{ height: 12 }} />
+    </div>
+  );
+}
+
 // ── Inspector sub-components (hoisted to avoid "created during render" lint errors) ──
 const IP_CLS = "rounded-[4px] outline-none bg-transparent";
 const ROW_CLS = "flex items-center rounded-[4px]";
@@ -1117,9 +1500,108 @@ function PropSL({ label }: { label: string }) {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// ── ExprInput ─────────────────────────────────────────────────────
+function ExprInput({
+  value, placeholder, stateVars, onChange, onBlur: onBlurProp,
+}: {
+  value: string;
+  placeholder?: string;
+  stateVars?: string[];
+  onChange?: (v: string) => void;
+  onBlur?: (v: string) => void;
+}) {
+  const [local, setLocal] = React.useState(value);
+  const [showSuggest, setShowSuggest] = React.useState(false);
+  React.useEffect(() => { setLocal(value); }, [value]);
+  const suggestions = React.useMemo(() => {
+    if (!stateVars?.length) return [];
+    const last = local.split(/[\s()+\-><=!&|?,:]/).pop() ?? "";
+    if (!last.startsWith("$") && last !== "") return [];
+    const prefix = last.startsWith("$") ? last.slice(1) : "";
+    return stateVars.filter((v) => v.startsWith(prefix)).map((v) => `$${v}`);
+  }, [local, stateVars]);
+
+  return (
+    <div style={{ position: "relative" }}>
+      <input
+        type="text"
+        value={local}
+        placeholder={placeholder ?? "$state.property"}
+        onChange={(e) => { setLocal(e.target.value); onChange?.(e.target.value); setShowSuggest(true); }}
+        onBlur={() => { onBlurProp?.(local); setTimeout(() => setShowSuggest(false), 120); }}
+        onFocus={() => setShowSuggest(true)}
+        style={{
+          width: "100%", fontFamily: "var(--st-mono)", fontSize: 11,
+          padding: "5px 8px", borderRadius: 6, outline: "none",
+          background: "rgba(99,102,241,0.08)",
+          border: "1px solid rgba(99,102,241,0.35)",
+          color: "var(--st-text)",
+        }}
+      />
+      {showSuggest && suggestions.length > 0 && (
+        <div style={{
+          position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50,
+          background: "var(--st-elevated)", border: "1px solid var(--st-border-2)",
+          borderRadius: 6, marginTop: 2, boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+          maxHeight: 120, overflowY: "auto",
+        }}>
+          {suggestions.map((s) => (
+            <div key={s}
+              onMouseDown={(e) => { e.preventDefault(); setLocal(s); onChange?.(s); onBlurProp?.(s); setShowSuggest(false); }}
+              style={{ padding: "5px 10px", fontSize: 11, cursor: "pointer", fontFamily: "var(--st-mono)", color: "var(--st-brand)" }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "var(--st-surface)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+            >{s}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── BindableRow ───────────────────────────────────────────────────
+function BindableRow({
+  label, bindKey, binding, stateVars, onBind, children,
+}: {
+  label: string;
+  bindKey: string;
+  binding?: string;
+  stateVars?: string[];
+  onBind: (key: string, value: string) => void;
+  children: React.ReactNode;
+}) {
+  const [isBound, setIsBound] = React.useState(!!binding);
+  React.useEffect(() => { setIsBound(!!binding); }, [binding]);
+
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: isBound ? 4 : 2 }}>
+        <span style={{ flex: 1, fontSize: 10, color: "var(--st-text-3)", userSelect: "none" }}>{label}</span>
+        <button
+          title={isBound ? "Remove binding" : "Bind to expression"}
+          onClick={() => { if (isBound) { onBind(bindKey, ""); setIsBound(false); } else { setIsBound(true); } }}
+          style={{
+            width: 18, height: 18, borderRadius: 4, display: "grid", placeItems: "center",
+            background: isBound ? "rgba(99,102,241,0.2)" : "transparent",
+            border: isBound ? "1px solid rgba(99,102,241,0.4)" : "1px solid transparent",
+            cursor: "pointer", fontSize: 9, color: isBound ? "var(--st-brand)" : "var(--st-text-3)",
+            fontFamily: "var(--st-mono)", flexShrink: 0,
+          }}
+        >{"{}"}</button>
+      </div>
+      {isBound
+        ? <ExprInput value={binding ?? ""} stateVars={stateVars} onBlur={(v) => onBind(bindKey, v)} />
+        : children
+      }
+    </div>
+  );
+}
+
+// ── Inspector ─────────────────────────────────────────────────────
 function Inspector({
   comp, resolvedBox, globalActions,
   onPos, onSize, onStyleCommit, onProp, onBind, onClickAction, onDelete,
+  stateVars, onVisibility, onRepeat,
 }: {
   comp: ComponentSchema; resolvedBox: Box;
   globalActions: { id: string; name: string }[];
@@ -1130,6 +1612,9 @@ function Inspector({
   onBind: (k: string, v: string) => void;
   onClickAction: (a: string) => void;
   onDelete: () => void;
+  stateVars?: string[];
+  onVisibility?: (expr: string) => void;
+  onRepeat?: (items: string, as_: string) => void;
 }) {
   const b = resolvedBox;
   const st = comp.style ?? {};
@@ -1140,8 +1625,8 @@ function Inspector({
   const [txtColor, setTxtColor] = React.useState(st.typography?.color  ?? "#111827");
   const [aspectLocked, setAspectLocked] = React.useState(false);
 
-  const showBinding = ["input","select","checkbox","switch","radio","searchInput","text","statCard","button"].includes(comp.type);
-  const isCont = ["view","card","form","scroll","modal","list"].includes(comp.type);
+  const showBinding = true; // every layer supports bindings now
+  const isCont = ["view","card","form","scroll","modal","list","frame"].includes(comp.type);
 
   return (
     <div className="flex flex-col gap-0">
@@ -1314,49 +1799,79 @@ function Inspector({
           <PropHR />
           <div className="px-3 py-2.5">
             <PropSL label="Content" />
-            <input type="text"
-              defaultValue={String(comp.props?.[textKey] ?? "")}
-              onBlur={(e) => onProp(textKey, e.target.value)}
-              placeholder={textKey === "placeholder" ? "Placeholder…" : "Text…"}
-              className="w-full rounded-[4px] px-2 py-[6px] text-[12px] outline-none"
-              style={{ background: "var(--st-bg)", border: "1px solid var(--st-border-2)", color: "var(--st-text)" }} />
+            <BindableRow
+              label="Text"
+              bindKey={textKey}
+              binding={comp.bindings?.[textKey]}
+              stateVars={stateVars}
+              onBind={onBind}
+            >
+              <input type="text"
+                defaultValue={String(comp.props?.[textKey] ?? "")}
+                onBlur={(e) => onProp(textKey, e.target.value)}
+                placeholder={textKey === "placeholder" ? "Placeholder…" : "Text…"}
+                className="w-full rounded-[4px] px-2 py-[6px] text-[12px] outline-none"
+                style={{ background: "var(--st-bg)", border: "1px solid var(--st-border-2)", color: "var(--st-text)" }} />
+            </BindableRow>
           </div>
         </>
       )}
 
-      {/* Binding */}
+      {/* Bindings */}
       {showBinding && (
         <>
           <PropHR />
           <div className="px-3 py-2.5">
-            <PropSL label="Binding" />
+            <PropSL label="Bindings" />
+
+            <BindableRow
+              label="Fill color"
+              bindKey="backgroundColor"
+              binding={comp.bindings?.backgroundColor}
+              stateVars={stateVars}
+              onBind={onBind}
+            >
+              <ColorRow color={bgColor}
+                onLive={(c) => setBgColor(c)}
+                onCommit={(c) => { setBgColor(c); onStyleCommit({ background: { color: c } }); }} />
+            </BindableRow>
+
+            <BindableRow
+              label="Text color"
+              bindKey="textColor"
+              binding={comp.bindings?.textColor}
+              stateVars={stateVars}
+              onBind={onBind}
+            >
+              <ColorRow color={txtColor}
+                onLive={(c) => setTxtColor(c)}
+                onCommit={(c) => { setTxtColor(c); onStyleCommit({ typography: { color: c } }); }} />
+            </BindableRow>
+
             {["input","select","checkbox","switch","radio","searchInput"].includes(comp.type) && (
-              <div className="mb-1.5 flex items-center gap-2">
-                <span className="w-9 shrink-0 text-[10px]" style={{ color: "var(--st-text-3)" }}>Value</span>
-                <input type="text" placeholder="$form.field"
-                  defaultValue={String(comp.bindings?.value ?? "")}
-                  onBlur={(e) => onBind("value", e.target.value.trim())}
-                  className="flex-1 rounded-[4px] px-2 py-[5px] font-mono text-[10.5px] outline-none"
-                  style={{ background: "var(--st-bg)", border: "1px solid var(--st-border-2)", color: "var(--st-text)" }} />
-              </div>
+              <BindableRow
+                label="Value"
+                bindKey="value"
+                binding={comp.bindings?.value}
+                stateVars={stateVars}
+                onBind={onBind}
+              >
+                <ExprInput
+                  value={comp.bindings?.value ?? ""}
+                  placeholder="$form.field"
+                  stateVars={stateVars}
+                  onBlur={(v) => onBind("value", v)}
+                />
+              </BindableRow>
             )}
-            {["text","statCard"].includes(comp.type) && (
-              <div className="mb-1.5 flex items-center gap-2">
-                <span className="w-9 shrink-0 text-[10px]" style={{ color: "var(--st-text-3)" }}>{comp.type === "statCard" ? "Value" : "Text"}</span>
-                <input type="text" placeholder="$currentUser.name"
-                  defaultValue={String(comp.bindings?.text ?? comp.bindings?.value ?? "")}
-                  onBlur={(e) => onBind(comp.type === "statCard" ? "value" : "text", e.target.value.trim())}
-                  className="flex-1 rounded-[4px] px-2 py-[5px] font-mono text-[10.5px] outline-none"
-                  style={{ background: "var(--st-bg)", border: "1px solid var(--st-border-2)", color: "var(--st-text)" }} />
-              </div>
-            )}
-            {comp.type === "button" && (
-              <div className="flex items-center gap-2">
-                <span className="w-9 shrink-0 text-[10px]" style={{ color: "var(--st-text-3)" }}>Click</span>
+
+            {["button","view","card","frame","rect"].includes(comp.type) && (
+              <div style={{ marginBottom: 6 }}>
+                <span style={{ display: "block", fontSize: 10, color: "var(--st-text-3)", marginBottom: 4 }}>On Click</span>
                 <select
                   defaultValue={(comp.events?.onClick?.[0] as string) ?? ""}
                   onChange={(e) => onClickAction(e.target.value)}
-                  className="flex-1 rounded-[4px] px-2 py-[5px] text-[11px] outline-none"
+                  className="w-full rounded-[4px] px-2 py-[5px] text-[11px] outline-none"
                   style={{ background: "var(--st-bg)", border: "1px solid var(--st-border-2)", color: "var(--st-text)" }}>
                   <option value="">— none —</option>
                   {globalActions.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -1366,6 +1881,51 @@ function Inspector({
           </div>
         </>
       )}
+
+      {/* Visibility & Repeat */}
+      <PropHR />
+      <div className="px-3 py-2.5">
+        <PropSL label="Conditions" />
+
+        <div style={{ marginBottom: 8 }}>
+          <span style={{ display: "block", fontSize: 10, color: "var(--st-text-3)", marginBottom: 4 }}>Show when</span>
+          <ExprInput
+            value={comp.conditionalRender ?? ""}
+            placeholder="$isLoggedIn"
+            stateVars={stateVars}
+            onBlur={(v) => onVisibility?.(v)}
+          />
+          <p style={{ fontSize: 9.5, color: "var(--st-text-3)", marginTop: 3 }}>Leave empty to always show</p>
+        </div>
+
+        {isCont && (
+          <div>
+            <span style={{ display: "block", fontSize: 10, color: "var(--st-text-3)", marginBottom: 4 }}>Repeat for each</span>
+            <ExprInput
+              value={comp.repeatFor?.items ?? ""}
+              placeholder="$products"
+              stateVars={stateVars}
+              onBlur={(v) => onRepeat?.(v, comp.repeatFor?.as ?? "item")}
+            />
+            {comp.repeatFor?.items && (
+              <div style={{ marginTop: 4 }}>
+                <span style={{ display: "block", fontSize: 10, color: "var(--st-text-3)", marginBottom: 3 }}>Item variable</span>
+                <input
+                  type="text"
+                  defaultValue={comp.repeatFor.as ?? "item"}
+                  onBlur={(e) => onRepeat?.(comp.repeatFor?.items ?? "", e.target.value || "item")}
+                  style={{
+                    width: "100%", padding: "4px 8px", borderRadius: 6, fontSize: 11,
+                    fontFamily: "var(--st-mono)", outline: "none",
+                    background: "var(--st-bg)", border: "1px solid var(--st-border-2)", color: "var(--st-text)",
+                  }}
+                  placeholder="item"
+                />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="h-3 shrink-0" />
     </div>

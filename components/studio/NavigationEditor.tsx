@@ -1,164 +1,290 @@
 "use client";
 
-// Navigation Editor — visual routing graph editor.
-// Draggable screen cards on a canvas, SVG bezier connections,
-// right inspector for route/auth config.
-
-import { useState, useRef, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { v4 as uuid } from "uuid";
 import {
-  Frame, ShieldCheck, Plus, Undo2, Redo2,
-  ZoomIn, ZoomOut, Maximize, Play, Search,
-  Settings2, Zap, Users, MousePointer2, Trash2,
+  Frame, ShieldCheck, Plus,
+  ZoomIn, ZoomOut, Maximize, Search,
+  Trash2, Link2, X, Lock, Unlock,
 } from "lucide-react";
 import { useRuntimeStore } from "@/lib/runtime/runtime-store";
 import type { ScreenSchema } from "@/lib/runtime/schema";
 import {
-  Inspector, InspectorTabs, Section, Field,
-  TextField, SelectField, ToggleRow, Btn, IconBtn, Pill, EmptyState,
+  Section, Field, TextField, ToggleRow, Btn, Pill,
 } from "./primitives";
 
 // ── Types ──────────────────────────────────────────────────────
-
 interface CardPos { x: number; y: number }
 interface NavEdge { id: string; fromId: string; toId: string; label?: string }
-type InspectorTab = "props" | "style" | "events" | "collab";
 
-// ── Defaults ───────────────────────────────────────────────────
+const CARD_W = 200;
+const CARD_H = 88;
 
-const DEFAULT_POSITIONS: Record<string, CardPos> = {
-  login: { x: 100, y: 100 }, dashboard: { x: 350, y: 100 },
-  profile: { x: 350, y: 260 }, admin: { x: 600, y: 100 },
-};
-const DEFAULT_EDGES: NavEdge[] = [
-  { id: "e1", fromId: "login",     toId: "dashboard", label: "on auth" },
-  { id: "e2", fromId: "dashboard", toId: "profile",   label: "" },
-  { id: "e3", fromId: "dashboard", toId: "admin",     label: "" },
-  { id: "e4", fromId: "profile",   toId: "dashboard", label: "back" },
-];
-const DEFAULT_AUTH: Record<string, { required: boolean; roles: string[] }> = {
-  login:     { required: false, roles: [] },
-  dashboard: { required: true,  roles: [] },
-  profile:   { required: true,  roles: ["user", "admin"] },
-  admin:     { required: true,  roles: ["admin"] },
-};
-
-const CARD_W = 208;
-const CARD_H = 80;
-
-// ── Screen card ────────────────────────────────────────────────
-
-function ScreenCard({ screen, pos, selected, authInfo, onSelect, onDragEnd }: {
-  screen: ScreenSchema; pos: CardPos; selected: boolean;
-  authInfo: { required: boolean; roles: string[] };
-  onSelect: () => void; onDragEnd: (pos: CardPos) => void;
+// ── Connection lines ───────────────────────────────────────────
+function ConnectionLines({
+  edges, positions, connecting, mousePos,
+}: {
+  edges: NavEdge[];
+  positions: Record<string, CardPos>;
+  connecting: { fromId: string } | null;
+  mousePos: { x: number; y: number };
 }) {
-  const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
-
   return (
-    <div
-      onPointerDown={(e) => {
-        e.stopPropagation(); onSelect();
-        (e.target as HTMLElement).setPointerCapture(e.pointerId);
-        drag.current = { sx: e.clientX, sy: e.clientY, ox: pos.x, oy: pos.y };
-      }}
-      onPointerMove={(e) => {
-        if (!drag.current) return;
-        onDragEnd({ x: drag.current.ox + e.clientX - drag.current.sx, y: drag.current.oy + e.clientY - drag.current.sy });
-      }}
-      onPointerUp={() => { drag.current = null; }}
-      style={{
-        position: "absolute", left: pos.x, top: pos.y, width: CARD_W,
-        cursor: "grab", userSelect: "none",
-        background: "var(--st-elevated)",
-        border: selected ? "1.5px solid var(--st-brand)" : "1px solid var(--st-border)",
-        borderRadius: "var(--st-r-lg)",
-        boxShadow: selected ? "0 0 0 3px var(--st-brand-tint), var(--st-shadow-raised)" : "var(--st-shadow-raised)",
-        padding: "10px 12px",
-      }}
+    <svg
+      style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "visible" }}
+      width="100%" height="100%"
     >
-      <div className="flex items-center gap-2 mb-1">
-        <Frame size={14} style={{ color: "var(--st-brand)", flexShrink: 0 }} />
-        <span className="font-semibold text-[12.5px] truncate" style={{ color: "var(--st-text)" }}>
-          {screen.name}
-        </span>
-      </div>
-      <div className="text-[11px] truncate mb-2" style={{ color: "var(--st-text-3)", fontFamily: "var(--st-mono)" }}>
-        {screen.route || "/"}
-      </div>
-      <div className="flex items-center gap-1.5 flex-wrap">
-        {authInfo.required && <Pill tone="warning"><ShieldCheck size={9} />Auth</Pill>}
-        {authInfo.roles.map((r) => <Pill key={r} tone="brand">{r}</Pill>)}
-      </div>
-    </div>
-  );
-}
-
-// ── SVG edges ─────────────────────────────────────────────────
-
-function ConnectionLines({ edges, positions }: { edges: NavEdge[]; positions: Record<string, CardPos> }) {
-  return (
-    <svg style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "visible" }} width="100%" height="100%">
       <defs>
-        <marker id="nav-arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-          <path d="M0,0 L0,6 L8,3 z" fill="var(--st-text-3)" />
+        <marker id="nav-arr" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
+          <path d="M0,0 L0,7 L7,3.5 z" fill="var(--st-brand)" opacity="0.7" />
+        </marker>
+        <marker id="nav-arr-draft" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
+          <path d="M0,0 L0,7 L7,3.5 z" fill="var(--st-text-3)" opacity="0.7" />
         </marker>
       </defs>
+
       {edges.map((edge) => {
-        const f = positions[edge.fromId], t = positions[edge.toId];
+        const f = positions[edge.fromId];
+        const t = positions[edge.toId];
         if (!f || !t) return null;
-        const x1 = f.x + CARD_W, y1 = f.y + CARD_H / 2;
-        const x2 = t.x,          y2 = t.y + CARD_H / 2;
-        const cp = (x2 - x1) * 0.5;
-        const d = `M${x1},${y1} C${x1+cp},${y1} ${x2-cp},${y2} ${x2},${y2}`;
+        const x1 = f.x + CARD_W;
+        const y1 = f.y + CARD_H / 2;
+        const x2 = t.x;
+        const y2 = t.y + CARD_H / 2;
+        const cp = Math.abs(x2 - x1) * 0.45 + 40;
+        const d = `M${x1},${y1} C${x1 + cp},${y1} ${x2 - cp},${y2} ${x2},${y2}`;
         return (
           <g key={edge.id}>
-            <path d={d} fill="none" stroke="var(--st-border-2)" strokeWidth={1.5} markerEnd="url(#nav-arr)" />
+            <path d={d} fill="none" stroke="var(--st-brand)" strokeWidth={1.5}
+              strokeOpacity={0.5} markerEnd="url(#nav-arr)" />
             {edge.label && (
-              <text x={(x1+x2)/2} y={(y1+y2)/2 - 8} textAnchor="middle" fontSize={9}
-                fill="var(--st-text-3)" fontFamily="var(--st-mono)">{edge.label}</text>
+              <text x={(x1 + x2) / 2} y={Math.min(y1, y2) - 6}
+                textAnchor="middle" fontSize={9}
+                fill="var(--st-text-3)" fontFamily="var(--st-mono)">
+                {edge.label}
+              </text>
             )}
           </g>
         );
       })}
+
+      {connecting && positions[connecting.fromId] && (() => {
+        const f = positions[connecting.fromId];
+        const x1 = f.x + CARD_W;
+        const y1 = f.y + CARD_H / 2;
+        const x2 = mousePos.x;
+        const y2 = mousePos.y;
+        const cp = Math.abs(x2 - x1) * 0.4 + 30;
+        const d = `M${x1},${y1} C${x1 + cp},${y1} ${x2 - cp},${y2} ${x2},${y2}`;
+        return (
+          <path d={d} fill="none" stroke="var(--st-text-3)" strokeWidth={1.5}
+            strokeDasharray="5 3" markerEnd="url(#nav-arr-draft)" />
+        );
+      })()}
     </svg>
   );
 }
 
-// ── Stat row ──────────────────────────────────────────────────
+// ── Screen card ────────────────────────────────────────────────
+function ScreenCard({
+  screen, pos, selected, authRequired,
+  isConnectingFrom, canReceiveConnection,
+  onSelect, onDragEnd, onConnectStart, onConnectEnd,
+}: {
+  screen: ScreenSchema; pos: CardPos; selected: boolean;
+  authRequired: boolean; isConnectingFrom: boolean; canReceiveConnection: boolean;
+  onSelect: () => void;
+  onDragEnd: (pos: CardPos) => void;
+  onConnectStart: (e: React.MouseEvent) => void;
+  onConnectEnd: () => void;
+}) {
+  const drag = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
+  const [hovered, setHovered] = useState(false);
 
+  const accentColor = selected
+    ? "var(--st-brand)"
+    : authRequired
+    ? "var(--st-warning)"
+    : "var(--st-border-3)";
+
+  return (
+    <div
+      onPointerDown={(e) => {
+        if ((e.target as HTMLElement).closest("[data-handle]")) return;
+        e.stopPropagation();
+        if (canReceiveConnection) { onConnectEnd(); return; }
+        onSelect();
+        const card = (e.target as HTMLElement).closest<HTMLElement>("[data-card]");
+        card?.setPointerCapture(e.pointerId);
+        drag.current = { sx: e.clientX, sy: e.clientY, ox: pos.x, oy: pos.y };
+      }}
+      onPointerMove={(e) => {
+        if (!drag.current) return;
+        onDragEnd({
+          x: drag.current.ox + e.clientX - drag.current.sx,
+          y: drag.current.oy + e.clientY - drag.current.sy,
+        });
+      }}
+      onPointerUp={() => { drag.current = null; }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      data-card="true"
+      style={{
+        position: "absolute",
+        left: pos.x,
+        top: pos.y,
+        width: CARD_W,
+        cursor: canReceiveConnection ? "crosshair" : "grab",
+        userSelect: "none",
+        borderRadius: 10,
+        background: selected ? "var(--st-elevated)" : "var(--st-surface)",
+        border: `1px solid ${selected ? "var(--st-brand)" : canReceiveConnection ? "var(--st-warning)" : "var(--st-border)"}`,
+        boxShadow: selected
+          ? "0 0 0 3px var(--st-brand-tint), 0 4px 16px rgba(0,0,0,0.4)"
+          : "0 2px 8px rgba(0,0,0,0.25)",
+        transition: "border-color 120ms, box-shadow 120ms",
+        overflow: "hidden",
+      }}
+    >
+      {/* Left accent stripe */}
+      <div style={{
+        position: "absolute", left: 0, top: 0, bottom: 0, width: 3,
+        background: accentColor,
+        borderRadius: "10px 0 0 10px",
+        transition: "background 120ms",
+      }} />
+
+      {/* Card body */}
+      <div style={{ padding: "10px 12px 10px 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+          <Frame size={12} style={{ color: "var(--st-brand)", flexShrink: 0 }} />
+          <span style={{
+            flex: 1, fontSize: 13, fontWeight: 600, color: "var(--st-text)",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}>
+            {screen.name}
+          </span>
+          {authRequired && (
+            <ShieldCheck size={12} style={{ color: "var(--st-warning)", flexShrink: 0 }} />
+          )}
+        </div>
+
+        <div style={{
+          fontSize: 11, color: "var(--st-text-3)", fontFamily: "var(--st-mono)",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          marginBottom: 8,
+        }}>
+          {screen.route || "/"}
+        </div>
+
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+          {authRequired
+            ? <Pill tone="warning"><Lock size={8} />Protected</Pill>
+            : <Pill tone="neutral"><Unlock size={8} />Public</Pill>
+          }
+          {screen.width && (
+            <Pill tone="neutral">{screen.width}×{screen.height}</Pill>
+          )}
+        </div>
+      </div>
+
+      {/* Right connection handle */}
+      {(hovered || isConnectingFrom) && (
+        <div
+          data-handle="true"
+          onMouseDown={(e) => { e.stopPropagation(); onConnectStart(e); }}
+          title="Click to start connection"
+          style={{
+            position: "absolute", right: -6, top: "50%", transform: "translateY(-50%)",
+            width: 12, height: 12, borderRadius: "50%",
+            background: "var(--st-brand)", border: "2px solid var(--st-bg)",
+            cursor: "crosshair", zIndex: 10,
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Stat row ──────────────────────────────────────────────────
 function StatRow({ label, value, tone }: { label: string; value: number; tone?: "warning" | "brand" }) {
   const color = tone === "warning" ? "var(--st-warning)" : tone === "brand" ? "var(--st-brand)" : "var(--st-text)";
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-[11.5px]" style={{ color: "var(--st-text-2)" }}>{label}</span>
-      <span className="text-[12px] font-semibold tabular-nums" style={{ color }}>{value}</span>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0" }}>
+      <span style={{ fontSize: 12, color: "var(--st-text-2)" }}>{label}</span>
+      <span style={{ fontSize: 13, fontWeight: 600, color }}>{value}</span>
+    </div>
+  );
+}
+
+// ── Empty state ───────────────────────────────────────────────
+function NavEmptyState({ onAdd }: { onAdd: () => void }) {
+  return (
+    <div style={{ display: "grid", placeItems: "center", height: "100%", padding: 40 }}>
+      <div style={{ textAlign: "center", maxWidth: 320 }}>
+        <div style={{
+          width: 48, height: 48, borderRadius: 12, background: "var(--st-surface)",
+          border: "1px solid var(--st-border)", display: "grid", placeItems: "center",
+          margin: "0 auto 16px",
+        }}>
+          <Frame size={22} style={{ color: "var(--st-text-3)" }} />
+        </div>
+        <h3 style={{ fontSize: 15, fontWeight: 600, color: "var(--st-text)", marginBottom: 8 }}>
+          No screens yet
+        </h3>
+        <p style={{ fontSize: 12.5, color: "var(--st-text-3)", lineHeight: 1.6, marginBottom: 20 }}>
+          Add screens in the Canvas tab first, then wire up your navigation flow here.
+        </p>
+        <Btn variant="primary" size="sm" onClick={onAdd}>
+          <Plus size={11} />Add First Screen
+        </Btn>
+      </div>
     </div>
   );
 }
 
 // ── Main ──────────────────────────────────────────────────────
-
 export function NavigationEditor() {
   const { schema, addScreen, updateScreen, removeScreen } = useRuntimeStore();
-  const storeScreens = schema.screens ?? [];
+  const storeScreens = useMemo(() => schema.screens ?? [], [schema.screens]);
 
   const [positions, setPositions] = useState<Record<string, CardPos>>({});
-  const [authInfo, setAuthInfo] = useState<Record<string, { required: boolean; roles: string[] }>>(DEFAULT_AUTH);
-  const [edges] = useState<NavEdge[]>([]);
+  const [authInfo, setAuthInfo] = useState<Record<string, { required: boolean; roles: string[] }>>({});
+  const [edges, setEdges] = useState<NavEdge[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("props");
   const [zoom, setZoom] = useState(1);
-  const [bottomTab, setBottomTab] = useState<"json" | "console" | "logs" | "validation">("json");
+  const [pan, setPan] = useState({ x: 60, y: 60 });
+  const [connecting, setConnecting] = useState<{ fromId: string } | null>(null);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [routeEdits, setRouteEdits] = useState<Record<string, string>>({});
-  const [titleEdits, setTitleEdits] = useState<Record<string, string>>({});
   const [rolesInput, setRolesInput] = useState<Record<string, string>>({});
+
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const panRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
+
+  // Non-passive wheel — pan + zoom
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.ctrlKey || e.metaKey) {
+        setZoom((z) => Math.max(0.3, Math.min(2, z - e.deltaY * 0.002)));
+      } else {
+        setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
+      }
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, []);
 
   const selectedScreen = useMemo(
     () => storeScreens.find((s) => s.id === selectedId) ?? null,
     [storeScreens, selectedId]
   );
+
   const filteredScreens = useMemo(
     () => searchQuery.trim()
       ? storeScreens.filter((s) =>
@@ -167,20 +293,28 @@ export function NavigationEditor() {
       : storeScreens,
     [storeScreens, searchQuery]
   );
+
   const authGuardedCount = useMemo(
-    () => Object.values(authInfo).filter((a) => a.required).length, [authInfo]
+    () => Object.values(authInfo).filter((a) => a.required).length,
+    [authInfo]
   );
 
   const handleAddScreen = useCallback(() => {
-    const id = uuid(), idx = storeScreens.length + 1;
-    const s: ScreenSchema = { id, name: `Screen ${idx}`, route: `/screen-${idx}`, components: [], localState: [], actions: [] };
-    setPositions((p) => ({ ...p, [id]: { x: 120 + Math.random() * 280, y: 120 + Math.random() * 200 } }));
+    const id = uuid();
+    const idx = storeScreens.length + 1;
+    const s: ScreenSchema = {
+      id, name: `Screen ${idx}`, route: `/screen-${idx}`,
+      components: [], localState: [], actions: [],
+    };
+    setPositions((p) => ({ ...p, [id]: { x: 80 + Math.random() * 300, y: 80 + Math.random() * 200 } }));
     setAuthInfo((p) => ({ ...p, [id]: { required: false, roles: [] } }));
-    addScreen(s); setSelectedId(id);
+    addScreen(s);
+    setSelectedId(id);
   }, [storeScreens.length, addScreen]);
 
   const handleRemoveScreen = useCallback((id: string) => {
     removeScreen(id);
+    setEdges((prev) => prev.filter((e) => e.fromId !== id && e.toId !== id));
     if (selectedId === id) setSelectedId(null);
   }, [removeScreen, selectedId]);
 
@@ -188,258 +322,372 @@ export function NavigationEditor() {
     updateScreen(id, { route });
   }, [updateScreen]);
 
-  const handleDrag = useCallback((id: string, pos: CardPos) => {
-    setPositions((p) => ({ ...p, [id]: pos }));
+  const handleDrag = useCallback((id: string, p: CardPos) => {
+    setPositions((prev) => ({ ...prev, [id]: p }));
   }, []);
 
-  const inspTabs: { id: InspectorTab; icon: React.ReactNode; label: string }[] = [
-    { id: "props",  icon: <Settings2 size={13} />,   label: "Properties" },
-    { id: "style",  icon: <Zap size={13} />,          label: "Style" },
-    { id: "events", icon: <MousePointer2 size={13} />, label: "Events" },
-    { id: "collab", icon: <Users size={13} />,         label: "Collaborators" },
-  ];
+  const handleConnectStart = useCallback((fromId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setConnecting({ fromId });
+  }, []);
+
+  const handleConnectEnd = useCallback((toId: string) => {
+    if (!connecting || connecting.fromId === toId) { setConnecting(null); return; }
+    const exists = edges.some((e) => e.fromId === connecting.fromId && e.toId === toId);
+    if (!exists) {
+      setEdges((prev) => [...prev, { id: uuid(), fromId: connecting.fromId, toId, label: "" }]);
+    }
+    setConnecting(null);
+  }, [connecting, edges]);
+
+  const handleDeleteEdge = useCallback((edgeId: string) => {
+    setEdges((prev) => prev.filter((e) => e.id !== edgeId));
+  }, []);
 
   const sid = selectedId ?? "";
 
+  const onCanvasMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement).closest("[data-card]")) return;
+    setSelectedId(null);
+    setConnecting(null);
+    panRef.current = { sx: e.clientX, sy: e.clientY, ox: pan.x, oy: pan.y };
+    const onMove = (me: MouseEvent) => {
+      if (!panRef.current) return;
+      setPan({ x: panRef.current.ox + me.clientX - panRef.current.sx, y: panRef.current.oy + me.clientY - panRef.current.sy });
+    };
+    const onUp = () => {
+      panRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [pan]);
+
+  const onCanvasMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!connecting) return;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setMousePos({
+      x: (e.clientX - rect.left - pan.x) / zoom,
+      y: (e.clientY - rect.top - pan.y) / zoom,
+    });
+  }, [connecting, pan, zoom]);
+
   if (storeScreens.length === 0) {
     return (
-      <EmptyState
-        icon={<Frame size={22} />}
-        title="No screens to route"
-        description="Add screens in Screen Manager first, then come back to wire up your navigation graph."
-        action={
-          <Btn variant="primary" size="sm" onClick={handleAddScreen}>
-            Add First Screen
-          </Btn>
-        }
-      />
+      <div style={{ height: "100%", background: "var(--st-bg)" }}>
+        <NavEmptyState onAdd={handleAddScreen} />
+      </div>
     );
   }
 
   return (
-    <div className="flex h-full w-full flex-col" style={{ background: "var(--st-bg)", color: "var(--st-text)" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--st-bg)", color: "var(--st-text)" }}>
 
       {/* Top bar */}
-      <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b px-3"
-        style={{ borderColor: "var(--st-border)", background: "var(--st-surface)" }}>
-        <div className="relative flex items-center" style={{ width: 200 }}>
-          <Search size={12} className="pointer-events-none absolute left-2.5" style={{ color: "var(--st-text-3)" }} />
-          <input type="text" placeholder="Search screens..." value={searchQuery}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        gap: 8, height: 44, flexShrink: 0, padding: "0 12px",
+        borderBottom: "1px solid var(--st-border)", background: "var(--st-surface)",
+      }}>
+        {/* Search */}
+        <div style={{ position: "relative", width: 200, display: "flex", alignItems: "center" }}>
+          <Search size={12} style={{ position: "absolute", left: 9, color: "var(--st-text-3)", pointerEvents: "none" }} />
+          <input type="text" placeholder="Search screens…" value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-6 w-full rounded-[var(--st-r-md)] pl-7 pr-2 text-[11.5px] outline-none"
-            style={{ background: "var(--st-bg)", color: "var(--st-text)", boxShadow: "inset 0 0 0 1px var(--st-border-2)" }} />
+            style={{
+              height: 28, width: "100%", paddingLeft: 28, paddingRight: 8,
+              fontSize: 12, borderRadius: 6, outline: "none",
+              background: "var(--st-bg)", color: "var(--st-text)",
+              boxShadow: "inset 0 0 0 1px var(--st-border-2)", border: "none",
+            }} />
         </div>
-        <div className="flex items-center gap-1">
-          <IconBtn title="Undo"><Undo2 size={13} /></IconBtn>
-          <IconBtn title="Redo"><Redo2 size={13} /></IconBtn>
-          <div className="mx-1 h-4 w-px" style={{ background: "var(--st-border)" }} />
-          <IconBtn title="Zoom out" onClick={() => setZoom((z) => Math.max(0.4, +(z - 0.1).toFixed(2)))}>
-            <ZoomOut size={13} />
-          </IconBtn>
-          <span className="w-10 text-center text-[11px] tabular-nums" style={{ color: "var(--st-text-2)" }}>
-            {Math.round(zoom * 100)}%
+
+        {/* Center status */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 12, color: "var(--st-text-3)" }}>
+            {storeScreens.length} screen{storeScreens.length !== 1 ? "s" : ""}
           </span>
-          <IconBtn title="Zoom in" onClick={() => setZoom((z) => Math.min(2, +(z + 0.1).toFixed(2)))}>
+          {edges.length > 0 && (
+            <span style={{ fontSize: 12, color: "var(--st-text-3)" }}>
+              · {edges.length} connection{edges.length !== 1 ? "s" : ""}
+            </span>
+          )}
+          {connecting && (
+            <span style={{
+              fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 4,
+              background: "rgba(167,139,250,0.15)", color: "var(--st-brand)",
+              display: "flex", alignItems: "center", gap: 4,
+            }}>
+              Click a screen to connect →
+              <button onClick={() => setConnecting(null)}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--st-text-3)", padding: 0, display: "flex" }}>
+                <X size={11} />
+              </button>
+            </span>
+          )}
+        </div>
+
+        {/* Controls */}
+        <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+          <button title="Zoom out"
+            onClick={() => setZoom((z) => Math.max(0.3, +(z - 0.1).toFixed(2)))}
+            style={{ width: 28, height: 28, display: "grid", placeItems: "center", borderRadius: 6, background: "transparent", border: "none", cursor: "pointer", color: "var(--st-text-2)" }}>
+            <ZoomOut size={13} />
+          </button>
+          <button onClick={() => { setZoom(1); setPan({ x: 60, y: 60 }); }}
+            style={{ minWidth: 44, height: 28, fontSize: 11, borderRadius: 6, background: "transparent", border: "none", cursor: "pointer", color: "var(--st-text-2)" }}>
+            {Math.round(zoom * 100)}%
+          </button>
+          <button title="Zoom in"
+            onClick={() => setZoom((z) => Math.min(2, +(z + 0.1).toFixed(2)))}
+            style={{ width: 28, height: 28, display: "grid", placeItems: "center", borderRadius: 6, background: "transparent", border: "none", cursor: "pointer", color: "var(--st-text-2)" }}>
             <ZoomIn size={13} />
-          </IconBtn>
-          <IconBtn title="Fit" onClick={() => setZoom(1)}><Maximize size={13} /></IconBtn>
-          <div className="mx-1 h-4 w-px" style={{ background: "var(--st-border)" }} />
-          <Btn variant="primary" size="sm"><Play size={11} />Preview</Btn>
+          </button>
+          <button title="Reset view"
+            onClick={() => { setZoom(1); setPan({ x: 60, y: 60 }); }}
+            style={{ width: 28, height: 28, display: "grid", placeItems: "center", borderRadius: 6, background: "transparent", border: "none", cursor: "pointer", color: "var(--st-text-2)" }}>
+            <Maximize size={13} />
+          </button>
+          <div style={{ width: 1, height: 16, background: "var(--st-border)", margin: "0 4px" }} />
+          <button onClick={handleAddScreen}
+            style={{
+              height: 28, padding: "0 10px", borderRadius: 6, fontSize: 12, fontWeight: 500,
+              background: "var(--st-brand)", color: "#fff", border: "none", cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 4,
+            }}>
+            <Plus size={12} />New Screen
+          </button>
         </div>
       </div>
 
       {/* Body */}
-      <div className="flex min-h-0 flex-1">
+      <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+
         {/* Canvas */}
-        <div className="relative min-h-0 flex-1 overflow-hidden" style={{ background: "var(--st-canvas)" }}
-          onClick={() => setSelectedId(null)}>
+        <div
+          ref={canvasRef}
+          style={{
+            flex: 1, position: "relative", overflow: "hidden",
+            background: "var(--st-canvas)", cursor: connecting ? "crosshair" : "default",
+            userSelect: "none",
+          }}
+          onMouseDown={onCanvasMouseDown}
+          onMouseMove={onCanvasMouseMove}
+        >
           {/* Dot grid */}
           <div style={{
-            position: "absolute", inset: 0, opacity: 0.4, pointerEvents: "none",
-            backgroundImage: "radial-gradient(circle, var(--st-border) 1px, transparent 1px)",
-            backgroundSize: "24px 24px",
+            position: "absolute", inset: 0, pointerEvents: "none",
+            backgroundImage: "radial-gradient(circle, var(--st-border-2) 1px, transparent 1px)",
+            backgroundSize: `${24 * zoom}px ${24 * zoom}px`,
+            backgroundPosition: `${pan.x % (24 * zoom)}px ${pan.y % (24 * zoom)}px`,
           }} />
-          {/* Zoom layer */}
-          <div style={{ position: "absolute", inset: 0, transform: `scale(${zoom})`, transformOrigin: "top left" }}>
-            <ConnectionLines edges={edges} positions={positions} />
-            {filteredScreens.map((screen, idx) => (
-              <ScreenCard key={screen.id} screen={screen}
-                pos={positions[screen.id] ?? { x: 80 + (idx % 3) * 260, y: 80 + Math.floor(idx / 3) * 160 }}
-                selected={selectedId === screen.id}
-                authInfo={authInfo[screen.id] ?? { required: false, roles: [] }}
-                onSelect={() => setSelectedId(screen.id)}
-                onDragEnd={(pos) => handleDrag(screen.id, pos)} />
-            ))}
+
+          {/* Transform layer */}
+          <div style={{
+            position: "absolute", top: 0, left: 0,
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transformOrigin: "0 0",
+          }}>
+            <ConnectionLines edges={edges} positions={positions} connecting={connecting} mousePos={mousePos} />
+
+            {filteredScreens.map((screen, idx) => {
+              const defaultPos = { x: 80 + (idx % 3) * 240, y: 80 + Math.floor(idx / 3) * 140 };
+              const pos = positions[screen.id] ?? defaultPos;
+              const auth = authInfo[screen.id] ?? { required: false, roles: [] };
+              return (
+                <ScreenCard
+                  key={screen.id}
+                  screen={screen}
+                  pos={pos}
+                  selected={selectedId === screen.id}
+                  authRequired={auth.required}
+                  isConnectingFrom={connecting?.fromId === screen.id}
+                  canReceiveConnection={!!connecting && connecting.fromId !== screen.id}
+                  onSelect={() => { setSelectedId(screen.id); setConnecting(null); }}
+                  onDragEnd={(p) => handleDrag(screen.id, p)}
+                  onConnectStart={(e) => handleConnectStart(screen.id, e)}
+                  onConnectEnd={() => handleConnectEnd(screen.id)}
+                />
+              );
+            })}
           </div>
-          {/* FAB */}
-          <button type="button" title="Add screen"
-            onClick={(e) => { e.stopPropagation(); handleAddScreen(); }}
-            style={{
-              position: "absolute", bottom: 40, right: 16, width: 36, height: 36,
-              borderRadius: "50%", background: "var(--st-brand)", color: "#fff",
-              display: "grid", placeItems: "center", boxShadow: "var(--st-shadow-floating)",
-              border: "none", cursor: "pointer",
-            }}>
-            <Plus size={18} />
-          </button>
+
+          {/* Hint */}
+          <div style={{
+            position: "absolute", bottom: 12, left: 12, fontSize: 11,
+            color: "var(--st-text-3)", pointerEvents: "none",
+          }}>
+            Drag to pan · ⌘-scroll to zoom · Hover card to connect
+          </div>
         </div>
 
         {/* Inspector */}
-        <Inspector title="Inspector"
-          tabs={<InspectorTabs tabs={inspTabs} value={inspectorTab} onChange={setInspectorTab} />}>
-          {selectedScreen ? (
-            <>
-              {/* Breadcrumb */}
-              <div className="flex items-center gap-1.5 border-b px-3.5 py-2"
-                style={{ borderColor: "var(--st-border)" }}>
-                <span className="rounded-[var(--st-r-sm)] px-1.5 py-0.5 text-[11px] font-medium"
-                  style={{ background: "var(--st-surface-2)", color: "var(--st-text-2)" }}>
-                  {selectedScreen.name}
-                </span>
-                <span style={{ color: "var(--st-text-3)", fontSize: 10 }}>|</span>
-                <span className="text-[11px]" style={{ color: "var(--st-text-3)" }}>Route Config</span>
-                <div className="ml-auto">
-                  <IconBtn title="Delete screen" onClick={() => handleRemoveScreen(selectedScreen.id)}
-                    style={{ color: "var(--st-error)" }}>
-                    <Trash2 size={12} />
-                  </IconBtn>
-                </div>
-              </div>
+        <div style={{
+          width: 280, flexShrink: 0, borderLeft: "1px solid var(--st-border)",
+          background: "var(--st-surface)", display: "flex", flexDirection: "column",
+          overflow: "hidden",
+        }}>
+          <div style={{
+            height: 44, display: "flex", alignItems: "center", padding: "0 14px",
+            borderBottom: "1px solid var(--st-border)", flexShrink: 0,
+          }}>
+            <span style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--st-text-2)" }}>
+              {selectedScreen ? selectedScreen.name : "Navigation"}
+            </span>
+            {selectedScreen && (
+              <button
+                onClick={() => handleRemoveScreen(selectedScreen.id)}
+                title="Delete screen"
+                style={{
+                  marginLeft: "auto", width: 24, height: 24, borderRadius: 6,
+                  background: "transparent", border: "none", cursor: "pointer",
+                  display: "grid", placeItems: "center", color: "var(--st-error)",
+                }}>
+                <Trash2 size={12} />
+              </button>
+            )}
+          </div>
 
-              {/* Route config */}
-              <Section title="Route Configuration" defaultOpen>
-                <Field label="Route path" htmlFor={`route-${sid}`}>
-                  <TextField id={`route-${sid}`} mono
-                    value={routeEdits[sid] ?? selectedScreen.route}
-                    placeholder="/my-screen"
-                    onChange={(e) => setRouteEdits((p) => ({ ...p, [sid]: e.target.value }))}
-                    onBlur={(e) => handleUpdateRoute(sid, e.target.value)} />
-                  {(() => {
-                    const currentRoute = routeEdits[sid] ?? selectedScreen.route ?? "";
-                    const paramNames = currentRoute.match(/:([a-zA-Z_][a-zA-Z0-9_]*)/g)?.map((p: string) => p.slice(1)) ?? [];
-                    if (paramNames.length === 0) return (
-                      <p style={{ fontSize: 10, color: "var(--st-text-3)", marginTop: 4 }}>
-                        Tip: use{" "}
-                        <code style={{ fontFamily: "var(--st-mono)", background: "var(--st-bg)", padding: "1px 4px", borderRadius: 3 }}>:id</code>
-                        {" "}for dynamic segments, e.g.{" "}
-                        <code style={{ fontFamily: "var(--st-mono)", background: "var(--st-bg)", padding: "1px 4px", borderRadius: 3 }}>/expenses/:id</code>
-                      </p>
-                    );
-                    return (
-                      <div style={{ marginTop: 6 }}>
-                        <p style={{ fontSize: 10, fontWeight: 600, color: "var(--st-text-3)", marginBottom: 4 }}>
-                          Route params ({paramNames.length})
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            {selectedScreen ? (
+              <>
+                <Section title="Route" defaultOpen>
+                  <Field label="Path" htmlFor={`route-${sid}`}>
+                    <TextField id={`route-${sid}`} mono
+                      value={routeEdits[sid] ?? selectedScreen.route ?? ""}
+                      placeholder="/my-screen"
+                      onChange={(e) => setRouteEdits((p) => ({ ...p, [sid]: e.target.value }))}
+                      onBlur={(e) => handleUpdateRoute(sid, e.target.value)} />
+                    {(() => {
+                      const r = routeEdits[sid] ?? selectedScreen.route ?? "";
+                      const params = (r.match(/:([a-zA-Z_]\w*)/g) ?? []).map((p: string) => p.slice(1));
+                      if (!params.length) return (
+                        <p style={{ fontSize: 10, color: "var(--st-text-3)", marginTop: 4 }}>
+                          Use <code style={{ fontFamily: "var(--st-mono)", background: "var(--st-bg)", padding: "1px 3px", borderRadius: 3 }}>:id</code> for dynamic segments
                         </p>
-                        {paramNames.map((param: string) => (
-                          <div key={param} style={{ display: "flex", alignItems: "center", gap: 8, borderRadius: "var(--st-r-sm)", padding: "3px 8px", background: "var(--st-bg)", border: "1px solid var(--st-border)", marginBottom: 3 }}>
-                            <code style={{ fontSize: 10, color: "var(--st-brand)", fontFamily: "var(--st-mono)" }}>:{param}</code>
-                            <span style={{ fontSize: 10, color: "var(--st-text-3)" }}>string</span>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                </Field>
-                <Field label="Page title" htmlFor={`title-${sid}`}>
-                  <TextField id={`title-${sid}`}
-                    value={titleEdits[sid] ?? selectedScreen.name}
-                    placeholder="Page title (meta)"
-                    onChange={(e) => setTitleEdits((p) => ({ ...p, [sid]: e.target.value }))} />
-                </Field>
-                <ToggleRow label="Auth Required" hint="Redirect unauthenticated users"
-                  checked={authInfo[sid]?.required ?? false}
-                  onChange={(v) => setAuthInfo((p) => ({ ...p, [sid]: { ...p[sid], required: v } }))} />
-                {authInfo[sid]?.required && (
-                  <Field label="Roles (comma-separated)" htmlFor={`roles-${sid}`}>
-                    <TextField id={`roles-${sid}`} placeholder="user, admin"
-                      value={rolesInput[sid] ?? (authInfo[sid]?.roles ?? []).join(", ")}
-                      onChange={(e) => setRolesInput((p) => ({ ...p, [sid]: e.target.value }))}
-                      onBlur={(e) => {
-                        const roles = e.target.value.split(",").map((r) => r.trim()).filter(Boolean);
-                        setAuthInfo((p) => ({ ...p, [sid]: { ...p[sid], roles } }));
-                      }} />
+                      );
+                      return (
+                        <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 4 }}>
+                          {params.map((p: string) => (
+                            <span key={p} style={{
+                              fontSize: 10, padding: "2px 6px", borderRadius: 4,
+                              background: "var(--st-bg)", border: "1px solid var(--st-border-2)",
+                              color: "var(--st-brand)", fontFamily: "var(--st-mono)",
+                            }}>:{p}</span>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </Field>
-                )}
-              </Section>
+                </Section>
 
-              {/* Action config */}
-              <Section title="Action Configuration" defaultOpen={false}>
-                <Field label="Action Name"><TextField placeholder="e.g. handleSubmit" /></Field>
-                <Field label="Integration">
-                  <SelectField defaultValue="none">
-                    <option value="none">None</option>
-                    <option value="supabase">Supabase DB</option>
-                    <option value="rest">REST API</option>
-                  </SelectField>
-                </Field>
-                <Field label="Method">
-                  <SelectField defaultValue="insert">
-                    <option value="insert">Insert Row</option>
-                    <option value="select">Select</option>
-                    <option value="update">Update</option>
-                    <option value="delete">Delete</option>
-                  </SelectField>
-                </Field>
-                <div className="mb-2 mt-1">
-                  <div className="mb-1.5 text-[11px] font-medium" style={{ color: "var(--st-text-2)" }}>Payload (JSON)</div>
-                  <div className="rounded-[var(--st-r-md)] p-2 text-[11px]" style={{
-                    background: "var(--st-bg)", boxShadow: "inset 0 0 0 1px var(--st-border-2)",
-                    fontFamily: "var(--st-mono)", color: "var(--st-text-2)", lineHeight: 1.6,
-                  }}>
-                    <div><span style={{ color: "var(--st-text-3)" }}>email:</span>{" "}
-                      <span style={{ color: "var(--st-brand)" }}>{"{{input_email.value}}"}</span></div>
-                    <div><span style={{ color: "var(--st-text-3)" }}>role:</span>{" "}
-                      <span style={{ color: "var(--st-success)" }}>{"'user'"}</span></div>
+                <Section title="Auth Guard" defaultOpen>
+                  <ToggleRow label="Require authentication"
+                    hint="Redirect unauthenticated users to login"
+                    checked={authInfo[sid]?.required ?? false}
+                    onChange={(v) => setAuthInfo((p) => ({ ...p, [sid]: { ...p[sid], required: v } }))} />
+                  {authInfo[sid]?.required && (
+                    <Field label="Allowed roles" htmlFor={`roles-${sid}`}>
+                      <TextField id={`roles-${sid}`} placeholder="user, admin"
+                        value={rolesInput[sid] ?? (authInfo[sid]?.roles ?? []).join(", ")}
+                        onChange={(e) => setRolesInput((p) => ({ ...p, [sid]: e.target.value }))}
+                        onBlur={(e) => {
+                          const roles = e.target.value.split(",").map((r: string) => r.trim()).filter(Boolean);
+                          setAuthInfo((p) => ({ ...p, [sid]: { ...p[sid], roles } }));
+                        }} />
+                      <p style={{ fontSize: 10, color: "var(--st-text-3)", marginTop: 4 }}>
+                        Leave empty to allow all authenticated users
+                      </p>
+                    </Field>
+                  )}
+                </Section>
+
+                <Section title="Connections" defaultOpen={false}>
+                  {edges.filter((e) => e.fromId === sid || e.toId === sid).length === 0 ? (
+                    <p style={{ fontSize: 11, color: "var(--st-text-3)" }}>
+                      No connections. Hover a card and click the right handle to connect.
+                    </p>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      {edges.filter((e) => e.fromId === sid || e.toId === sid).map((edge) => {
+                        const otherId = edge.fromId === sid ? edge.toId : edge.fromId;
+                        const other = storeScreens.find((s) => s.id === otherId);
+                        const dir = edge.fromId === sid ? "→" : "←";
+                        return (
+                          <div key={edge.id} style={{
+                            display: "flex", alignItems: "center", gap: 6,
+                            padding: "5px 8px", borderRadius: 6,
+                            background: "var(--st-bg)", border: "1px solid var(--st-border)",
+                          }}>
+                            <span style={{ fontSize: 11, color: "var(--st-text-3)", fontFamily: "var(--st-mono)" }}>{dir}</span>
+                            <span style={{ flex: 1, fontSize: 12, color: "var(--st-text)" }}>{other?.name ?? "Unknown"}</span>
+                            <button onClick={() => handleDeleteEdge(edge.id)}
+                              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--st-error)", padding: 2, borderRadius: 4, display: "grid", placeItems: "center" }}>
+                              <X size={10} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <button onClick={(e) => { e.stopPropagation(); setConnecting({ fromId: sid }); }}
+                    style={{
+                      marginTop: 8, width: "100%", height: 28, borderRadius: 6,
+                      background: "transparent", border: "1px dashed var(--st-border-2)",
+                      cursor: "pointer", fontSize: 11, color: "var(--st-text-3)",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+                    }}>
+                    <Link2 size={11} />Add connection
+                  </button>
+                </Section>
+              </>
+            ) : (
+              <div style={{ padding: "16px 14px" }}>
+                <div style={{
+                  borderRadius: 10, padding: "12px 14px",
+                  background: "var(--st-surface-2)", marginBottom: 12,
+                }}>
+                  <div style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--st-text-3)", marginBottom: 10 }}>
+                    Graph Overview
                   </div>
-                  <Btn variant="outline" size="sm" className="mt-2 w-full"><Plus size={11} />Add Field</Btn>
+                  <StatRow label="Screens" value={storeScreens.length} />
+                  <StatRow label="Routes" value={storeScreens.length} />
+                  <StatRow label="Auth-guarded" value={authGuardedCount} tone="warning" />
+                  <StatRow label="Connections" value={edges.length} tone={edges.length > 0 ? "brand" : undefined} />
                 </div>
-              </Section>
 
-              <Section title="Advanced Logic" defaultOpen={false}>
-                <p className="text-[11px]" style={{ color: "var(--st-text-3)" }}>
-                  Conditionals, guards, and multi-step flows.
+                <div style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--st-text-3)", marginBottom: 8 }}>
+                  Screens
+                </div>
+                {storeScreens.map((s) => {
+                  const auth = authInfo[s.id];
+                  return (
+                    <div key={s.id}
+                      onClick={() => setSelectedId(s.id)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8, padding: "7px 10px",
+                        borderRadius: 7, cursor: "pointer", marginBottom: 3,
+                        background: "var(--st-bg)", border: "1px solid var(--st-border)",
+                      }}>
+                      <Frame size={12} style={{ color: "var(--st-brand)", flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 500, color: "var(--st-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</div>
+                        <div style={{ fontSize: 10.5, color: "var(--st-text-3)", fontFamily: "var(--st-mono)" }}>{s.route || "/"}</div>
+                      </div>
+                      {auth?.required && <ShieldCheck size={11} style={{ color: "var(--st-warning)", flexShrink: 0 }} />}
+                    </div>
+                  );
+                })}
+
+                <p style={{ fontSize: 11, color: "var(--st-text-3)", marginTop: 12, textAlign: "center" }}>
+                  Click a screen card to configure its route.
                 </p>
-              </Section>
-            </>
-          ) : (
-            <div className="px-3.5 py-4 space-y-3">
-              <div className="rounded-[var(--st-r-lg)] p-3 space-y-2" style={{ background: "var(--st-surface-2)" }}>
-                <div className="mb-2 text-[10.5px] font-semibold uppercase tracking-widest" style={{ color: "var(--st-text-3)" }}>
-                  Navigation Graph
-                </div>
-                <StatRow label="Screens" value={storeScreens.length} />
-                <StatRow label="Routes" value={storeScreens.length} />
-                <StatRow label="Auth-guarded" value={authGuardedCount} tone="warning" />
-                <StatRow label="Connections" value={edges.length} />
               </div>
-              <p className="text-center text-[11px]" style={{ color: "var(--st-text-3)" }}>
-                Click a screen card to edit its route configuration.
-              </p>
-            </div>
-          )}
-        </Inspector>
-      </div>
-
-      {/* Bottom bar */}
-      <div className="flex h-8 shrink-0 items-center justify-between border-t px-3"
-        style={{ borderColor: "var(--st-border)", background: "var(--st-surface)" }}>
-        <div className="flex items-center gap-1.5 text-[11px]" style={{ color: "var(--st-text-3)" }}>
-          <span style={{ color: "var(--st-success)" }}>●</span>
-          <span>Ready</span>
-          <span style={{ color: "var(--st-border-2)" }}>|</span>
-          <span>v1.0.4-stable</span>
-        </div>
-        <div className="flex items-center gap-0.5">
-          {(["json", "console", "logs", "validation"] as const).map((tab) => (
-            <button key={tab} type="button" onClick={() => setBottomTab(tab)}
-              className="rounded-[var(--st-r-sm)] px-2 py-0.5 text-[10.5px] capitalize transition-colors"
-              style={{
-                background: bottomTab === tab ? "var(--st-surface-2)" : "transparent",
-                color: bottomTab === tab ? "var(--st-text)" : "var(--st-text-3)",
-              }}>
-              {tab}
-            </button>
-          ))}
+            )}
+          </div>
         </div>
       </div>
     </div>

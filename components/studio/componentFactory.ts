@@ -283,3 +283,138 @@ export function createComponentForType(entry: PaletteEntry, x: number, y: number
       return { ...base, type: entry.type, props: {}, style: box(x, y, entry.w, entry.h) };
   }
 }
+
+// ── Free-Form Layer Tools ─────────────────────────────────────
+// Replaces PALETTE_CATEGORIES for new screens.
+
+import type { LayerType, LayerSchema } from "@/lib/runtime/schema";
+
+export interface LayerTool {
+  type: LayerType;
+  label: string;
+  shortcut: string;
+  defaultW: number;
+  defaultH: number;
+  description: string;
+}
+
+export const LAYER_TOOLS: LayerTool[] = [
+  { type: "frame",  label: "Frame",     shortcut: "F", defaultW: 200, defaultH: 120, description: "Container — holds child layers, supports auto-layout" },
+  { type: "text",   label: "Text",      shortcut: "T", defaultW: 160, defaultH: 28,  description: "Text content — bind to any string expression" },
+  { type: "rect",   label: "Rectangle", shortcut: "R", defaultW: 180, defaultH: 80,  description: "Decorative shape — fill, border, radius" },
+  { type: "image",  label: "Image",     shortcut: "I", defaultW: 200, defaultH: 140, description: "Image — bind src to any URL expression" },
+  { type: "line",   label: "Line",      shortcut: "L", defaultW: 240, defaultH: 1,   description: "Separator line" },
+];
+
+let _layerCounter = 0;
+function lid(type: LayerType): string {
+  return `${type}-${Date.now()}-${++_layerCounter}`;
+}
+
+export function createLayer(type: LayerType, x: number, y: number, w?: number, h?: number): LayerSchema {
+  const tool = LAYER_TOOLS.find((t) => t.type === type) ?? LAYER_TOOLS[0];
+  const lw = w ?? tool.defaultW;
+  const lh = h ?? tool.defaultH;
+  const name = `${tool.label} ${_layerCounter + 1}`;
+
+  const base: LayerSchema = {
+    id: lid(type),
+    name,
+    type,
+    style: {
+      layout: { position: "absolute", left: x, top: y },
+      sizing: { width: lw, height: lh },
+    },
+    bindings: {},
+    events: {},
+  };
+
+  switch (type) {
+    case "frame":
+      return {
+        ...base,
+        content: { layoutMode: "none" },
+        children: [],
+        style: {
+          ...base.style,
+          background: { color: "#FFFFFF" },
+          border: { width: 1, color: "#E5E7EB", radius: 8 },
+        },
+      };
+
+    case "text":
+      return {
+        ...base,
+        content: { text: "Text", textRole: "p" },
+        style: {
+          ...base.style,
+          typography: { fontSize: 14, color: "#111827" },
+        },
+      };
+
+    case "rect":
+      return {
+        ...base,
+        style: {
+          ...base.style,
+          background: { color: "#E5E7EB" },
+          border: { radius: 6 },
+        },
+      };
+
+    case "image":
+      return {
+        ...base,
+        content: { src: "", imageFit: "cover" },
+        style: {
+          ...base.style,
+          background: { color: "#F3F4F6" },
+          border: { radius: 8 },
+        },
+      };
+
+    case "line":
+      return {
+        ...base,
+        style: {
+          ...base.style,
+          sizing: { width: lw, height: 1 },
+          background: { color: "#E5E7EB" },
+        },
+      };
+
+    case "group":
+      return { ...base, children: [] };
+
+    default:
+      return base;
+  }
+}
+
+/** Bridge: converts a LayerSchema to a ComponentSchema so the existing canvas can render it.
+ *  Used during Phase 1 while the render engine is being updated in Phase 5. */
+export function layerToComponent(layer: LayerSchema): ComponentSchema {
+  const type = (
+    layer.type === "rect" ? "view" :
+    layer.type === "line" ? "divider" :
+    layer.type === "group" ? "view" :
+    layer.type
+  ) as ComponentType;
+  return {
+    id: layer.id,
+    type,
+    props: {
+      _label: layer.name,
+      _layerType: layer.type,
+      ...(layer.content?.text != null ? { text: layer.content.text } : {}),
+      ...(layer.content?.src != null ? { src: layer.content.src } : {}),
+      ...(layer.content?.placeholder != null ? { placeholder: layer.content.placeholder } : {}),
+    },
+    bindings: layer.bindings ?? {},
+    children: layer.children?.map(layerToComponent),
+    conditionalRender: layer.conditionalRender,
+    repeatFor: layer.repeatFor,
+    style: layer.style,
+    events: layer.events ?? {},
+  };
+}

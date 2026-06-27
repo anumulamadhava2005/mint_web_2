@@ -567,6 +567,48 @@ io.on("connection", (socket) => {
     console.log(`🔄 Code update v${version} (${framework}) → ${files?.length || 0} files broadcast to project ${projectId}`);
   });
 
+  // ── Figma canvas collaboration (lightweight, no auth required) ──
+  // Clients join a lightweight figma room per-file for cursor + layer sync.
+  // No auth enforced here — layer data is validated server-side only on save.
+  socket.on("figma-subscribe", ({ fileId }: { fileId: string }) => {
+    if (!fileId) return;
+    socket.join(`figma:${fileId}`);
+  });
+
+  socket.on("figma-unsubscribe", ({ fileId }: { fileId: string }) => {
+    if (!fileId) return;
+    socket.leave(`figma:${fileId}`);
+    socket.to(`figma:${fileId}`).emit("figma-leave", { userId: socket.data?.figmaUserId || socket.id });
+  });
+
+  socket.on("figma-cursor", (data: { fileId: string; sessionId: string; userId: string; label: string; color: string; x: number; y: number; pageId?: string }) => {
+    const now = Date.now();
+    const last = lastCursorEmit.get(socket.id) || 0;
+    if (now - last < CURSOR_THROTTLE_MS) return;
+    lastCursorEmit.set(socket.id, now);
+
+    if (!data?.fileId) return;
+    socket.data = { ...socket.data, figmaUserId: data.userId };
+    socket.to(`figma:${data.fileId}`).emit("figma-cursor", {
+      sessionId: data.sessionId,
+      userId: data.userId,
+      label: data.label,
+      color: data.color,
+      x: data.x,
+      y: data.y,
+      pageId: data.pageId,
+    });
+  });
+
+  socket.on("figma-change", (data: { fileId: string; sessionId: string; pageId: string; layers: unknown[] }) => {
+    if (!data?.fileId) return;
+    socket.to(`figma:${data.fileId}`).emit("figma-change", {
+      sessionId: data.sessionId,
+      pageId: data.pageId,
+      layers: data.layers,
+    });
+  });
+
   // ── Heartbeat ───────────────────────────────────────────
   socket.on("heartbeat", () => {
     socket.emit("heartbeat_ack", { timestamp: Date.now() });

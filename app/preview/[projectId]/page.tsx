@@ -8,13 +8,14 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
 import { ScreenNavigator } from "@/components/MobileRenderer";
 import SchemaRenderer from "@/components/SchemaRenderer";
 import { RuntimeProvider } from "@/components/runtime/RuntimeProvider";
 import type { MobileScreen } from "@/lib/mobileConfig";
 import type { AppSchema } from "@/lib/runtime/schema";
+import FigmaPreviewLoader from "./FigmaPreviewLoader";
 
 // Device frame presets
 const DEVICES = [
@@ -26,7 +27,13 @@ const DEVICES = [
 
 export default function PreviewPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const projectId = params?.projectId as string;
+
+  // Figma prototype preview mode
+  if (searchParams?.get('mode') === 'figma') {
+    return <FigmaPreviewLoader projectId={projectId} />;
+  }
 
   const [config, setConfig] = useState<AppSchema | null>(null);
   const [loading, setLoading] = useState(true);

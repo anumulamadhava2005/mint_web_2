@@ -161,8 +161,17 @@ function Node({ comp, loopCtx }) {
   const setBound = (key, v) => { const expr = b[key]; if (expr) runtime.state.set(String(expr).replace(/^\\$/, ""), v); };
 
   switch (comp.type) {
-    case "text":
-      return <span style={style}>{String(props.text ?? props.value ?? "")}</span>;
+    case "text": {
+      const t = String(props.text ?? props.value ?? "");
+      const role = props.textRole ? String(props.textRole) : null;
+      if (role === "h1") return <h1 style={style}>{t}</h1>;
+      if (role === "h2") return <h2 style={style}>{t}</h2>;
+      if (role === "h3") return <h3 style={style}>{t}</h3>;
+      if (role === "p") return <p style={style}>{t}</p>;
+      if (role === "label") return <label style={style}>{t}</label>;
+      if (role === "code") return <code style={style}>{t}</code>;
+      return <span style={style}>{t}</span>;
+    }
 
     case "button":
       return <button type="button" style={style} disabled={!!props.disabled} onClick={(e) => fire(ev.onClick || ev.onPress, e)}>{String(props.text ?? props.label ?? "Button")}</button>;
@@ -228,7 +237,39 @@ function Node({ comp, loopCtx }) {
     case "divider":
       return <div style={{ height: 1, background: "#e5e7eb", ...style }} />;
 
-    default: // view, card, form, scroll, modal, container
+    case "frame": {
+      const inputType = props.inputType ? String(props.inputType) : null;
+      if (inputType === "textarea") {
+        const bind = b.value || b.inputBind;
+        const onChange = (e) => { if (bind) runtime.state.set(String(bind).replace(/^\\$/, ""), e.target.value); fire(ev.onChange, e); };
+        return bind || ev.onChange
+          ? <textarea style={style} placeholder={props.placeholder ? String(props.placeholder) : ""} value={props.value != null ? String(props.value) : ""} onChange={onChange} />
+          : <textarea style={style} placeholder={props.placeholder ? String(props.placeholder) : ""} defaultValue={props.value != null ? String(props.value) : ""} />;
+      }
+      if (inputType && inputType !== "select") {
+        const bind = b.value || b.inputBind;
+        const onChange = (e) => { if (bind) runtime.state.set(String(bind).replace(/^\\$/, ""), e.target.value); fire(ev.onChange, e); };
+        return bind || ev.onChange
+          ? <input style={style} type={inputType} placeholder={props.placeholder ? String(props.placeholder) : ""} value={props.value != null ? String(props.value) : ""} onChange={onChange} />
+          : <input style={style} type={inputType} placeholder={props.placeholder ? String(props.placeholder) : ""} defaultValue={props.value != null ? String(props.value) : ""} />;
+      }
+      if (inputType === "select") {
+        const bind = b.value || b.inputBind;
+        const raw = props.selectOptions || props.options || [];
+        const opts = raw.map((o) => (o && typeof o === "object") ? o : { value: o, label: o });
+        const onChange = (e) => { if (bind) runtime.state.set(String(bind).replace(/^\\$/, ""), e.target.value); fire(ev.onChange, e); };
+        return <select style={style} value={props.value != null ? String(props.value) : ""} onChange={onChange}>{opts.map((o, i) => <option key={i} value={String(o.value)}>{String(o.label ?? o.value)}</option>)}</select>;
+      }
+      if (comp.repeatFor) {
+        let items = [];
+        try { const v = runtime.evalExpr(comp.repeatFor.items, ctx); items = Array.isArray(v) ? v : []; } catch {}
+        const as = comp.repeatFor.as || "item";
+        return <div style={style} onClick={ev.onClick ? (e) => fire(ev.onClick, e) : undefined}>{items.map((it, i) => <React.Fragment key={i}>{(comp.children || []).map((ch) => <Node key={ch.id} comp={ch} loopCtx={{ ...loopCtx, [as]: it }} />)}</React.Fragment>)}</div>;
+      }
+      return <div style={style} onClick={ev.onClick ? (e) => fire(ev.onClick, e) : undefined}>{kids()}</div>;
+    }
+
+    default: // view, card, form, scroll, modal, container, rect, group
       return <div style={style} onClick={ev.onClick ? (e) => fire(ev.onClick, e) : undefined}>{kids()}</div>;
   }
 }
