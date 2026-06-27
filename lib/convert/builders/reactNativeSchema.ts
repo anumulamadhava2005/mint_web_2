@@ -206,7 +206,8 @@ ${tree}
 function runtimeFile(
   opts: RNSchemaOptions,
   routesMap: Record<string, string> = {},
-  navAfter: Record<string, string> = {}
+  navAfter: Record<string, string> = {},
+  actionSchemas: Record<string, { type: string; config?: Record<string, unknown> }> = {}
 ): string {
   const origin = opts.apiOrigin || "https://mintweb.mintit.pro";
   return `import React, { createContext, useContext, useState, useCallback, useRef } from "react";
@@ -233,6 +234,10 @@ const AUTH_HEADERS = AUTH_TOKEN ? { Authorization: "Bearer " + AUTH_TOKEN } : {}
 //            succeeds (skipped when the action returns false).
 const ROUTES = ${JSON.stringify(routesMap)};
 const NAV_AFTER = ${JSON.stringify(navAfter)};
+// Generic action schemas (name -> {type, config}) from the runtime schema.
+// Lets config-driven actions (setState/navigate/…) run alongside the built-in
+// domain ACTIONS map below — e.g. role onboarding setState on mobile.
+const ACTION_SCHEMAS = ${JSON.stringify(actionSchemas)};
 function routeFor(target) {
   if (!target) return "/";
   if (ROUTES[target]) return ROUTES[target];
@@ -289,14 +294,33 @@ export function MintProvider({ children }) {
   // Handles the "navigate:<screenId>" button convention, runs the named
   // action, then navigates if NAV_AFTER declares a target (unless the
   // action returned false, e.g. failed sign-in).
+  const runGeneric = async (sch, ctx) => {
+    const c = sch.config || {};
+    switch (sch.type) {
+      case "setState": setState(String(c.path), c.value); return;
+      case "resetState": setState(String(c.path), c.defaultValue != null ? c.defaultValue : null); return;
+      case "navigate": router.push(routeFor(c.route || c.target)); return;
+      case "signIn": return ACTIONS.signIn({ state: stateRef.current, setState, dbQuery, getNextStep, ctx: ctx || {} });
+      case "signUp": return ACTIONS.signUp({ state: stateRef.current, setState, dbQuery, getNextStep, ctx: ctx || {} });
+      case "signOut": return ACTIONS.signOut({ state: stateRef.current, setState, dbQuery, getNextStep, ctx: ctx || {} });
+      default: console.warn("Unsupported action type: " + sch.type); return;
+    }
+  };
+
   const actions = useCallback(async (name, ctx) => {
     if (typeof name === "string" && name.indexOf("navigate:") === 0) {
       router.push(routeFor(name.slice("navigate:".length)));
       return;
     }
     const fn = ACTIONS[name];
-    if (!fn) { console.warn("Unknown action: " + name); return; }
-    const result = await fn({ state: stateRef.current, setState, dbQuery, getNextStep, ctx: ctx || {} });
+    let result;
+    if (fn) {
+      result = await fn({ state: stateRef.current, setState, dbQuery, getNextStep, ctx: ctx || {} });
+    } else if (ACTION_SCHEMAS[name]) {
+      result = await runGeneric(ACTION_SCHEMAS[name], ctx);
+    } else {
+      console.warn("Unknown action: " + name); return;
+    }
     if (result !== false && NAV_AFTER[name]) router.replace(routeFor(NAV_AFTER[name]));
     return result;
   }, [setState]);
@@ -752,9 +776,11 @@ export function buildReactNativeFromSchema(
   // actionName -> screenId to navigate to after the action succeeds,
   // declared per-action via config.navigateTo in the runtime schema.
   const navAfter: Record<string, string> = {};
+  const actionSchemas: Record<string, { type: string; config?: Record<string, unknown> }> = {};
   for (const a of (schema.globalActions || []) as any[]) {
     const target = a?.config?.navigateTo;
     if (target) navAfter[a.name] = String(target);
+    if (a?.name && a?.type) actionSchemas[a.name] = { type: a.type, config: a.config || {} };
   }
 
   // app/_layout.tsx
@@ -790,7 +816,7 @@ ${routes.map((r) => `          <Stack.Screen name="${r.route}" options={{ title:
     });
   }
 
-  files.push({ path: "lib/mint-runtime.tsx", type: "text", content: runtimeFile(opts, routesMap, navAfter) });
+  files.push({ path: "lib/mint-runtime.tsx", type: "text", content: runtimeFile(opts, routesMap, navAfter, actionSchemas) });
   files.push({ path: "components/MintComponents.tsx", type: "text", content: mintComponentsFile() });
   files.push({ path: "lib/styles.ts", type: "text", content: stylesFile() });
 

@@ -14,8 +14,6 @@ import PenpotEditor from "@/components/PenpotEditor";
 import PrototypeViewer from "@/components/PrototypeViewer";
 import { useEditorStore } from "@/lib/editorStore";
 import {
-  Frame,
-  Boxes,
   Palette,
   Variable,
   Workflow as WorkflowIcon,
@@ -31,11 +29,10 @@ import {
   Check,
   Monitor,
   Download,
+  Play,
 } from "lucide-react";
 import { useRuntimeStore } from "@/lib/runtime/runtime-store";
 import { StateManager } from "./StateManager";
-import { ScreenManager } from "./ScreenManager";
-import { ComponentLibrary } from "./ComponentLibrary";
 import { ThemeDesigner } from "./ThemeDesigner";
 import { ActionsEditor } from "./ActionsEditor";
 import { NavigationEditor } from "./NavigationEditor";
@@ -43,12 +40,12 @@ import { DatabaseEditor } from "./DatabaseEditor";
 import { AuthEditor } from "./AuthEditor";
 import { SettingsPanel } from "./SettingsPanel";
 import { CommandPalette, type Command } from "./CommandPalette";
+import { StudioPreview } from "./StudioPreview";
+import { SchemaCanvas } from "./SchemaCanvas";
 import { Btn, cx } from "./primitives";
 
 export type StudioMode =
   | "canvas"
-  | "screens"
-  | "components"
   | "theme"
   | "state"
   | "workflows"
@@ -66,8 +63,6 @@ interface ModeDef {
 
 const MODES: ModeDef[] = [
   { id: "canvas", label: "Design Canvas", icon: <Monitor size={17} />, built: true },
-  { id: "screens", label: "Screen Manager", icon: <Frame size={17} />, built: true },
-  { id: "components", label: "Component Library", icon: <Boxes size={17} />, built: true },
   { id: "theme", label: "Theme Designer", icon: <Palette size={17} />, built: true },
   { id: "state", label: "State Manager", icon: <Variable size={17} />, built: true },
   { id: "workflows", label: "Workflow & Logic", icon: <WorkflowIcon size={17} />, built: true },
@@ -90,6 +85,7 @@ export function StudioShell({
   const [mode, setMode] = useState<StudioMode>("canvas");
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   const dirty = useRuntimeStore((s) => s.dirty);
@@ -118,28 +114,44 @@ export function StudioShell({
     window.setTimeout(() => setToast(null), 2200);
   }, []);
 
-  const handlePublish = useCallback(async () => {
+  // Single source of persistence: write the runtime schema to runtime_schemas.
+  // The POST route expects { schema }, so wrap the object accordingly.
+  const saveSchema = useCallback(async (): Promise<boolean> => {
+    const schema = useRuntimeStore.getState().getSchema();
     try {
-      const json = exportSchema();
-      // Persist a local snapshot so the action has real, observable effect
-      // even without the deploy backend wired up in this build.
-      window.localStorage.setItem(`mint:schema:${projectId}`, json);
-      // Save schema to DB via runtime-schema API
-      try {
-        await fetch(`/api/runtime-schema/${projectId}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: json,
-        });
-      } catch {
-        // non-blocking — localStorage snapshot already saved
+      const res = await fetch(`/api/runtime-schema/${projectId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ schema }),
+      });
+      // Local snapshot as an offline fallback / fast reload cache.
+      window.localStorage.setItem(`mint:schema:${projectId}`, JSON.stringify(schema));
+      if (res.ok) {
+        useRuntimeStore.setState({ dirty: false });
+        return true;
       }
-      useRuntimeStore.setState({ dirty: false });
-      flashToast("Schema published · snapshot saved");
+      return false;
     } catch {
-      flashToast("Publish failed");
+      return false;
     }
-  }, [exportSchema, projectId, flashToast]);
+  }, [projectId]);
+
+  const handlePublish = useCallback(async () => {
+    const ok = await saveSchema();
+    flashToast(ok ? "Schema saved · published" : "Saved locally — server unreachable");
+  }, [saveSchema, flashToast]);
+
+  // Debounced autosave — runtime_schemas is now the durable source of truth
+  // (replaces the old files-table autosave). Fires whenever the store goes dirty.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsub = useRuntimeStore.subscribe((s) => {
+      if (!s.dirty) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => { void saveSchema(); }, 1500);
+    });
+    return () => { unsub(); clearTimeout(timer); };
+  }, [saveSchema]);
 
   const handleExport = useCallback(() => {
     try {
@@ -167,6 +179,13 @@ export function StudioShell({
       run: () => setMode(m.id),
     }));
     const actions: Command[] = [
+      {
+        id: "preview",
+        label: "Run live preview",
+        group: "Actions",
+        icon: <Play size={15} />,
+        run: () => setPreviewOpen(true),
+      },
       {
         id: "toggle-theme",
         label: theme === "dark" ? "Switch to light theme" : "Switch to dark theme",
@@ -204,7 +223,7 @@ export function StudioShell({
       >
         <button
           onClick={onExit}
-          className="flex items-center gap-2 rounded-[var(--st-r-md)] px-1.5 py-1 transition-colors hover:bg-white/[0.05]"
+          className="st-pressable flex items-center gap-2 rounded-[var(--st-r-md)] px-1.5 py-1 active:scale-[0.97] hover:bg-white/[0.05]"
           title="Back to canvas"
         >
           <span
@@ -249,13 +268,17 @@ export function StudioShell({
         <div className="ml-auto flex items-center gap-1.5">
           <button
             onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-            className="grid h-7 w-7 place-items-center rounded-[var(--st-r-md)] transition-colors hover:bg-white/[0.06]"
+            className="st-pressable grid h-7 w-7 place-items-center rounded-[var(--st-r-md)] active:scale-[0.97] hover:bg-white/[0.06]"
             style={{ color: "var(--st-text-2)" }}
             title="Toggle theme"
             aria-label="Toggle theme"
           >
             {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
           </button>
+          <Btn variant="ghost" size="sm" onClick={() => setPreviewOpen(true)} className="gap-1.5 px-2.5" title="Run an interactive preview of the live schema">
+            <Play size={13} />
+            Preview
+          </Btn>
           <Btn variant="ghost" size="sm" onClick={handleExport} className="gap-1.5 px-2.5" title="Download schema JSON">
             <Download size={13} />
             Export
@@ -297,16 +320,16 @@ export function StudioShell({
 
         {/* editor surface */}
         <main className="relative min-w-0 flex-1 overflow-hidden" style={{ background: "var(--st-canvas)" }}>
-          {mode === "canvas" && <CanvasView projectId={projectId} projectName={projectName} onSwitchMode={(m) => setMode(m as StudioMode)} />}
-          {mode === "screens" && <ScreenManager />}
-          {mode === "components" && <ComponentLibrary />}
-          {mode === "theme" && <ThemeDesigner />}
-          {mode === "state" && <StateManager />}
-          {mode === "workflows" && <ActionsEditor mode="workflows" />}
-          {mode === "navigation" && <NavigationEditor />}
-          {mode === "database" && <DatabaseEditor projectId={projectId} />}
-          {mode === "auth" && <AuthEditor />}
-          {mode === "settings" && <SettingsPanel projectId={projectId} />}
+          <div key={mode} className="st-panel-enter h-full w-full">
+            {mode === "canvas" && <CanvasView projectId={projectId} projectName={projectName} onSwitchMode={(m) => setMode(m as StudioMode)} />}
+            {mode === "theme" && <ThemeDesigner />}
+            {mode === "state" && <StateManager />}
+            {mode === "workflows" && <ActionsEditor mode="workflows" />}
+            {mode === "navigation" && <NavigationEditor />}
+            {mode === "database" && <DatabaseEditor projectId={projectId} />}
+            {mode === "auth" && <AuthEditor />}
+            {mode === "settings" && <SettingsPanel projectId={projectId} />}
+          </div>
         </main>
       </div>
 
@@ -331,6 +354,7 @@ export function StudioShell({
       </footer>
 
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} commands={commands} />}
+      {previewOpen && <StudioPreview onClose={() => setPreviewOpen(false)} />}
 
       {/* toast */}
       {toast && (
@@ -341,7 +365,7 @@ export function StudioShell({
             color: "var(--st-text)",
             boxShadow: "var(--st-shadow-floating)",
             border: "1px solid var(--st-border-2)",
-            animation: "st-pop-in var(--st-dur-slow) var(--st-ease-out)",
+            animation: "st-pop-in var(--st-dur-medium) var(--st-ease-out)",
           }}
           role="status"
         >
@@ -363,7 +387,21 @@ function CanvasView({ projectId, projectName, onSwitchMode }: { projectId: strin
   const [fileId, setFileId] = useState("");
   const loadedFor = useRef<string | null>(null);
 
+  // Canvas surface flag: "schema" = schema-as-truth WYSIWYG (primary),
+  // "design" = legacy Penpot free-form. Defaults to schema; the runtime
+  // schema is the sole source of truth now.
+  const [canvasMode, setCanvasMode] = useState<"design" | "schema">(() => {
+    if (typeof window === "undefined") return "schema";
+    return (window.localStorage.getItem(`mint:canvasMode:${projectId}`) as "design" | "schema") || "schema";
+  });
+  const switchCanvasMode = (m: "design" | "schema") => {
+    setCanvasMode(m);
+    try { window.localStorage.setItem(`mint:canvasMode:${projectId}`, m); } catch { /* ignore */ }
+  };
+
   useEffect(() => {
+    // Only the Penpot surface needs the files-table workspace.
+    if (canvasMode !== "design") return;
     if (loadedFor.current === projectId) return;
     loadedFor.current = projectId;
 
@@ -385,17 +423,37 @@ function CanvasView({ projectId, projectName, onSwitchMode }: { projectId: strin
         // Non-blocking — canvas works fine without the file.
       }
     })();
-  }, [projectId, screens, initWorkspaceFromScreens, mergeFileChildShapes]);
+  }, [projectId, screens, initWorkspaceFromScreens, mergeFileChildShapes, canvasMode]);
 
   return (
     <>
-      <PenpotEditor
-        fileId={fileId}
-        projectId={projectId}
-        projectName={projectName}
-        onBack={() => router.push("/projects")}
-        onSwitchStudioMode={onSwitchMode}
-      />
+      {canvasMode === "schema" ? (
+        <SchemaCanvas projectId={projectId} fileId={fileId} />
+      ) : (
+        <PenpotEditor
+          fileId={fileId}
+          projectId={projectId}
+          projectName={projectName}
+          onBack={() => router.push("/projects")}
+          onSwitchStudioMode={onSwitchMode}
+        />
+      )}
+
+      {/* Surface toggle (Phase-2 schema-as-truth canvas, behind a flag) */}
+      <div className="absolute bottom-3 left-3 z-30 flex items-center gap-0.5 rounded-[var(--st-r-md)] p-0.5" style={{ background: "var(--st-elevated)", border: "1px solid var(--st-border-2)", boxShadow: "var(--st-shadow-floating)" }}>
+        {(["schema", "design"] as const).map((m) => (
+          <button
+            key={m}
+            onClick={() => switchCanvasMode(m)}
+            className="st-pressable rounded-[var(--st-r-sm)] px-2.5 py-1 text-[11.5px] font-medium active:scale-[0.96]"
+            style={{ background: canvasMode === m ? "var(--st-brand)" : "transparent", color: canvasMode === m ? "#fff" : "var(--st-text-3)" }}
+            title={m === "schema" ? "Schema canvas — edits the runtime directly (source of truth)" : "Legacy free-form design canvas (Penpot)"}
+          >
+            {m === "schema" ? "Schema" : "Design (legacy)"}
+          </button>
+        ))}
+      </div>
+
       {viewerMode && <PrototypeViewer onClose={() => setViewerMode(false)} />}
     </>
   );
@@ -408,15 +466,15 @@ function RailButton({ mode, active, onClick }: { mode: ModeDef; active: boolean;
       title={`${mode.label}${mode.built ? "" : " · roadmap"}`}
       aria-label={mode.label}
       aria-current={active ? "page" : undefined}
-      className={cx("group relative grid h-9 w-9 place-items-center rounded-[var(--st-r-md)] transition-colors")}
+      className={cx("st-pressable group relative grid h-9 w-9 place-items-center rounded-[var(--st-r-md)] active:scale-[0.97]")}
       style={{
         color: active ? "var(--st-brand)" : "var(--st-text-3)",
         background: active ? "var(--st-brand-tint)" : "transparent",
       }}
     >
       <span
-        className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-r-full transition-transform"
-        style={{ background: "var(--st-brand)", transform: active ? "scaleY(1)" : "scaleY(0)" }}
+        className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-r-full"
+        style={{ background: "var(--st-brand)", transform: active ? "scaleY(1)" : "scaleY(0)", transition: "transform var(--st-dur-fast) var(--st-ease-out)" }}
       />
       <span className="transition-colors group-hover:!text-[color:var(--st-text)]" style={{ color: "inherit" }}>
         {mode.icon}

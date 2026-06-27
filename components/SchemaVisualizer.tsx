@@ -390,16 +390,23 @@ export default function SchemaVisualizer({ tables: rawTables }: Props) {
     }
   }, [viewBox.x, viewBox.y]);
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const factor = e.deltaY > 0 ? 1.1 : 0.9;
-    setViewBox((prev) => {
-      const newW = prev.w * factor;
-      const newH = prev.h * factor;
-      const cx = prev.x + prev.w / 2;
-      const cy = prev.y + prev.h / 2;
-      return { x: cx - newW / 2, y: cy - newH / 2, w: newW, h: newH };
-    });
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const factor = e.deltaY > 0 ? 1.1 : 0.9;
+      setViewBox((prev) => {
+        const newW = prev.w * factor;
+        const newH = prev.h * factor;
+        const cx = prev.x + prev.w / 2;
+        const cy = prev.y + prev.h / 2;
+        return { x: cx - newW / 2, y: cy - newH / 2, w: newW, h: newH };
+      });
+    };
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
   }, []);
 
   if (!tables.length) {
@@ -431,9 +438,8 @@ export default function SchemaVisualizer({ tables: rawTables }: Props) {
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
-        onPointerDown={handleBgPointerDown}
-        onWheel={handleWheel}
-        style={{ cursor: isPanning ? "grabbing" : dragging ? "grabbing" : "default" }}
+        onPointerDown={(e) => { if (e.detail > 1) e.preventDefault(); handleBgPointerDown(e); }}
+        style={{ cursor: isPanning ? "grabbing" : dragging ? "grabbing" : "default", userSelect: "none" }}
       >
         {/* Grid pattern */}
         <defs>

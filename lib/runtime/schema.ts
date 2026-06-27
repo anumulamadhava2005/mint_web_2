@@ -32,6 +32,9 @@ export interface ScreenSchema {
   components: ComponentSchema[];
   localState: StateNodeSchema[];
   actions: ActionSchema[];
+  width?: number;
+  height?: number;
+  backgroundColor?: string;
   onMount?: ActionRef[];
   onUnmount?: ActionRef[];
   meta?: { title?: string; description?: string; themeOverrides?: Record<string, string> };

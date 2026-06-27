@@ -54,16 +54,13 @@ export async function POST(req: Request) {
     if (!projectId || !fileId) {
       return NextResponse.json({ error: "projectId and fileId required" }, { status: 400 });
     }
-    if (!nodes || !Array.isArray(nodes) || nodes.length === 0) {
-      return NextResponse.json({ error: "No design nodes provided" }, { status: 400 });
-    }
     if (!VALID_FRAMEWORKS.includes(targetFramework as TargetFramework)) {
       return NextResponse.json({ error: `Invalid framework: ${targetFramework}` }, { status: 400 });
     }
 
     // Verify project ownership, allow_public_edit permission, or if user is admin
     const projRes = await db.query(
-      `SELECT id FROM projects 
+      `SELECT id FROM projects
        WHERE id = $1 AND (owner_id = $2 OR allow_public_edit = true OR $3 = 'admin')`,
       [projectId, user.id, user.role]
     );
@@ -71,10 +68,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
-    // Load saved runtime schema from DB (authoritative source)
-    // The client may send a stale/empty schema if the BackendPanel wasn't opened
+    // Load saved runtime schema from DB (authoritative source).
+    // The client may send a stale/empty schema if the BackendPanel wasn't opened.
+    // Treat a schema with authored screens as content too (schema-as-truth).
+    const hasScreens = (s: any) =>
+      Array.isArray(s?.screens) && s.screens.some((sc: any) => Array.isArray(sc?.components) && sc.components.length > 0);
     let effectiveRuntimeSchema = runtimeSchema;
-    if (!effectiveRuntimeSchema?.globalActions?.length && !effectiveRuntimeSchema?.globalState?.length) {
+    if (!effectiveRuntimeSchema?.globalActions?.length && !effectiveRuntimeSchema?.globalState?.length && !hasScreens(effectiveRuntimeSchema)) {
       try {
         const schemaRes = await db.query(
           `SELECT schema_json FROM runtime_schemas WHERE project_id = $1`,
@@ -84,13 +84,19 @@ export async function POST(req: Request) {
           const saved = typeof schemaRes.rows[0].schema_json === "string"
             ? JSON.parse(schemaRes.rows[0].schema_json)
             : schemaRes.rows[0].schema_json;
-          if (saved?.globalActions?.length || saved?.globalState?.length) {
+          if (saved?.globalActions?.length || saved?.globalState?.length || hasScreens(saved)) {
             effectiveRuntimeSchema = saved;
           }
         }
       } catch {
         // If runtime_schemas table doesn't exist yet, continue with client data
       }
+    }
+
+    // Schema-driven exports render from authored screens, so canvas `nodes`
+    // are optional in that case; otherwise the canvas path requires them.
+    if ((!nodes || !Array.isArray(nodes) || nodes.length === 0) && !hasScreens(effectiveRuntimeSchema)) {
+      return NextResponse.json({ error: "No design nodes provided" }, { status: 400 });
     }
 
     // Back-pressure: reject if too many conversions queued
@@ -105,7 +111,7 @@ export async function POST(req: Request) {
     const conversionResult = await runConvertWorker({
       target: targetFramework as TargetFramework,
       fileName: fileName.replace(/\s+/g, "-").toLowerCase(),
-      nodes,
+      nodes: Array.isArray(nodes) ? nodes : [],
       referenceFrame,
       interactions,
       options: {

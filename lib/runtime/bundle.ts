@@ -20,6 +20,30 @@ export function generateMintRuntimeBundle(): string {
 // Auto-generated — do not edit manually
 // ═══════════════════════════════════════════════════════════════
 
+// ── Runtime config (backend origin + auth token) ──────────────
+// configureMint() is called by the host (MintProvider) with the env-resolved
+// API origin + project token, so relative backend calls (auth, fetch, DB)
+// hit the right host with credentials instead of the app's own origin.
+let _apiBase = "";
+let _authToken = "";
+export function configureMint(opts) {
+  if (!opts) return;
+  if (opts.apiOrigin != null) _apiBase = String(opts.apiOrigin).replace(/\\/$/, "");
+  if (opts.authToken != null) _authToken = String(opts.authToken);
+}
+function _isAbsUrl(u) { return /^https?:\\/\\//.test(String(u)); }
+function _resolveUrl(u) {
+  const s = String(u);
+  if (_isAbsUrl(s)) return s;
+  if (!_apiBase) return s;
+  return _apiBase + (s.charAt(0) === "/" ? s : "/" + s);
+}
+function _authHeaders(extra) {
+  const h = Object.assign({}, extra || {});
+  if (_authToken) h["Authorization"] = "Bearer " + _authToken;
+  return h;
+}
+
 // ── Expression Parser ─────────────────────────────────────────
 
 const MAX_DEPTH = 64;
@@ -413,8 +437,11 @@ export class MintActions {
     this.register("openModal", (c) => this._state.set("_modals." + c.modalId, { open: true, data: c.data }));
     this.register("closeModal", (c) => this._state.set("_modals." + c.modalId, { open: false }));
     this.register("fetch", async (c) => {
-      const res = await fetch(String(c.url), { method: c.method || "GET", headers: c.headers, body: c.body ? JSON.stringify(c.body) : undefined });
-      const data = await res.json();
+      const url = _resolveUrl(c.url);
+      const headers = _isAbsUrl(c.url) ? (c.headers || {}) : _authHeaders(c.headers);
+      const res = await fetch(url, { method: c.method || "GET", headers, body: c.body ? JSON.stringify(c.body) : undefined });
+      if (!res.ok) throw new Error("Request to " + url + " failed (" + res.status + ")" + (res.status === 401 ? " — set MINT_TOKEN or sign in" : ""));
+      const data = await res.json().catch(() => null);
       if (c.storePath) this._state.set(String(c.storePath), data);
       return data;
     });
@@ -432,6 +459,33 @@ export class MintActions {
     this.register("parallel", async (c, ctx) => { if (Array.isArray(c.actions)) await Promise.all(c.actions.map(a => this.dispatch(a, ctx))); });
     this.register("delay", (c) => new Promise(r => setTimeout(r, Number(c.ms || 1000))));
     this.register("openUrl", (c) => { if (typeof window !== "undefined") window.open(String(c.url), c.target || "_blank"); });
+
+    // ── Auth (real endpoints; stores user + token in state) ──────
+    const postJson = async (url, body) => {
+      const target = _resolveUrl(url);
+      const res = await fetch(target, { method: "POST", headers: _authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(body) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data && data.error) || ("Auth request to " + target + " failed (" + res.status + ")"));
+      return data;
+    };
+    const storeSession = (c, data) => {
+      if (data.user !== undefined) this._state.set(String(c.userPath || "user"), data.user);
+      if (data.token !== undefined) this._state.set(String(c.tokenPath || "session.token"), data.token);
+    };
+    this.register("signIn", async (c) => {
+      const data = await postJson(String(c.url || "/api/login"), { email: c.email, password: c.password });
+      storeSession(c, data); return data;
+    });
+    this.register("signUp", async (c) => {
+      const body = c.body || { email: c.email, password: c.password, name: c.name };
+      const data = await postJson(String(c.url || "/api/signup"), body);
+      storeSession(c, data); return data;
+    });
+    this.register("signOut", async (c) => {
+      try { await fetch(String(c.url || "/api/logout"), { method: "POST" }); } catch (e) {}
+      this._state.set(String(c.userPath || "user"), null);
+      this._state.set(String(c.tokenPath || "session.token"), null);
+    });
   }
 
   destroy() {}
@@ -734,8 +788,8 @@ export function createMintRuntime(schema) {
 
 export class MintDB {
   constructor(config) {
-    this._baseUrl = config.connectionUrl || "https://api.mintit.pro/api/mint-db";
-    this._apiKey = config.apiKey || "";
+    this._baseUrl = config.connectionUrl || (_apiBase ? _apiBase + "/api/mint-db" : "https://api.mintit.pro/api/mint-db");
+    this._apiKey = config.apiKey || _authToken || "";
     this._tables = {};
     if (config.tables) {
       for (const t of config.tables) this._tables[t.name] = t;
@@ -751,7 +805,7 @@ export class MintDB {
       },
       body: JSON.stringify({ text: sql, params }),
     });
-    if (!res.ok) throw new Error("DB query failed: " + res.status);
+    if (!res.ok) throw new Error("DB query to " + this._baseUrl + " failed (" + res.status + ")" + (res.status === 401 ? " — set MINT_TOKEN" : ""));
     return res.json();
   }
 

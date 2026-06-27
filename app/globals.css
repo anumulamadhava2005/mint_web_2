@@ -91,6 +91,7 @@ body {
   /* motion */
   --st-dur-fast: 100ms;
   --st-dur: 180ms;
+  --st-dur-medium: 220ms;
   --st-dur-slow: 320ms;
   --st-ease: cubic-bezier(0.4, 0, 0.2, 1);
   --st-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -155,7 +156,24 @@ body {
 
 @keyframes st-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes st-pop-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+@keyframes st-slide-up { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes st-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* Pressable: exact-property transition + press feedback. Replaces `transition-all`. */
+.st-pressable {
+  transition:
+    transform var(--st-dur-fast) var(--st-ease-out),
+    background-color var(--st-dur) var(--st-ease),
+    color var(--st-dur) var(--st-ease),
+    box-shadow var(--st-dur) var(--st-ease),
+    opacity var(--st-dur) var(--st-ease);
+}
+.st-pressable:active { transform: scale(0.97); }
+
+/* Panel entry — 100ms opacity-only fade for mode/tab switches (frequent action). */
+.st-panel-enter {
+  animation: st-fade-in var(--st-dur-fast) var(--st-ease-out) both;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .studio-root *,

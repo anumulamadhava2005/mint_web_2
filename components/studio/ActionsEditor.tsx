@@ -7,7 +7,7 @@
 // bezier edges. Inspector adapts to selected node type.
 // ═══════════════════════════════════════════════════════════════
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { v4 as uuid } from "uuid";
 import {
   Plus,
@@ -433,7 +433,7 @@ function BottomBar({ workflow }: { workflow: WorkflowSchema | null }) {
 // ── Main export ───────────────────────────────────────────────────
 
 export function ActionsEditor({ mode = "actions" }: { mode?: "actions" | "workflows" }) {
-  const { schema, addWorkflow, removeWorkflow, updateWorkflow, addWorkflowNode, removeWorkflowNode } = useRuntimeStore();
+  const { schema, addWorkflow, removeWorkflow, updateWorkflow, addWorkflowNode, removeWorkflowNode, updateWorkflowNode } = useRuntimeStore();
   const workflows = schema.workflows as WorkflowSchema[];
 
   const [selectedFlowId, setSelectedFlowId] = useState<string>(workflows[0]?.id ?? "");
@@ -445,6 +445,19 @@ export function ActionsEditor({ mode = "actions" }: { mode?: "actions" | "workfl
 
   const workflow     = workflows.find((w) => w.id === selectedFlowId) ?? null;
   const selectedNode = workflow?.nodes.find((n) => n.id === selectedNodeId) ?? null;
+
+  // Auto-position nodes that lack coordinates (e.g. programmatically-authored
+  // or imported flows) so they don't collapse onto (0,0). Stacks in authored
+  // order; users can still drag them afterward. Runs once per flow.
+  useEffect(() => {
+    if (!workflow) return;
+    const missing = workflow.nodes.filter((n) => !n.position);
+    if (missing.length === 0) return;
+    workflow.nodes.forEach((n, i) => {
+      if (!n.position) updateWorkflowNode(workflow.id, n.id, { position: { x: 220, y: 24 + i * 110 } });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workflow?.id]);
 
   const ZOOM_MIN = 0.4;
   const ZOOM_MAX = 2.0;

@@ -339,14 +339,21 @@ export default function DesignCanvas() {
     setIsDrawing(false);
   };
 
-  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-    setCamera((prev) => ({
-      ...prev,
-      zoom: Math.max(0.1, Math.min(10, prev.zoom * zoomFactor)),
-    }));
-  };
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+      setCamera((prev) => ({
+        ...prev,
+        zoom: Math.max(0.1, Math.min(10, prev.zoom * zoomFactor)),
+      }));
+    };
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, []);
 
   const handlePlayPause = () => {
     if (animationState === "idle") {
@@ -478,13 +485,12 @@ export default function DesignCanvas() {
       {/* WebGL Canvas */}
       <canvas
         ref={canvasRef}
-        onMouseDown={handleMouseDown}
+        onMouseDown={(e) => { if (e.detail > 1) e.preventDefault(); handleMouseDown(e); }}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        onWheel={handleWheel}
         className="h-full w-full cursor-crosshair"
-        style={{ touchAction: "none" }}
+        style={{ touchAction: "none", userSelect: "none" }}
       />
     </div>
   );

@@ -7,12 +7,12 @@
 // ═══════════════════════════════════════════════════════════════
 "use client";
 
-import React, { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
 import { ScreenNavigator } from "@/components/MobileRenderer";
 import SchemaRenderer from "@/components/SchemaRenderer";
-import { StateEngine } from "@/lib/runtime/state";
+import { RuntimeProvider } from "@/components/runtime/RuntimeProvider";
 import type { MobileScreen } from "@/lib/mobileConfig";
 import type { AppSchema } from "@/lib/runtime/schema";
 
@@ -41,13 +41,23 @@ export default function PreviewPage() {
 
   const activeScreen = config?.screens.find((s) => s.id === activeScreenId) || config?.screens[0] || null;
 
-  // Seed a StateEngine from global + active-screen local state so bindings resolve.
-  const stateEngine = useMemo(() => {
-    const engine = new StateEngine();
-    if (config?.globalState?.length) engine.initFromSchema(config.globalState);
-    if (activeScreen?.localState?.length) engine.initFromSchema(activeScreen.localState);
-    return engine;
-  }, [config, activeScreen]);
+  // Back-navigation history (route paths), driven by RuntimeProvider's nav adapter.
+  const historyRef = useRef<string[]>([]);
+
+  // Resolve a route path (from a navigate action) to a screen id and switch to it.
+  const navigateToRoute = (route: string) => {
+    const target = config?.screens.find((s) => s.route === route || s.id === route);
+    if (!target) return;
+    setActiveScreenId((prev) => {
+      if (prev && prev !== target.id) historyRef.current.push(prev);
+      return target.id;
+    });
+  };
+
+  const navigateBack = () => {
+    const prev = historyRef.current.pop();
+    if (prev) setActiveScreenId(prev);
+  };
 
   // ScreenNavigator expects MobileScreen[]; adapt ScreenSchema → minimal shape.
   const navScreens: MobileScreen[] = (config?.screens || []).map((s) => ({
@@ -240,12 +250,10 @@ export default function PreviewPage() {
                 className="absolute left-3 top-3 overflow-auto rounded-[28px] bg-white"
                 style={{ width: device.width, height: device.height }}
               >
-                {activeScreen ? (
-                  <SchemaRenderer
-                    components={activeScreen.components}
-                    state={stateEngine}
-                    projectId={projectId}
-                  />
+                {activeScreen && config ? (
+                  <RuntimeProvider schema={config} onNavigate={navigateToRoute} onBack={navigateBack}>
+                    <SchemaRenderer components={activeScreen.components} projectId={projectId} />
+                  </RuntimeProvider>
                 ) : null}
               </div>
 

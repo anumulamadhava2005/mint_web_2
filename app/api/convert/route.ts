@@ -96,8 +96,15 @@ export async function POST(request: Request) {
 
     const conversionRequest = parseResult.data;
 
-    // Validate that nodes array is not empty
-    if (!conversionRequest.nodes.length) {
+    // Schema-driven exports (RN / React web) render from the runtime schema's
+    // authored screens, so canvas `nodes` are optional in that case.
+    const rsScreens = conversionRequest.options?.runtimeSchema?.screens;
+    const hasAuthoredScreens =
+      Array.isArray(rsScreens) &&
+      rsScreens.some((s: any) => Array.isArray(s?.components) && s.components.length > 0);
+
+    // Validate that nodes array is not empty (unless schema-driven)
+    if (!conversionRequest.nodes.length && !hasAuthoredScreens) {
       return NextResponse.json(
         {
           success: false,

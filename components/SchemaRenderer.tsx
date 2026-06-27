@@ -3,8 +3,15 @@
 //
 // Switches on ComponentSchema.type to produce JSX. Reuses the existing
 // BindingEngine (lib/runtime/bindings) for prop / visibility / list
-// resolution — the same path used by "list"/"grid" — and renders the
-// rich runtime components for the data/UX component types.
+// resolution and the rich runtime components for data/UX types.
+//
+// When wrapped in a <RuntimeProvider>, it becomes interactive:
+//   • component.style → real inline styles (styleToCss)
+//   • component.events (onClick/onPress/onChange…) → ActionRegistry dispatch
+//   • bound inputs → two-way state binding
+//   • re-renders on any state change
+// Without a provider (static render / tests) it degrades gracefully:
+// styles still apply, events are no-ops.
 // ═══════════════════════════════════════════════════════════════
 "use client";
 
@@ -12,6 +19,8 @@ import React from "react";
 import type { ComponentSchema } from "@/lib/runtime/schema";
 import { StateEngine } from "@/lib/runtime/state";
 import { BindingEngine } from "@/lib/runtime/bindings";
+import { styleToCss } from "@/lib/runtime/styleToCss";
+import { useRuntime, type RuntimeHandle } from "@/components/runtime/RuntimeProvider";
 import DataTable from "@/components/runtime/DataTable";
 import Timeline from "@/components/runtime/Timeline";
 import FileUpload from "@/components/runtime/FileUpload";
@@ -34,24 +43,60 @@ export interface SchemaRendererProps {
   projectId?: string;
 }
 
+/** Re-render the subtree whenever any state value changes. */
+function useRerenderOnState(state?: StateEngine): void {
+  const [, force] = React.useReducer((x: number) => x + 1, 0);
+  React.useEffect(() => {
+    if (!state) return;
+    const unsub = state.subscribeAll(() => force());
+    return unsub;
+  }, [state]);
+}
+
 export default function SchemaRenderer({
   components,
   state,
   bindingEngine,
   projectId,
 }: SchemaRendererProps) {
+  const runtime = useRuntime();
+
   const engine = React.useMemo(
-    () => bindingEngine ?? new BindingEngine(state ?? new StateEngine()),
-    [bindingEngine, state]
+    () =>
+      bindingEngine ??
+      runtime?.bindingEngine ??
+      new BindingEngine(state ?? runtime?.state ?? new StateEngine()),
+    [bindingEngine, runtime, state]
   );
+
+  // Subscribe to the underlying state engine so bindings stay live.
+  useRerenderOnState(state ?? runtime?.state);
 
   return (
     <>
       {components.map((c) => (
-        <RenderNode key={c.id} component={c} engine={engine} projectId={projectId} />
+        <RenderNode key={c.id} component={c} engine={engine} runtime={runtime} projectId={projectId} />
       ))}
     </>
   );
+}
+
+// ── Event wiring ──────────────────────────────────────────────
+
+/** Build a click handler from a component's events (onClick / onPress). */
+function clickHandler(
+  component: ComponentSchema,
+  runtime: RuntimeHandle | null,
+  context?: Record<string, unknown>
+): ((e: React.MouseEvent) => void) | undefined {
+  const refs = component.events?.onClick ?? component.events?.onPress;
+  if (!runtime || !refs?.length) return undefined;
+  return (e) => { void runtime.dispatch(refs, e, context); };
+}
+
+/** Resolve the two-way bound state expression for an input-like component. */
+function valueBinding(component: ComponentSchema): string | undefined {
+  return component.bindings?.value ?? component.bindings?.inputBind;
 }
 
 // ── Recursive dispatch ────────────────────────────────────────
@@ -59,11 +104,13 @@ export default function SchemaRenderer({
 function RenderNode({
   component,
   engine,
+  runtime,
   projectId,
   context,
 }: {
   component: ComponentSchema;
   engine: BindingEngine;
+  runtime: RuntimeHandle | null;
   projectId?: string;
   context?: Record<string, unknown>;
 }) {
@@ -72,6 +119,8 @@ function RenderNode({
 
   const resolved = engine.resolveProps(component, context);
   const props = component.props as Record<string, unknown>;
+  const css = styleToCss(component.style);
+  const onClick = clickHandler(component, runtime, context);
 
   switch (component.type) {
     // ── Rich data components ──────────────────────────────────
@@ -79,19 +128,18 @@ function RenderNode({
       const data = Array.isArray(resolved.dataSource)
         ? (resolved.dataSource as Record<string, unknown>[])
         : [];
-      // `props` is the static config; `dataSource` is resolved into `data`.
-      return <DataTable config={props as unknown as DataTableConfig} data={data} />;
+      return withStyle(css, <DataTable config={props as unknown as DataTableConfig} data={data} />);
     }
 
     case "timeline": {
       const data = Array.isArray(resolved.dataSource)
         ? (resolved.dataSource as Record<string, unknown>[])
         : [];
-      return <Timeline config={props as unknown as TimelineConfig} data={data} />;
+      return withStyle(css, <Timeline config={props as unknown as TimelineConfig} data={data} />);
     }
 
     case "fileUpload": {
-      return <FileUpload config={props as unknown as FileUploadConfig} projectId={projectId} />;
+      return withStyle(css, <FileUpload config={props as unknown as FileUploadConfig} projectId={projectId} />);
     }
 
     case "tabs": {
@@ -99,6 +147,7 @@ function RenderNode({
         <TabsRenderer
           component={component}
           engine={engine}
+          runtime={runtime}
           projectId={projectId}
           context={context}
         />
@@ -113,7 +162,7 @@ function RenderNode({
         const as = component.repeatFor.as;
         const children = component.children ?? [];
         return (
-          <div data-type={component.type}>
+          <div data-type={component.type} style={css}>
             {items.map((item, i) => (
               <div key={i} data-index={i}>
                 {children.map((ch) => (
@@ -121,6 +170,7 @@ function RenderNode({
                     key={ch.id}
                     component={ch}
                     engine={engine}
+                    runtime={runtime}
                     projectId={projectId}
                     context={{ ...context, [as]: item }}
                   />
@@ -131,29 +181,45 @@ function RenderNode({
         );
       }
       return (
-        <Container component={component} engine={engine} projectId={projectId} context={context} />
+        <Container component={component} engine={engine} runtime={runtime} projectId={projectId} context={context} />
       );
     }
 
     // ── Leaf primitives ───────────────────────────────────────
     case "text": {
       const value = resolved.text ?? resolved.value ?? props.text ?? props.value;
-      return <span>{value != null ? String(value) : null}</span>;
+      return <span style={css}>{value != null ? String(value) : null}</span>;
     }
 
     case "button": {
       const label = resolved.text ?? resolved.label ?? props.text ?? props.label;
-      return <button type="button">{label != null ? String(label) : null}</button>;
+      const disabled = Boolean(resolved.disabled ?? props.disabled);
+      return (
+        <button type="button" style={css} onClick={onClick} disabled={disabled}>
+          {label != null ? String(label) : null}
+        </button>
+      );
     }
 
     case "input": {
+      const bind = valueBinding(component);
       const value = resolved.value ?? props.value;
-      return (
-        <input
-          defaultValue={value != null ? String(value) : ""}
-          placeholder={props.placeholder != null ? String(props.placeholder) : ""}
-        />
-      );
+      const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const v = e.target.value;
+        if (bind) engine.createTwoWayHandler(bind)(v);
+        if (runtime && component.events?.onChange?.length) {
+          void runtime.dispatch(component.events.onChange, e, { ...context, value: v });
+        }
+      };
+      const common = {
+        style: css,
+        placeholder: props.placeholder != null ? String(props.placeholder) : "",
+        type: props.inputType != null ? String(props.inputType) : "text",
+      };
+      // Controlled when bound to state; uncontrolled otherwise.
+      return bind || (runtime && component.events?.onChange)
+        ? <input {...common} value={value != null ? String(value) : ""} onChange={onChange} />
+        : <input {...common} defaultValue={value != null ? String(value) : ""} />;
     }
 
     case "select": {
@@ -164,9 +230,24 @@ function RenderNode({
           ? (o as { value: unknown; label?: unknown })
           : { value: o, label: o }
       );
+      const bind = valueBinding(component);
       const value = resolved.value ?? props.value;
+      const onChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const v = e.target.value;
+        if (bind) engine.createTwoWayHandler(bind)(v);
+        if (runtime && component.events?.onChange?.length) {
+          void runtime.dispatch(component.events.onChange, e, { ...context, value: v });
+        }
+      };
+      const controlled = bind || (runtime && component.events?.onChange);
       return (
-        <select defaultValue={value != null ? String(value) : ""} data-type="select">
+        <select
+          style={css}
+          data-type="select"
+          {...(controlled
+            ? { value: value != null ? String(value) : "", onChange }
+            : { defaultValue: value != null ? String(value) : "" })}
+        >
           {props.placeholder != null && <option value="">{String(props.placeholder)}</option>}
           {options.map((o, i) => (
             <option key={i} value={String(o.value)}>
@@ -179,11 +260,24 @@ function RenderNode({
 
     case "checkbox":
     case "switch": {
-      const checked = Boolean(resolved.value ?? props.value ?? props.checked);
+      const bind = valueBinding(component) ?? component.bindings?.checked;
+      const checked = Boolean(resolved.value ?? resolved.checked ?? props.value ?? props.checked);
       const label = resolved.label ?? props.label;
+      const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const v = e.target.checked;
+        if (bind) engine.createTwoWayHandler(bind)(v);
+        if (runtime && component.events?.onChange?.length) {
+          void runtime.dispatch(component.events.onChange, e, { ...context, value: v });
+        }
+      };
+      const controlled = bind || (runtime && component.events?.onChange);
       return (
-        <label data-type={component.type}>
-          <input type="checkbox" defaultChecked={checked} role={component.type === "switch" ? "switch" : undefined} />
+        <label data-type={component.type} style={css}>
+          <input
+            type="checkbox"
+            role={component.type === "switch" ? "switch" : undefined}
+            {...(controlled ? { checked, onChange } : { defaultChecked: checked })}
+          />
           {label != null ? <span>{String(label)}</span> : null}
         </label>
       );
@@ -191,7 +285,7 @@ function RenderNode({
 
     case "statusChip": {
       const value = resolved.value ?? props.value ?? "";
-      return <span data-type="statusChip">{String(value)}</span>;
+      return <span data-type="statusChip" style={css}>{String(value)}</span>;
     }
 
     // ── Media: image & camera ─────────────────────────────────
@@ -203,7 +297,7 @@ function RenderNode({
         return (
           <div
             data-type="image"
-            style={{ height, borderRadius: radius, background: "#1f2937", display: "flex", alignItems: "center", justifyContent: "center", color: "#6b7280", fontSize: 12 }}
+            style={{ height, borderRadius: radius, background: "#1f2937", display: "flex", alignItems: "center", justifyContent: "center", color: "#6b7280", fontSize: 12, ...css }}
           >
             No image
           </div>
@@ -213,7 +307,7 @@ function RenderNode({
         <img
           src={String(src)}
           alt={props.alt != null ? String(props.alt) : ""}
-          style={{ width: "100%", height, objectFit: (props.fit as React.CSSProperties["objectFit"]) ?? "cover", borderRadius: radius, display: "block" }}
+          style={{ width: "100%", height, objectFit: (props.fit as React.CSSProperties["objectFit"]) ?? "cover", borderRadius: radius, display: "block", ...css }}
         />
       );
     }
@@ -223,7 +317,7 @@ function RenderNode({
       return (
         <label
           data-type="camera"
-          style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, background: "#6366f1", color: "#fff", fontSize: 14, cursor: "pointer" }}
+          style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, background: "#6366f1", color: "#fff", fontSize: 14, cursor: "pointer", ...css }}
         >
           <span aria-hidden>📷</span>
           <span>{props.label != null ? String(props.label) : "Take Photo"}</span>
@@ -238,7 +332,7 @@ function RenderNode({
       const rows = Array.isArray(resolved.dataSource)
         ? (resolved.dataSource as Record<string, unknown>[])
         : [];
-      return <Chart cfg={cfg} rows={rows} />;
+      return withStyle(css, <Chart cfg={cfg} rows={rows} />);
     }
 
     // ── Stat / metric card ────────────────────────────────────
@@ -254,7 +348,7 @@ function RenderNode({
           ? "#10b981"
           : "#ef4444";
       return (
-        <div data-type="statCard" style={{ background: "#15151c", border: "1px solid #23232e", borderRadius: 12, padding: 14, minWidth: 120 }}>
+        <div data-type="statCard" style={{ background: "#15151c", border: "1px solid #23232e", borderRadius: 12, padding: 14, minWidth: 120, ...css }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#9ca3af", fontSize: 12 }}>
             {cfg.icon ? <span aria-hidden>{cfg.icon}</span> : null}
             <span>{cfg.label}</span>
@@ -275,30 +369,45 @@ function RenderNode({
     // ── Containers (view/scroll/card/form/modal/…) ────────────
     default:
       return (
-        <Container component={component} engine={engine} projectId={projectId} context={context} />
+        <Container component={component} engine={engine} runtime={runtime} projectId={projectId} context={context} onClick={onClick} css={css} />
       );
   }
+}
+
+/** Wrap a node in a styled div only when there are styles to apply. */
+function withStyle(css: React.CSSProperties, node: React.ReactNode): React.ReactElement {
+  if (Object.keys(css).length === 0) return <>{node}</>;
+  return <div style={css}>{node}</div>;
 }
 
 function Container({
   component,
   engine,
+  runtime,
   projectId,
   context,
+  onClick,
+  css,
 }: {
   component: ComponentSchema;
   engine: BindingEngine;
+  runtime: RuntimeHandle | null;
   projectId?: string;
   context?: Record<string, unknown>;
+  onClick?: (e: React.MouseEvent) => void;
+  css?: React.CSSProperties;
 }) {
   const children = component.children ?? [];
+  const style = css ?? styleToCss(component.style);
+  const handler = onClick ?? clickHandler(component, runtime, context);
   return (
-    <div data-type={component.type}>
+    <div data-type={component.type} style={style} onClick={handler}>
       {children.map((ch) => (
         <RenderNode
           key={ch.id}
           component={ch}
           engine={engine}
+          runtime={runtime}
           projectId={projectId}
           context={context}
         />
@@ -369,11 +478,13 @@ function Chart({ cfg, rows }: { cfg: ChartConfig; rows: Record<string, unknown>[
 function TabsRenderer({
   component,
   engine,
+  runtime,
   projectId,
   context,
 }: {
   component: ComponentSchema;
   engine: BindingEngine;
+  runtime: RuntimeHandle | null;
   projectId?: string;
   context?: Record<string, unknown>;
 }) {
@@ -387,7 +498,7 @@ function TabsRenderer({
     : children;
 
   return (
-    <div data-testid="tabs">
+    <div data-testid="tabs" style={styleToCss(component.style)}>
       <div role="tablist" style={{ display: "flex", gap: 8 }}>
         {tabs.map((t) => (
           <button
@@ -407,6 +518,7 @@ function TabsRenderer({
             key={c.id}
             component={c}
             engine={engine}
+            runtime={runtime}
             projectId={projectId}
             context={context}
           />

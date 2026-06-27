@@ -75,7 +75,7 @@ export function InspectorTabs<T extends string>({
             title={t.label}
             aria-label={t.label}
             aria-pressed={active}
-            className="grid h-6 w-6 place-items-center rounded-[var(--st-r-sm)] transition-colors"
+            className="st-pressable grid h-6 w-6 place-items-center rounded-[var(--st-r-sm)] active:scale-[0.92]"
             style={{
               color: active ? "var(--st-brand)" : "var(--st-text-3)",
               background: active ? "var(--st-brand-tint)" : "transparent",
@@ -117,8 +117,8 @@ export function Section({
           <ChevronDown
             size={13}
             strokeWidth={2.5}
-            className="transition-transform duration-200"
-            style={{ color: "var(--st-text-3)", transform: open ? "none" : "rotate(-90deg)" }}
+            className="shrink-0"
+            style={{ color: "var(--st-text-3)", transform: open ? "none" : "rotate(-90deg)", transition: "transform var(--st-dur-fast) var(--st-ease-out)" }}
           />
           <span
             className="text-[10.5px] font-semibold uppercase tracking-[0.07em]"
@@ -257,7 +257,7 @@ export function Segmented<T extends string>({
             aria-selected={active}
             onClick={() => onChange(o.value)}
             className={cx(
-              "flex-1 rounded-[5px] font-medium transition-colors",
+              "st-pressable flex-1 rounded-[5px] font-medium active:scale-[0.97]",
               size === "sm" ? "py-1 text-[10.5px]" : "py-1.5 text-[12px]"
             )}
             style={{
@@ -292,12 +292,12 @@ export function Toggle({
       aria-checked={checked}
       aria-label={label}
       onClick={() => onChange(!checked)}
-      className="relative h-[18px] w-8 shrink-0 rounded-full transition-colors"
+      className="relative h-[18px] w-8 shrink-0 rounded-full transition-colors active:opacity-80"
       style={{ background: checked ? "var(--st-brand)" : "var(--st-border-3)" }}
     >
       <span
-        className="absolute top-0.5 left-0.5 h-[14px] w-[14px] rounded-full bg-white transition-transform duration-200"
-        style={{ transform: checked ? "translateX(14px)" : "none" }}
+        className="absolute top-0.5 left-0.5 h-[14px] w-[14px] rounded-full bg-white"
+        style={{ transform: checked ? "translateX(14px)" : "none", transition: "transform var(--st-dur) var(--st-ease-out)" }}
       />
     </button>
   );
@@ -353,7 +353,7 @@ export function Btn({
     <button
       {...props}
       className={cx(
-        "inline-flex items-center justify-center gap-1.5 rounded-[var(--st-r-md)] font-medium transition-all active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40",
+        "st-pressable inline-flex items-center justify-center gap-1.5 rounded-[var(--st-r-md)] font-medium active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40",
         size === "sm" ? "px-2 py-1 text-[11px]" : "px-2.5 py-1.5 text-[12px]",
         variant === "ghost" && "hover:bg-white/[0.05]",
         className
@@ -376,7 +376,7 @@ export function IconBtn({
     <button
       {...props}
       className={cx(
-        "grid h-7 w-7 place-items-center rounded-[var(--st-r-md)] transition-colors hover:bg-white/[0.06]",
+        "st-pressable grid h-7 w-7 place-items-center rounded-[var(--st-r-md)] active:scale-[0.97] hover:bg-white/[0.06]",
         className
       )}
       style={{

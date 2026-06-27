@@ -37,6 +37,8 @@ import {
 
 import { getBuilder, getAvailableFrameworks } from "./builders";
 import { buildReactNativeFromSchema } from "./builders/reactNativeSchema";
+import { buildReactWebFromSchema } from "./builders/reactWebSchema";
+import { buildNextFromSchema } from "./builders/nextSchema";
 
 // ═══════════════════════════════════════════════════════════════
 // Main Conversion Function
@@ -75,44 +77,74 @@ export async function convertDesign(
       (s) => Array.isArray(s?.components) && s.components.length > 0
     );
 
-    if (target === "react-native" && hasAuthoredComponents) {
-      const appSchema = {
-        id: rs?.id || options.projectId || "app",
-        name: rs?.name || fileName || "Mint App",
-        version: "1.0.0",
-        schemaVersion: 1,
-        theme: rs?.theme ?? { colors: {}, fonts: {}, spacing: {}, radii: {}, shadows: {} },
-        screens: schemaScreens,
-        globalState: rs?.globalState ?? [],
-        globalActions: rs?.globalActions ?? [],
-        workflows: rs?.workflows ?? [],
-        navigation: rs?.navigation ?? { type: "stack", initialRoute: "/", routes: [] },
-        auth: rs?.auth,
-        database: rs?.database,
-      } as any;
+    // Shared AppSchema for all schema-driven exporters (RN + web).
+    const buildAppSchema = () => ({
+      id: rs?.id || options.projectId || "app",
+      name: rs?.name || fileName || "Mint App",
+      version: "1.0.0",
+      schemaVersion: 1,
+      theme: rs?.theme ?? { colors: {}, fonts: {}, spacing: {}, radii: {}, shadows: {} },
+      screens: schemaScreens,
+      globalState: rs?.globalState ?? [],
+      globalActions: rs?.globalActions ?? [],
+      workflows: rs?.workflows ?? [],
+      navigation: rs?.navigation ?? { type: "stack", initialRoute: "/", routes: [] },
+      auth: rs?.auth,
+      database: rs?.database,
+    } as any);
 
-      const files = buildReactNativeFromSchema(appSchema, {
+    // Live-sync injector shared by the schema paths.
+    const withLiveSync = (files: GeneratedFile[]): GeneratedFile[] => {
+      if (!options.enableLiveSync) return files;
+      files.push(...generateLiveSyncFiles(options));
+      const pkgIdx = files.findIndex(
+        (f) => f.path === "package.json" || f.path.endsWith("/package.json")
+      );
+      if (pkgIdx !== -1 && files[pkgIdx].type === "text") {
+        files[pkgIdx] = {
+          ...files[pkgIdx],
+          content: patchPackageJsonForSync(files[pkgIdx].content as string),
+        };
+      }
+      return files;
+    };
+
+    // Schema-driven React Native (Expo Router + mint-runtime).
+    if (target === "react-native" && hasAuthoredComponents) {
+      const appSchema = buildAppSchema();
+      const files = withLiveSync(buildReactNativeFromSchema(appSchema, {
         projectId: options.projectId || appSchema.id,
         appName: appSchema.name,
         apiOrigin: options.apiOrigin,
         authToken: options.authToken,
-      }) as GeneratedFile[];
+      }) as GeneratedFile[]);
+      return { success: true, files, usedSchemaRuntime: true };
+    }
 
-      // Live Sync: emit the connector / the_god / config (same as the design
-      // path) and patch package.json so `npm start` auto-runs the connector.
-      if (options.enableLiveSync) {
-        files.push(...generateLiveSyncFiles(options));
-        const pkgIdx = files.findIndex(
-          (f) => f.path === "package.json" || f.path.endsWith("/package.json")
-        );
-        if (pkgIdx !== -1 && files[pkgIdx].type === "text") {
-          files[pkgIdx] = {
-            ...files[pkgIdx],
-            content: patchPackageJsonForSync(files[pkgIdx].content as string),
-          };
-        }
-      }
+    // Schema-driven React web (Vite + react-router + embedded Mint runtime).
+    // Emits working state/actions/navigation from the AppSchema — no static
+    // canvas markup, no action stubs. Same engine the editor previews with.
+    if (target === "react" && hasAuthoredComponents) {
+      const appSchema = buildAppSchema();
+      const files = withLiveSync(buildReactWebFromSchema(appSchema, {
+        projectId: options.projectId || appSchema.id,
+        appName: appSchema.name,
+        apiOrigin: options.apiOrigin,
+        authToken: options.authToken,
+      }) as GeneratedFile[]);
+      return { success: true, files, usedSchemaRuntime: true };
+    }
 
+    // Schema-driven Next.js (App Router + embedded Mint runtime) — reuses the
+    // React renderer/runtime; provider uses next/navigation.
+    if (target === "nextjs" && hasAuthoredComponents) {
+      const appSchema = buildAppSchema();
+      const files = withLiveSync(buildNextFromSchema(appSchema, {
+        projectId: options.projectId || appSchema.id,
+        appName: appSchema.name,
+        apiOrigin: options.apiOrigin,
+        authToken: options.authToken,
+      }) as GeneratedFile[]);
       return { success: true, files, usedSchemaRuntime: true };
     }
 

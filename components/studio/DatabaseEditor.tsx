@@ -433,11 +433,19 @@ export function DatabaseEditor({ projectId }: { projectId?: string }) {
     origPanX: number;
     origPanY: number;
   } | null>(null);
+  const erdRef = useRef<HTMLDivElement>(null);
 
-  const onWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const factor = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom((z) => Math.min(2.5, Math.max(0.2, z * factor)));
+  useEffect(() => {
+    const el = erdRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      setZoom((z) => Math.min(2.5, Math.max(0.2, z * factor)));
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
   }, []);
 
   const onCardHeaderMouseDown = useCallback(
@@ -901,15 +909,16 @@ export function DatabaseEditor({ projectId }: { projectId?: string }) {
 
         {/* ── ERD Canvas ── */}
         <div
+          ref={erdRef}
           style={{
             flex: 1,
             position: "relative",
             overflow: "hidden",
             background: "#0a0a0a",
             cursor: "default",
+            userSelect: "none",
           }}
-          onWheel={onWheel}
-          onMouseDown={onCanvasMouseDown}
+          onMouseDown={(e) => { if (e.detail > 1) e.preventDefault(); onCanvasMouseDown(e); }}
           onMouseMove={onMouseMove}
           onMouseUp={onMouseUp}
           onMouseLeave={onMouseUp}
