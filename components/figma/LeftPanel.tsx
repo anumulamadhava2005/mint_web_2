@@ -155,6 +155,19 @@ export default function LeftPanel() {
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [search, setSearch] = useState('');
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  // Auto-expand any layer that gains children
+  useEffect(() => {
+    const collectParents = (arr: FigmaLayer[]): string[] =>
+      arr.flatMap(l => (l.children?.length ? [l.id, ...collectParents(l.children)] : []));
+    const parentIds = collectParents(layers[activePageId] ?? []);
+    if (parentIds.length === 0) return;
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      parentIds.forEach(id => next.add(id));
+      return next;
+    });
+  }, [layers, activePageId]);
   const [assetSearch, setAssetSearch] = useState('');
 
   const resizingRef = useRef(false);

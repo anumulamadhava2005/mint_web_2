@@ -111,9 +111,17 @@ export interface AutoLayout {
   wrap: boolean;
 }
 
-export type InteractionTrigger = 'click' | 'hover' | 'press' | 'drag';
-export type InteractionAction = 'navigate' | 'openOverlay' | 'scrollTo' | 'back';
+export type InteractionTrigger =
+  | 'click' | 'hover' | 'mouseLeave' | 'press' | 'drag'
+  | 'afterDelay' | 'keyDown' | 'scroll';
+
+export type InteractionAction =
+  | 'navigate' | 'openOverlay' | 'swapOverlay' | 'closeOverlay'
+  | 'scrollTo' | 'openUrl' | 'back';
+
 export type TransitionType = 'instant' | 'dissolve' | 'slide-left' | 'slide-right' | 'push-left' | 'push-right' | 'smart-animate';
+
+export type OverlayPosition = 'center' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'origin' | 'manual';
 
 export interface Interaction {
   id: string;
@@ -123,6 +131,20 @@ export interface Interaction {
   transition: TransitionType;
   duration: number;
   easing: 'ease-in' | 'ease-out' | 'ease-in-out' | 'linear';
+  // afterDelay trigger
+  delay?: number;
+  // keyDown trigger
+  keyCode?: string;
+  // openUrl action
+  url?: string;
+  // overlay actions
+  overlayPosition?: OverlayPosition;
+  overlayX?: number;
+  overlayY?: number;
+  overlayBackground?: 'none' | 'dim' | 'blur';
+  overlayBgColor?: string;
+  overlayBgOpacity?: number;
+  overlayCloseOnClickOutside?: boolean;
 }
 
 export interface ApiSource {
@@ -187,6 +209,112 @@ export interface ActionFlow {
   steps: ActionStep[];
 }
 
+// ── Database ──────────────────────────────────────────────
+
+export type DbFieldType =
+  | 'uuid' | 'text' | 'integer' | 'float' | 'boolean'
+  | 'date' | 'datetime' | 'timestamp' | 'json' | 'jsonb'
+  | 'enum' | 'array' | 'binary';
+
+export interface DbField {
+  id: string;
+  name: string;
+  type: DbFieldType;
+  primary?: boolean;
+  nullable?: boolean;
+  unique?: boolean;
+  defaultValue?: string;
+  enumValues?: string;
+  references?: { table: string; field: string; onDelete: 'cascade' | 'set-null' | 'restrict' | 'no-action' };
+}
+
+export interface DbIndex {
+  name: string;
+  fields: string[];
+  type: 'btree' | 'hash' | 'gin' | 'gist';
+  unique: boolean;
+}
+
+export interface DbTable {
+  id: string;
+  name: string;
+  fields: DbField[];
+  timestamps: boolean;
+  softDelete: boolean;
+  indexes: DbIndex[];
+}
+
+export type DbProvider = 'mint' | 'supabase' | 'firebase' | 'custom';
+
+export interface DatabaseConfig {
+  provider: DbProvider;
+  connectionString?: string;
+  tables: DbTable[];
+}
+
+// ── Auth ──────────────────────────────────────────────────
+
+export type AuthProviderType = 'email' | 'google' | 'github' | 'apple' | 'facebook' | 'magic-link';
+
+export interface AuthProviderConfig {
+  type: AuthProviderType;
+  enabled: boolean;
+  clientId?: string;
+  clientSecret?: string;
+}
+
+export interface AuthConfig {
+  enabled: boolean;
+  providers: AuthProviderConfig[];
+  sessionType: 'jwt' | 'cookie' | 'session';
+  tokenExpiry: number;
+  refresh: boolean;
+  roles: string[];
+  defaultRole: string;
+  mfaEnabled: boolean;
+  mfaType: 'totp' | 'sms' | 'email';
+}
+
+// ── Navigation ────────────────────────────────────────────
+
+export interface NavRoute {
+  id: string;
+  name: string;
+  path: string;
+  screenId?: string;
+  requiresAuth: boolean;
+  roles: string[];
+}
+
+export type NavType = 'stack' | 'tabs' | 'drawer' | 'custom';
+
+export interface NavigationConfig {
+  type: NavType;
+  routes: NavRoute[];
+}
+
+// ── App-level Workflows ───────────────────────────────────
+
+export type WorkflowTriggerType = 'schedule' | 'webhook' | 'stateChange' | 'event' | 'action';
+
+export interface WorkflowTrigger {
+  type: WorkflowTriggerType;
+  cron?: string;
+  webhookPath?: string;
+  stateKey?: string;
+  eventName?: string;
+  actionId?: string;
+}
+
+export interface AppWorkflow {
+  id: string;
+  name: string;
+  description?: string;
+  trigger: WorkflowTrigger;
+  steps: ActionStep[];
+  enabled: boolean;
+}
+
 export type LayerType =
   | 'frame' | 'section' | 'group' | 'rect' | 'ellipse'
   | 'line' | 'text' | 'image' | 'component' | 'instance' | 'vector' | 'comment';
@@ -231,6 +359,8 @@ export interface FigmaLayer {
   autoLayout?: AutoLayout;
   layoutSizing?: { horizontal: 'fixed' | 'fill' | 'hug'; vertical: 'fixed' | 'fill' | 'hug' };
   interactions?: Interaction[];
+  scrollDirection?: 'none' | 'vertical' | 'horizontal' | 'both';
+  scrollBehavior?: 'scrolls' | 'fixed';
   bindings?: Record<string, string>;
   repeatFor?: { items: string; as: string; key?: string };
   conditionalRender?: string;
@@ -277,6 +407,7 @@ interface FigmaState {
   setSelection: (ids: string[]) => void;
   setHovered: (id: string | null) => void;
   addLayer: (layer: FigmaLayer) => void;
+  addLayerToParent: (layer: FigmaLayer, parentId: string) => void;
   updateLayer: (id: string, partial: Partial<FigmaLayer>) => void;
   deleteLayer: (id: string) => void;
   duplicateLayer: (id: string) => void;
@@ -330,8 +461,10 @@ interface FigmaState {
 
   previewMode: boolean;
   prototypeStartFrameId: string | null;
+  prototypeDevice: string;
   setPreviewMode: (on: boolean) => void;
   setPrototypeStartFrame: (id: string | null) => void;
+  setPrototypeDevice: (device: string) => void;
   addInteraction: (layerId: string, interaction: Interaction) => void;
   updateInteraction: (layerId: string, interactionId: string, partial: Partial<Interaction>) => void;
   removeInteraction: (layerId: string, interactionId: string) => void;
@@ -381,6 +514,31 @@ interface FigmaState {
   deleteActionStep: (flowId: string, stepId: string) => void;
   reorderActionSteps: (flowId: string, fromIdx: number, toIdx: number) => void;
   setLayerEvent: (layerId: string, eventName: string, flowIds: string[]) => void;
+
+  database: DatabaseConfig;
+  setDatabaseProvider: (provider: DbProvider) => void;
+  addTable: (name: string) => void;
+  updateTable: (id: string, patch: Partial<Omit<DbTable, 'id'>>) => void;
+  deleteTable: (id: string) => void;
+  addField: (tableId: string, field: Omit<DbField, 'id'>) => void;
+  updateField: (tableId: string, fieldId: string, patch: Partial<DbField>) => void;
+  deleteField: (tableId: string, fieldId: string) => void;
+
+  auth: AuthConfig;
+  setAuthConfig: (patch: Partial<AuthConfig>) => void;
+  toggleAuthProvider: (type: AuthProviderType) => void;
+  updateAuthProvider: (type: AuthProviderType, patch: Partial<AuthProviderConfig>) => void;
+
+  navigation: NavigationConfig;
+  setNavigationType: (type: NavType) => void;
+  addRoute: (route: Omit<NavRoute, 'id'>) => void;
+  updateRoute: (id: string, patch: Partial<NavRoute>) => void;
+  deleteRoute: (id: string) => void;
+
+  appWorkflows: AppWorkflow[];
+  addAppWorkflow: (wf: Omit<AppWorkflow, 'id'>) => void;
+  updateAppWorkflow: (id: string, patch: Partial<Omit<AppWorkflow, 'id'>>) => void;
+  deleteAppWorkflow: (id: string) => void;
 }
 
 function findLayerById(layers: FigmaLayer[], id: string): FigmaLayer | null {
@@ -392,6 +550,14 @@ function findLayerById(layers: FigmaLayer[], id: string): FigmaLayer | null {
     }
   }
   return null;
+}
+
+function addChildToParent(layers: FigmaLayer[], parentId: string, child: FigmaLayer): FigmaLayer[] {
+  return layers.map(l => {
+    if (l.id === parentId) return { ...l, children: [...(l.children ?? []), child] };
+    if (l.children) return { ...l, children: addChildToParent(l.children, parentId, child) };
+    return l;
+  });
 }
 
 function updateLayerById(layers: FigmaLayer[], id: string, partial: Partial<FigmaLayer>): FigmaLayer[] {
@@ -447,6 +613,7 @@ export const useFigmaStore = create<FigmaState>((set, get) => ({
   components: {},
   previewMode: false,
   prototypeStartFrameId: null,
+  prototypeDevice: 'none',
   _history: [],
   _historyIndex: -1,
   canUndo: false,
@@ -459,6 +626,27 @@ export const useFigmaStore = create<FigmaState>((set, get) => ({
   apiSources: [],
   globalStateVars: [],
   actionFlows: [],
+  database: { provider: 'mint', tables: [] },
+  auth: {
+    enabled: false,
+    providers: [
+      { type: 'email', enabled: true },
+      { type: 'google', enabled: false },
+      { type: 'github', enabled: false },
+      { type: 'apple', enabled: false },
+      { type: 'facebook', enabled: false },
+      { type: 'magic-link', enabled: false },
+    ],
+    sessionType: 'jwt',
+    tokenExpiry: 3600,
+    refresh: true,
+    roles: ['user'],
+    defaultRole: 'user',
+    mfaEnabled: false,
+    mfaType: 'totp',
+  },
+  navigation: { type: 'stack', routes: [] },
+  appWorkflows: [],
 
   setFileName: (name) => set({ fileName: name }),
 
@@ -509,6 +697,14 @@ export const useFigmaStore = create<FigmaState>((set, get) => ({
     set(s => {
       const pageId = s.activePageId;
       return { layers: { ...s.layers, [pageId]: [...(s.layers[pageId] ?? []), layer] } };
+    });
+  },
+
+  addLayerToParent: (layer, parentId) => {
+    get().pushHistory();
+    set(s => {
+      const pageId = s.activePageId;
+      return { layers: { ...s.layers, [pageId]: addChildToParent(s.layers[pageId] ?? [], parentId, layer) } };
     });
   },
 
@@ -888,6 +1084,7 @@ export const useFigmaStore = create<FigmaState>((set, get) => ({
 
   setPreviewMode: (on) => set({ previewMode: on }),
   setPrototypeStartFrame: (id) => set({ prototypeStartFrameId: id }),
+  setPrototypeDevice: (device) => set({ prototypeDevice: device }),
 
   addInteraction: (layerId, interaction) => set(s => ({
     layers: {
@@ -966,18 +1163,29 @@ export const useFigmaStore = create<FigmaState>((set, get) => ({
       const res = await fetch(`/api/figma-file?projectId=${encodeURIComponent(projectId)}`);
       if (!res.ok) return;
       const data = await res.json();
-      if (!data.fileId) return;
-      const { pages, layers, components, colorStyles, textStyles, effectStyles, fileName } = data;
+
+      // Always apply the project name — use fileName from file if set, else fall back to projectName
+      const resolvedName: string = data.fileName || data.projectName || 'Untitled';
+      set({ projectId, fileName: resolvedName });
+
+      if (!data.fileId) return; // No canvas file yet — name is set, nothing else to restore
+
+      const { pages, layers, components, colorStyles, textStyles, effectStyles, apiSources, globalStateVars, actionFlows, database, auth, navigation, appWorkflows } = data;
       set({
         fileId: data.fileId,
-        projectId,
         ...(pages && Array.isArray(pages) && { pages }),
         ...(layers && { layers }),
         ...(components && { components }),
         ...(colorStyles && { colorStyles }),
         ...(textStyles && { textStyles }),
         ...(effectStyles && { effectStyles }),
-        ...(fileName && { fileName }),
+        ...(Array.isArray(apiSources) && { apiSources }),
+        ...(Array.isArray(globalStateVars) && { globalStateVars }),
+        ...(Array.isArray(actionFlows) && { actionFlows }),
+        ...(database && typeof database === 'object' && { database }),
+        ...(auth && typeof auth === 'object' && { auth }),
+        ...(navigation && typeof navigation === 'object' && { navigation }),
+        ...(Array.isArray(appWorkflows) && { appWorkflows }),
       });
     } catch (e) {
       console.error('Failed to load figma file:', e);
@@ -1104,12 +1312,118 @@ export const useFigmaStore = create<FigmaState>((set, get) => ({
     },
   })),
 
+  // ── Database actions ──────────────────────────────────
+  setDatabaseProvider: (provider) => set(s => ({ database: { ...s.database, provider } })),
+
+  addTable: (name) => set(s => ({
+    database: {
+      ...s.database,
+      tables: [...s.database.tables, {
+        id: Math.random().toString(36).slice(2),
+        name,
+        fields: [{ id: Math.random().toString(36).slice(2), name: 'id', type: 'uuid' as DbFieldType, primary: true, nullable: false }],
+        timestamps: true,
+        softDelete: false,
+        indexes: [],
+      }],
+    },
+  })),
+
+  updateTable: (id, patch) => set(s => ({
+    database: {
+      ...s.database,
+      tables: s.database.tables.map(t => t.id === id ? { ...t, ...patch } : t),
+    },
+  })),
+
+  deleteTable: (id) => set(s => ({
+    database: { ...s.database, tables: s.database.tables.filter(t => t.id !== id) },
+  })),
+
+  addField: (tableId, field) => set(s => ({
+    database: {
+      ...s.database,
+      tables: s.database.tables.map(t => t.id === tableId
+        ? { ...t, fields: [...t.fields, { id: Math.random().toString(36).slice(2), ...field }] }
+        : t),
+    },
+  })),
+
+  updateField: (tableId, fieldId, patch) => set(s => ({
+    database: {
+      ...s.database,
+      tables: s.database.tables.map(t => t.id === tableId
+        ? { ...t, fields: t.fields.map(f => f.id === fieldId ? { ...f, ...patch } : f) }
+        : t),
+    },
+  })),
+
+  deleteField: (tableId, fieldId) => set(s => ({
+    database: {
+      ...s.database,
+      tables: s.database.tables.map(t => t.id === tableId
+        ? { ...t, fields: t.fields.filter(f => f.id !== fieldId) }
+        : t),
+    },
+  })),
+
+  // ── Auth actions ──────────────────────────────────────
+  setAuthConfig: (patch) => set(s => ({ auth: { ...s.auth, ...patch } })),
+
+  toggleAuthProvider: (type) => set(s => ({
+    auth: {
+      ...s.auth,
+      providers: s.auth.providers.map(p => p.type === type ? { ...p, enabled: !p.enabled } : p),
+    },
+  })),
+
+  updateAuthProvider: (type, patch) => set(s => ({
+    auth: {
+      ...s.auth,
+      providers: s.auth.providers.map(p => p.type === type ? { ...p, ...patch } : p),
+    },
+  })),
+
+  // ── Navigation actions ────────────────────────────────
+  setNavigationType: (type) => set(s => ({ navigation: { ...s.navigation, type } })),
+
+  addRoute: (route) => set(s => ({
+    navigation: {
+      ...s.navigation,
+      routes: [...s.navigation.routes, { id: Math.random().toString(36).slice(2), ...route }],
+    },
+  })),
+
+  updateRoute: (id, patch) => set(s => ({
+    navigation: {
+      ...s.navigation,
+      routes: s.navigation.routes.map(r => r.id === id ? { ...r, ...patch } : r),
+    },
+  })),
+
+  deleteRoute: (id) => set(s => ({
+    navigation: { ...s.navigation, routes: s.navigation.routes.filter(r => r.id !== id) },
+  })),
+
+  // ── App Workflow actions ──────────────────────────────
+  addAppWorkflow: (wf) => set(s => ({
+    appWorkflows: [...s.appWorkflows, { id: Math.random().toString(36).slice(2), ...wf }],
+  })),
+
+  updateAppWorkflow: (id, patch) => set(s => ({
+    appWorkflows: s.appWorkflows.map(w => w.id === id ? { ...w, ...patch } : w),
+  })),
+
+  deleteAppWorkflow: (id) => set(s => ({
+    appWorkflows: s.appWorkflows.filter(w => w.id !== id),
+  })),
+
   saveToServer: async () => {
-    const { projectId, fileId, pages, layers, components, colorStyles, textStyles, effectStyles, fileName } = get();
+    const { projectId, fileId, pages, layers, components, colorStyles, textStyles, effectStyles, fileName, apiSources, globalStateVars, actionFlows, database, auth, navigation, appWorkflows } = get();
     if (!projectId) return;
     set({ saveStatus: 'saving' });
     try {
-      const body = { projectId, fileId, pages, layers, components, colorStyles, textStyles, effectStyles, fileName };
+      const body = { projectId, fileId, pages, layers, components, colorStyles, textStyles, effectStyles, fileName, apiSources, globalStateVars, actionFlows, database, auth, navigation, appWorkflows };
       const res = await fetch('/api/figma-file', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

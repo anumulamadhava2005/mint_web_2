@@ -1,18 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
+import Image from 'next/image';
 import { Share2, Play, ChevronDown } from 'lucide-react';
 import { useFigmaStore } from '@/lib/stores/figmaStore';
-
-const FigmaLogo = () => (
-  <svg width="20" height="24" viewBox="0 0 20 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect x="0" y="0" width="10" height="12" rx="5" fill="#F24E1E" />
-    <rect x="10" y="0" width="10" height="12" rx="5" fill="#FF7262" />
-    <rect x="0" y="12" width="10" height="12" rx="5" fill="#0ACF83" />
-    <rect x="10" y="12" width="10" height="12" rx="5" fill="#1ABCFE" />
-    <circle cx="15" cy="12" r="5" fill="#A259FF" />
-  </svg>
-);
+import MLogo from '@/app/M.png';
 
 const ZOOM_PRESETS = [
   { label: '25%', value: 0.25 },
@@ -26,11 +18,10 @@ const ZOOM_PRESETS = [
 const MENU_ITEMS = ['New', 'Open', 'Save', 'Import', 'Export'];
 
 interface TopBarProps {
-  editorTab?: 'design' | 'backend' | 'logic';
-  onTabChange?: (tab: 'design' | 'backend' | 'logic') => void;
+  onExit?: () => void;
 }
 
-export default function TopBar({ editorTab = 'design', onTabChange }: TopBarProps) {
+export default function TopBar({ onExit }: TopBarProps) {
   const { fileName, setFileName, viewport, setViewport, editorMode, setEditorMode, undo, redo, canUndo, canRedo, setPreviewMode, saveStatus, projectId } = useFigmaStore();
 
   const [editingTitle, setEditingTitle] = useState(false);
@@ -84,7 +75,7 @@ export default function TopBar({ editorTab = 'design', onTabChange }: TopBarProp
     }}>
       {/* Logo */}
       <div style={{ padding: '0 8px', display: 'flex', alignItems: 'center' }}>
-        <FigmaLogo />
+        <Image src={MLogo} alt="Mint logo" width={22} height={22} style={{ borderRadius: 5 }} />
       </div>
 
       {/* Hamburger / menu */}
@@ -111,9 +102,30 @@ export default function TopBar({ editorTab = 'design', onTabChange }: TopBarProp
           <div style={{
             position: 'absolute', top: '100%', left: 0, marginTop: 4,
             background: '#2c2c2c', border: '1px solid #3c3c3c',
-            borderRadius: 6, padding: '4px 0', zIndex: 1000, minWidth: 140,
+            borderRadius: 6, padding: '4px 0', zIndex: 1000, minWidth: 160,
             boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
           }}>
+            {onExit && (
+              <>
+                <button
+                  onClick={() => { setMenuOpen(false); onExit(); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    width: '100%', textAlign: 'left',
+                    padding: '6px 14px', background: 'none', border: 'none',
+                    color: '#ebebeb', fontSize: 12, cursor: 'pointer',
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <path d="M7.5 2L3.5 6L7.5 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  Back to Projects
+                </button>
+                <div style={{ height: 1, background: '#3c3c3c', margin: '4px 0' }} />
+              </>
+            )}
             {MENU_ITEMS.map(item => (
               <button key={item} onClick={() => setMenuOpen(false)} style={{
                 display: 'block', width: '100%', textAlign: 'left',
@@ -220,47 +232,26 @@ export default function TopBar({ editorTab = 'design', onTabChange }: TopBarProp
       {/* Spacer */}
       <div style={{ flex: 1 }} />
 
-      {/* Editor tab switcher (Design / Backend / Logic) */}
-      <div style={{ display: 'flex', gap: 0, background: '#0d0d0d', borderRadius: 6, border: '1px solid #2a2a2a', padding: 2 }}>
-        {(['design', 'backend', 'logic'] as const).map(tab => (
+      {/* Design / Prototype / Dev mode tabs */}
+      <div style={{
+        display: 'flex', background: '#1e1e1e', borderRadius: 6, padding: 2, gap: 1,
+      }}>
+        {modes.map(m => (
           <button
-            key={tab}
-            onClick={() => onTabChange?.(tab)}
+            key={m.id}
+            onClick={() => setEditorMode(m.id)}
             style={{
-              background: editorTab === tab ? '#1e1e1e' : 'none',
-              border: 'none', borderRadius: 4, cursor: 'pointer',
-              color: editorTab === tab ? '#ebebeb' : '#666',
-              fontSize: 11, fontWeight: editorTab === tab ? 600 : 400,
-              padding: '4px 12px', transition: 'all 150ms',
+              padding: '4px 12px', borderRadius: 4, border: 'none', cursor: 'pointer', fontSize: 11,
+              background: editorMode === m.id ? '#2c2c2c' : 'transparent',
+              color: editorMode === m.id ? '#ebebeb' : '#888',
+              fontWeight: editorMode === m.id ? 500 : 400,
+              transition: 'all 0.1s',
             }}
           >
-            {tab === 'design' ? '✏️ Design' : tab === 'backend' ? '⚡ Backend' : '⚙️ Logic'}
+            {m.label}
           </button>
         ))}
       </div>
-
-      {/* Prototype/Dev mode sub-tabs — only shown in Design tab */}
-      {editorTab === 'design' && (
-        <div style={{
-          display: 'flex', background: '#1e1e1e', borderRadius: 6, padding: 2, gap: 1, marginLeft: 8,
-        }}>
-          {modes.map(m => (
-            <button
-              key={m.id}
-              onClick={() => setEditorMode(m.id)}
-              style={{
-                padding: '4px 12px', borderRadius: 4, border: 'none', cursor: 'pointer', fontSize: 11,
-                background: editorMode === m.id ? '#2c2c2c' : 'transparent',
-                color: editorMode === m.id ? '#ebebeb' : '#888',
-                fontWeight: editorMode === m.id ? 500 : 400,
-                transition: 'all 0.1s',
-              }}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* Spacer */}
       <div style={{ flex: 1 }} />

@@ -1,16 +1,34 @@
 "use client";
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 
-export default function ProjectEditor({ params }: { params: Promise<{ id: string }> }) {
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import FigmaEditor from "@/components/figma/FigmaEditor";
+
+export default function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
+  const [projectId, setProjectId] = useState<string>("");
+
   useEffect(() => {
-    params.then((p) => router.replace(`/projects/${p.id}/studio`));
-  }, [params, router]);
+    params.then((p) => setProjectId(p.id));
+  }, [params]);
+
+  if (!projectId) {
+    return (
+      <div style={{ display: "grid", placeItems: "center", width: "100vw", height: "100vh", background: "#1e1e1e" }}>
+        <div style={{
+          width: 28, height: 28, borderRadius: "50%",
+          border: "2px solid #7c3aed", borderTopColor: "transparent",
+          animation: "spin 0.7s linear infinite",
+        }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+      </div>
+    );
+  }
 
   return (
-    <div className="grid h-screen w-screen place-items-center bg-zinc-950">
-      <div className="h-7 w-7 animate-spin rounded-full border-2 border-violet-400 border-t-transparent" />
-    </div>
+    <FigmaEditor
+      projectId={projectId}
+      onExit={() => router.push("/projects")}
+    />
   );
 }

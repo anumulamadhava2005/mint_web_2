@@ -8,32 +8,29 @@ import LeftPanel from './LeftPanel';
 import Canvas from './Canvas';
 import RightPanel from './RightPanel';
 import PrototypePreview from './PrototypePreview';
+import PrototypeCanvas from './PrototypeCanvas';
 import FindReplacePanel from './FindReplacePanel';
 import ShortcutsPanel from './ShortcutsPanel';
-import BackendPanel from './BackendPanel';
-import LogicPanel from './LogicPanel';
 import { useFigmaCollaboration } from '@/hooks/useFigmaCollaboration';
-
-type EditorTab = 'design' | 'backend' | 'logic';
 
 interface Props {
   projectId?: string;
   embedded?: boolean;
+  onExit?: () => void;
 }
 
-export default function FigmaEditor({ projectId, embedded }: Props) {
+export default function FigmaEditor({ projectId, embedded, onExit }: Props) {
   const {
     selection, setActiveTool, setSelection, deleteLayer, duplicateLayer,
     setCopied, paste, bringForward, sendBackward, bringToFront, sendToBack,
     previewMode, setPreviewMode,
     undo, redo, canUndo, canRedo,
     toggleRulers, toggleGrid,
-    loadFromServer,
+    loadFromServer, editorMode,
   } = useFigmaStore();
 
   const [showFind, setShowFind] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
-  const [editorTab, setEditorTab] = useState<EditorTab>('design');
   const { emitCursor, remoteCursors } = useFigmaCollaboration();
 
   // Load from server on mount when projectId is provided
@@ -43,14 +40,52 @@ export default function FigmaEditor({ projectId, embedded }: Props) {
     }
   }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Autosave: debounced 2s after any layer mutation
+  // Flush pending Redis-cached saves to PostgreSQL every 5 minutes
+  useEffect(() => {
+    if (!projectId) return;
+    const flush = () =>
+      fetch(`/api/figma-flush?projectId=${projectId}`, { method: 'POST' }).catch(() => {});
+    const interval = setInterval(flush, 5 * 60 * 1000);
+    // Also flush when the tab is about to unload
+    const onUnload = () => navigator.sendBeacon(`/api/figma-flush?projectId=${projectId}`);
+    window.addEventListener('beforeunload', onUnload);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('beforeunload', onUnload);
+    };
+  }, [projectId]);
+
+  // Autosave: debounced 2s after any canvas or backend/logic mutation
   const layersRef = useRef(useFigmaStore.getState().layers);
+  const apiSourcesRef = useRef(useFigmaStore.getState().apiSources);
+  const globalStateVarsRef = useRef(useFigmaStore.getState().globalStateVars);
+  const actionFlowsRef = useRef(useFigmaStore.getState().actionFlows);
+  const databaseRef = useRef(useFigmaStore.getState().database);
+  const authRef = useRef(useFigmaStore.getState().auth);
+  const navigationRef = useRef(useFigmaStore.getState().navigation);
+  const appWorkflowsRef = useRef(useFigmaStore.getState().appWorkflows);
   useEffect(() => {
     if (!projectId) return;
     let timer: ReturnType<typeof setTimeout>;
     const unsub = useFigmaStore.subscribe((state) => {
-      if (state.layers !== layersRef.current) {
+      const changed =
+        state.layers !== layersRef.current ||
+        state.apiSources !== apiSourcesRef.current ||
+        state.globalStateVars !== globalStateVarsRef.current ||
+        state.actionFlows !== actionFlowsRef.current ||
+        state.database !== databaseRef.current ||
+        state.auth !== authRef.current ||
+        state.navigation !== navigationRef.current ||
+        state.appWorkflows !== appWorkflowsRef.current;
+      if (changed) {
         layersRef.current = state.layers;
+        apiSourcesRef.current = state.apiSources;
+        globalStateVarsRef.current = state.globalStateVars;
+        actionFlowsRef.current = state.actionFlows;
+        databaseRef.current = state.database;
+        authRef.current = state.auth;
+        navigationRef.current = state.navigation;
+        appWorkflowsRef.current = state.appWorkflows;
         clearTimeout(timer);
         timer = setTimeout(() => useFigmaStore.getState().saveToServer(), 2000);
       }
@@ -266,18 +301,15 @@ export default function FigmaEditor({ projectId, embedded }: Props) {
       fontSize: 12,
       color: '#ebebeb',
     }}>
-      <TopBar editorTab={editorTab} onTabChange={setEditorTab} />
+      <TopBar onExit={onExit} />
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {editorTab === 'design' && (
-          <>
-            <ToolStrip />
-            <LeftPanel />
-            <Canvas remoteCursors={remoteCursors} emitCursor={emitCursor} />
-            <RightPanel />
-          </>
-        )}
-        {editorTab === 'backend' && <BackendPanel />}
-        {editorTab === 'logic' && <LogicPanel />}
+        <ToolStrip />
+        <LeftPanel />
+        {editorMode === 'prototype'
+          ? <PrototypeCanvas />
+          : <Canvas remoteCursors={remoteCursors} emitCursor={emitCursor} />
+        }
+        <RightPanel />
       </div>
       {previewMode && <PrototypePreview onClose={() => setPreviewMode(false)} />}
       {showFind && <FindReplacePanel onClose={() => setShowFind(false)} />}

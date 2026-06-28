@@ -299,6 +299,11 @@ export interface DesignNode {
   // Plugin data
   pluginData?: Record<string, unknown>;
   sharedPluginData?: Record<string, Record<string, unknown>>;
+  // Runtime data bindings (from Figma canvas B1-B3 binding system)
+  bindings?: Record<string, string>;
+  repeatFor?: string;
+  repeatAs?: string;
+  conditionalRender?: string;
 }
 
 export interface ExportSetting {

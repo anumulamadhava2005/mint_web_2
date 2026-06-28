@@ -173,12 +173,14 @@ function mapTextStyle(layer: FigmaLayer): TextStyle | undefined {
 }
 
 function mapInteraction(int: FigmaInteraction, sourceId: string): Interaction {
-  const triggerMap: Record<FigmaInteraction['trigger'], InteractionTrigger> = {
+  const triggerMap: Partial<Record<FigmaInteraction['trigger'], InteractionTrigger>> = {
     click: 'ON_CLICK', hover: 'ON_HOVER', press: 'ON_PRESS', drag: 'ON_DRAG',
+    mouseLeave: 'MOUSE_LEAVE', afterDelay: 'AFTER_TIMEOUT', keyDown: 'MOUSE_DOWN', scroll: 'ON_DRAG',
   };
-  const actionMap: Record<FigmaInteraction['action'], InteractionAction> = {
+  const actionMap: Partial<Record<FigmaInteraction['action'], InteractionAction>> = {
     navigate: 'NAVIGATE', openOverlay: 'OPEN_OVERLAY',
     scrollTo: 'SCROLL_TO', back: 'BACK',
+    swapOverlay: 'SWAP_OVERLAY', closeOverlay: 'CLOSE_OVERLAY', openUrl: 'OPEN_URL',
   };
   const transitionMap: Record<FigmaInteraction['transition'], Animation['type']> = {
     instant: 'INSTANT', dissolve: 'DISSOLVE',
@@ -239,6 +241,9 @@ export function figmaLayerToDesignNode(layer: FigmaLayer): DesignNode | null {
     componentId: layer.componentId,
     text: mapTextStyle(layer),
     layout: layer.autoLayout ? mapLayout(layer.autoLayout) : undefined,
+    ...(layer.bindings && Object.keys(layer.bindings).length > 0 ? { bindings: layer.bindings } : {}),
+    ...(layer.repeatFor ? { repeatFor: layer.repeatFor.items, repeatAs: layer.repeatFor.as } : {}),
+    ...(layer.conditionalRender ? { conditionalRender: layer.conditionalRender } : {}),
   };
 
   // Recurse children (skip comment children)

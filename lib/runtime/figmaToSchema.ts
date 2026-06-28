@@ -210,10 +210,12 @@ export function figmaLayerToComponent(layer: FigmaLayer): ComponentSchema {
     id: layer.id,
     type,
     props,
-    bindings: {},
+    bindings: layer.bindings ?? {},
     children,
     style: buildStyle(layer),
     ...(events ? { events } : {}),
+    ...(layer.repeatFor ? { repeatFor: layer.repeatFor } : {}),
+    ...(layer.conditionalRender ? { conditionalRender: layer.conditionalRender } : {}),
   };
 }
 

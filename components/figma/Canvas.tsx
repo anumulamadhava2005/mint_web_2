@@ -11,7 +11,7 @@ type HandleType = 'tl' | 'tc' | 'tr' | 'ml' | 'mr' | 'bl' | 'bc' | 'br' | 'rotat
 type DragState =
   | { mode: 'pan'; startMX: number; startMY: number; startVpX: number; startVpY: number }
   | { mode: 'draw'; tool: ToolType; startWX: number; startWY: number; curWX: number; curWY: number }
-  | { mode: 'move'; startMSX: number; startMSY: number; origPos: Record<string, { x: number; y: number }> }
+  | { mode: 'move'; startMSX: number; startMSY: number; origPos: Record<string, { x: number; y: number }>; origWorldPos: Record<string, { x: number; y: number }> }
   | { mode: 'resize'; handle: HandleType; startMSX: number; startMSY: number; origLayer: FigmaLayer; aspectRatio: number }
   | { mode: 'rotate'; startAngle: number; origRot: number; cxS: number; cyS: number }
   | { mode: 'rubber'; startSX: number; startSY: number; curSX: number; curSY: number }
@@ -582,13 +582,45 @@ function computeSnapLines(
   return { lines, snapDX, snapDY };
 }
 
+// ── Tree helpers ───────────────────────────────────────────────
+
+function findLayerInTree(layers: FigmaLayer[], id: string): FigmaLayer | null {
+  for (const l of layers) {
+    if (l.id === id) return l;
+    if (l.children) { const f = findLayerInTree(l.children, id); if (f) return f; }
+  }
+  return null;
+}
+
+type WorldEntry = FigmaLayer & { wx: number; wy: number };
+
+function flattenWorldSpace(layers: FigmaLayer[], ox = 0, oy = 0): WorldEntry[] {
+  const result: WorldEntry[] = [];
+  for (const l of layers) {
+    const wx = ox + l.x;
+    const wy = oy + l.y;
+    result.push({ ...l, wx, wy });
+    if (l.children?.length) result.push(...flattenWorldSpace(l.children, wx, wy));
+  }
+  return result;
+}
+
 // ── Hit test ───────────────────────────────────────────────────
 
-function hitTest(wx: number, wy: number, layers: FigmaLayer[]): string | null {
+function hitTest(wx: number, wy: number, layers: FigmaLayer[], ox = 0, oy = 0): string | null {
   for (let i = layers.length - 1; i >= 0; i--) {
     const l = layers[i];
     if (!l.visible || l.locked) continue;
-    if (wx >= l.x && wx <= l.x + l.width && wy >= l.y && wy <= l.y + (l.type === 'line' ? 2 : l.height)) return l.id;
+    const lx = ox + l.x;
+    const ly = oy + l.y;
+    if (wx >= lx && wx <= lx + l.width && wy >= ly && wy <= ly + (l.type === 'line' ? 2 : l.height)) {
+      // Prefer children over the parent frame — depth-first
+      if (l.children?.length) {
+        const childHit = hitTest(wx, wy, l.children, lx, ly);
+        if (childHit) return childHit;
+      }
+      return l.id;
+    }
   }
   return null;
 }
@@ -679,17 +711,17 @@ function SelectionOverlay({
 
 // ── Hover highlight ────────────────────────────────────────────
 
-function HoverHighlight({ hoveredId, allLayers, selection, viewport }: {
-  hoveredId: string | null; allLayers: FigmaLayer[]; selection: string[]; viewport: Viewport;
+function HoverHighlight({ hoveredId, flatAll, selection, viewport }: {
+  hoveredId: string | null; flatAll: WorldEntry[]; selection: string[]; viewport: Viewport;
 }) {
   if (!hoveredId || selection.includes(hoveredId)) return null;
-  const l = allLayers.find(lay => lay.id === hoveredId);
-  if (!l) return null;
+  const entry = flatAll.find(e => e.id === hoveredId);
+  if (!entry) return null;
   const vp = viewport;
-  const sx = l.x * vp.zoom + vp.x;
-  const sy = l.y * vp.zoom + vp.y;
-  const sw = l.width * vp.zoom;
-  const sh = l.height * vp.zoom;
+  const sx = entry.wx * vp.zoom + vp.x;
+  const sy = entry.wy * vp.zoom + vp.y;
+  const sw = entry.width * vp.zoom;
+  const sh = entry.height * vp.zoom;
   return (
     <div style={{
       position: 'absolute', pointerEvents: 'none', zIndex: 16,
@@ -701,27 +733,27 @@ function HoverHighlight({ hoveredId, allLayers, selection, viewport }: {
 
 // ── Distance overlay ───────────────────────────────────────────
 
-function DistanceOverlay({ selectedLayers, hoveredId, allLayers, viewport }: {
-  selectedLayers: FigmaLayer[]; hoveredId: string | null; allLayers: FigmaLayer[]; viewport: Viewport;
+function DistanceOverlay({ selectedLayers, hoveredId, flatAll, viewport }: {
+  selectedLayers: FigmaLayer[]; hoveredId: string | null; flatAll: WorldEntry[]; viewport: Viewport;
 }) {
   if (!hoveredId || !selectedLayers.length) return null;
-  const hovered = allLayers.find(l => l.id === hoveredId);
-  if (!hovered || selectedLayers.some(l => l.id === hoveredId)) return null;
+  const hoveredEntry = flatAll.find(e => e.id === hoveredId);
+  if (!hoveredEntry || selectedLayers.some(l => l.id === hoveredId)) return null;
   const sb = getBoundingBox(selectedLayers);
   if (!sb) return null;
 
   const vp = viewport;
-  const distLeft = Math.round(sb.x - hovered.x);
-  const distRight = Math.round((hovered.x + hovered.width) - (sb.x + sb.w));
-  const distTop = Math.round(sb.y - hovered.y);
-  const distBottom = Math.round((hovered.y + hovered.height) - (sb.y + sb.h));
+  const distLeft = Math.round(sb.x - hoveredEntry.wx);
+  const distRight = Math.round((hoveredEntry.wx + hoveredEntry.width) - (sb.x + sb.w));
+  const distTop = Math.round(sb.y - hoveredEntry.wy);
+  const distBottom = Math.round((hoveredEntry.wy + hoveredEntry.height) - (sb.y + sb.h));
 
   const selMidS = { x: (sb.x + sb.w / 2) * vp.zoom + vp.x, y: (sb.y + sb.h / 2) * vp.zoom + vp.y };
 
-  const hsx = hovered.x * vp.zoom + vp.x;
-  const hsy = hovered.y * vp.zoom + vp.y;
-  const hsw = hovered.width * vp.zoom;
-  const hsh = hovered.height * vp.zoom;
+  const hsx = hoveredEntry.wx * vp.zoom + vp.x;
+  const hsy = hoveredEntry.wy * vp.zoom + vp.y;
+  const hsw = hoveredEntry.width * vp.zoom;
+  const hsh = hoveredEntry.height * vp.zoom;
 
   const labelStyle: React.CSSProperties = {
     position: 'absolute', background: '#e91e8c', color: '#fff',
@@ -849,11 +881,11 @@ interface CanvasProps {
 export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) {
   const {
     layers, activePageId, selection, hoveredId, activeTool, viewport,
-    setViewport, setSelection, setHovered, addLayer, setActiveTool, updateLayer,
+    setViewport, setSelection, setHovered, addLayer, addLayerToParent, setActiveTool, updateLayer,
     editingVectorId, nodeSelection, setEditingVector, setNodeSelection,
     updateVectorPoint, deleteVectorPoints,
     components, createComponent, detachInstance, deleteLayer, duplicateLayer, paste,
-    rightPanelTab, showRulers, showGrid,
+    editorMode, showRulers, showGrid,
   } = useFigmaStore();
 
   const currentLayers = React.useMemo(() => layers[activePageId] ?? [], [layers, activePageId]);
@@ -964,11 +996,13 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
 
   // commitNewLayer (uses refs, defined here so it can be called from mouseup)
   const addLayerRef = useRef(addLayer);
+  const addLayerToParentRef = useRef(addLayerToParent);
   const setSelectionRef = useRef(setSelection);
   const setActiveToolRef = useRef(setActiveTool);
   const updateLayerRef = useRef(updateLayer);
   const setEditingVectorRef = useRef(setEditingVector);
   useEffect(() => { addLayerRef.current = addLayer; }, [addLayer]);
+  useEffect(() => { addLayerToParentRef.current = addLayerToParent; }, [addLayerToParent]);
   useEffect(() => { setSelectionRef.current = setSelection; }, [setSelection]);
   useEffect(() => { setActiveToolRef.current = setActiveTool; }, [setActiveTool]);
   useEffect(() => { updateLayerRef.current = updateLayer; }, [updateLayer]);
@@ -997,6 +1031,20 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
     el.focus();
   }, [textEditId]);
 
+  // Find the deepest top-level frame whose bounds contain (cx, cy) in world coords.
+  // Returns the frame and its world-space origin so callers can convert to local coords.
+  const findContainingFrame = (layers: FigmaLayer[], cx: number, cy: number): { frame: FigmaLayer; wx: number; wy: number } | null => {
+    // Iterate in reverse so the last-drawn (topmost) frame wins when overlapping
+    for (let i = layers.length - 1; i >= 0; i--) {
+      const l = layers[i];
+      if (l.type !== 'frame' && l.type !== 'component' && l.type !== 'section') continue;
+      if (cx >= l.x && cx <= l.x + l.width && cy >= l.y && cy <= l.y + l.height) {
+        return { frame: l, wx: l.x, wy: l.y };
+      }
+    }
+    return null;
+  };
+
   const commitNewLayer = useCallback((type: LayerType, x: number, y: number, w: number, h: number) => {
     const typeNames: Record<LayerType, string> = {
       frame: 'Frame', rect: 'Rectangle', ellipse: 'Ellipse', line: 'Line',
@@ -1004,7 +1052,9 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
       component: 'Component', instance: 'Instance', vector: 'Vector', comment: 'Comment',
     };
     const curLayers = layersRef.current;
-    const countOfType = curLayers.filter(l => l.type === type).length;
+    const countAllOfType = (arr: FigmaLayer[]): number =>
+      arr.reduce((n, l) => n + (l.type === type ? 1 : 0) + (l.children ? countAllOfType(l.children) : 0), 0);
+    const countOfType = countAllOfType(curLayers);
     const newLayer: FigmaLayer = {
       id: `layer-${Date.now()}`,
       name: `${typeNames[type]} ${countOfType + 1}`,
@@ -1015,8 +1065,20 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
       effects: [], exports: [],
       ...(type === 'text' ? { text: 'Text', fontSize: 14, fontFamily: 'Inter, sans-serif', fontWeight: 'normal' } : {}),
     };
-    addLayerRef.current(newLayer);
-    setSelectionRef.current([newLayer.id]);
+
+    // Nest inside a frame if the new layer's center falls within one
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const container = findContainingFrame(curLayers, cx, cy);
+    if (container) {
+      const localLayer = { ...newLayer, x: Math.round(x - container.wx), y: Math.round(y - container.wy) };
+      addLayerToParentRef.current(localLayer, container.frame.id);
+      setSelectionRef.current([localLayer.id]);
+    } else {
+      addLayerRef.current(newLayer);
+      setSelectionRef.current([newLayer.id]);
+    }
+
     setActiveToolRef.current('select');
     if (type === 'text') {
       setTextEditIdRef.current(newLayer.id);
@@ -1054,10 +1116,20 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
       points: localPoints,
       pathClosed: closed,
     };
-    addLayerRef.current(newLayer);
+    const curLayers = layersRef.current;
+    const cx = minX + w / 2;
+    const cy = minY + h / 2;
+    const container = findContainingFrame(curLayers, cx, cy);
+    if (container) {
+      const localLayer = { ...newLayer, x: minX - container.wx, y: minY - container.wy };
+      addLayerToParentRef.current(localLayer, container.frame.id);
+      setSelectionRef.current([localLayer.id]);
+    } else {
+      addLayerRef.current(newLayer);
+      setSelectionRef.current([newLayer.id]);
+    }
     setPenPoints([]);
     setPenPreview(null);
-    setSelectionRef.current([newLayer.id]);
     setActiveToolRef.current('select');
   }, []);
 
@@ -1142,9 +1214,12 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
     const curLayers = layersRef.current;
 
     if (handle === 'rotate') {
-      const layer = curLayers.find(l => l.id === curSel[0]);
+      const layer = findLayerInTree(curLayers, curSel[0]);
       if (!layer) return;
-      const bb = getBoundingBox([layer]);
+      const flatAll = flattenWorldSpace(curLayers);
+      const entry = flatAll.find(e => e.id === curSel[0]);
+      const worldLayer = entry ? { ...layer, x: entry.wx, y: entry.wy } : layer;
+      const bb = getBoundingBox([worldLayer]);
       if (!bb) return;
       const cxS = bb.x * vp.zoom + vp.x + (bb.w * vp.zoom) / 2;
       const cyS = bb.y * vp.zoom + vp.y + (bb.h * vp.zoom) / 2;
@@ -1155,14 +1230,14 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
     }
 
     if (handle === 'radius') {
-      const layer = curLayers.find(l => l.id === curSel[0]);
+      const layer = findLayerInTree(curLayers, curSel[0]);
       if (!layer) return;
       dragRef.current = { mode: 'radius', startMSX: msx, origRadius: layer.cornerRadius ?? 0, layerId: layer.id };
       setDragMode('radius');
       return;
     }
 
-    const layer = curLayers.find(l => l.id === curSel[0]);
+    const layer = findLayerInTree(curLayers, curSel[0]);
     if (!layer) return;
     dragRef.current = {
       mode: 'resize', handle, startMSX: msx, startMSY: msy,
@@ -1183,7 +1258,7 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
     const curLayers = layersRef.current;
     const hitId = hitTest(wx, wy, curLayers);
     if (!hitId) return;
-    const layer = curLayers.find(l => l.id === hitId);
+    const layer = findLayerInTree(curLayers, hitId);
     if (!layer) return;
     if (layer.type === 'vector') {
       setEditingVectorRef.current(hitId);
@@ -1288,11 +1363,15 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
 
     const sel = curSel.includes(hitId) ? curSel : [hitId];
     const origPos: Record<string, { x: number; y: number }> = {};
+    const origWorldPos: Record<string, { x: number; y: number }> = {};
+    const flatStart = flattenWorldSpace(curLayers);
     for (const id of sel) {
-      const l = curLayers.find(lay => lay.id === id);
+      const l = findLayerInTree(curLayers, id);
+      const entry = flatStart.find(e => e.id === id);
       if (l) origPos[id] = { x: l.x, y: l.y };
+      if (entry) origWorldPos[id] = { x: entry.wx, y: entry.wy };
     }
-    dragRef.current = { mode: 'move', startMSX: msx, startMSY: msy, origPos };
+    dragRef.current = { mode: 'move', startMSX: msx, startMSY: msy, origPos, origWorldPos };
     setDragMode('move');
   }, [setSelection]);
 
@@ -1334,13 +1413,13 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
       const h = Math.abs(msy - drag.startSY);
       setRubberBand({ x, y, w, h });
       const selIds: string[] = [];
-      for (const l of curLayers) {
-        if (!l.visible || l.locked) continue;
-        const lsx = l.x * vp.zoom + vp.x;
-        const lsy = l.y * vp.zoom + vp.y;
-        const lsw = l.width * vp.zoom;
-        const lsh = (l.type === 'line' ? 2 : l.height) * vp.zoom;
-        if (lsx < x + w && lsx + lsw > x && lsy < y + h && lsy + lsh > y) selIds.push(l.id);
+      for (const entry of flattenWorldSpace(curLayers)) {
+        if (!entry.visible || entry.locked) continue;
+        const lsx = entry.wx * vp.zoom + vp.x;
+        const lsy = entry.wy * vp.zoom + vp.y;
+        const lsw = entry.width * vp.zoom;
+        const lsh = (entry.type === 'line' ? 2 : entry.height) * vp.zoom;
+        if (lsx < x + w && lsx + lsw > x && lsy < y + h && lsy + lsh > y) selIds.push(entry.id);
       }
       setSelection(selIds);
       return;
@@ -1362,18 +1441,20 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
     if (drag.mode === 'move') {
       const dx = (msx - drag.startMSX) / vp.zoom;
       const dy = (msy - drag.startMSY) / vp.zoom;
+      // Build world-space positions for snap computation
       const movingLayers = curSel.map(id => {
-        const orig = drag.origPos[id];
-        const l = curLayers.find(lay => lay.id === id);
-        return l ? { ...l, x: orig.x + dx, y: orig.y + dy } : null;
+        const origW = drag.origWorldPos[id];
+        const l = findLayerInTree(curLayers, id);
+        return l && origW ? { ...l, x: origW.x + dx, y: origW.y + dy } : null;
       }).filter(Boolean) as FigmaLayer[];
 
       const { lines, snapDX, snapDY } = computeSnapLines(movingLayers, curLayers, curSel, vp);
       setSnapLines(lines);
 
+      // Update using LOCAL positions (delta is identical in local and world space)
       for (const id of curSel) {
         const orig = drag.origPos[id];
-        updateLayer(id, { x: Math.round(orig.x + dx + snapDX), y: Math.round(orig.y + dy + snapDY) });
+        if (orig) updateLayer(id, { x: Math.round(orig.x + dx + snapDX), y: Math.round(orig.y + dy + snapDY) });
       }
       return;
     }
@@ -1530,7 +1611,14 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
   }, [handleMouseMove, handleMouseUp]);
 
   const vp = viewport;
-  const selectedLayers = currentLayers.filter(l => selection.includes(l.id));
+  const flatAll = React.useMemo(() => flattenWorldSpace(currentLayers), [currentLayers]);
+  // Selection overlay needs world-space x/y so handles appear at the correct screen position
+  const selectedLayersWorld = React.useMemo(() =>
+    selection.map(id => {
+      const entry = flatAll.find(e => e.id === id);
+      return entry ? { ...entry, x: entry.wx, y: entry.wy } : null;
+    }).filter(Boolean) as FigmaLayer[],
+  [selection, flatAll]);
   const isDragging = dragMode !== null;
 
   return (
@@ -1593,22 +1681,23 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
         </div>
 
         {/* Screen-space overlays */}
-        <HoverHighlight hoveredId={hoveredId} allLayers={currentLayers} selection={selection} viewport={vp} />
-        <DistanceOverlay selectedLayers={selectedLayers} hoveredId={hoveredId} allLayers={currentLayers} viewport={vp} />
+        <HoverHighlight hoveredId={hoveredId} flatAll={flatAll} selection={selection} viewport={vp} />
+        <DistanceOverlay selectedLayers={selectedLayersWorld} hoveredId={hoveredId} flatAll={flatAll} viewport={vp} />
         <SnapLinesOverlay lines={snapLines} />
 
         {/* Selection handles */}
         {selection.length > 0 && activeTool === 'select' && dragMode !== 'draw' && (
           <>
             <SelectionOverlay
-              selectedLayers={selectedLayers}
+              selectedLayers={selectedLayersWorld}
               viewport={vp}
               onHandleMouseDown={handleHandleMouseDown}
               rotateAngle={rotateAngle}
             />
             {/* Corner radius handle */}
             {selection.length === 1 && (() => {
-              const l = currentLayers.find(lay => lay.id === selection[0]);
+              const entry = flatAll.find(e => e.id === selection[0]);
+              const l = entry ? { ...entry, x: entry.wx, y: entry.wy } : null;
               if (!l || (l.type !== 'rect' && l.type !== 'frame')) return null;
               const lsx = l.x * vp.zoom + vp.x;
               const lsy = l.y * vp.zoom + vp.y;
@@ -1822,58 +1911,6 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
           </>
         )}
 
-        {/* Prototype connection arrows */}
-        {rightPanelTab === 'prototype' && (() => {
-          const getAllLayers = (arr: FigmaLayer[]): FigmaLayer[] =>
-            arr.flatMap(l => [l, ...(l.children ? getAllLayers(l.children) : [])]);
-          const allLayers = getAllLayers(currentLayers);
-          const interactive = allLayers.filter(l => (l.interactions ?? []).length > 0);
-          if (interactive.length === 0) return null;
-          return (
-            <svg style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 50 }} width="100%" height="100%">
-              <defs>
-                <marker id="proto-arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-                  <polygon points="0 0, 8 3, 0 6" fill="#0d99ff" />
-                </marker>
-              </defs>
-              {interactive.flatMap(layer =>
-                (layer.interactions ?? [])
-                  .filter(i => i.targetFrameId)
-                  .map(interaction => {
-                    const target = currentLayers.find(l => l.id === interaction.targetFrameId);
-                    if (!target) return null;
-                    const sx = (layer.x + layer.width / 2) * vp.zoom + vp.x;
-                    const sy = (layer.y + layer.height / 2) * vp.zoom + vp.y;
-                    const tx = target.x * vp.zoom + vp.x;
-                    const ty = (target.y + target.height / 2) * vp.zoom + vp.y;
-                    const cx1 = sx + (tx - sx) * 0.5;
-                    const cy1 = sy;
-                    const cx2 = tx - (tx - sx) * 0.3;
-                    const cy2 = ty;
-                    return (
-                      <g key={`${layer.id}-${interaction.id}`}>
-                        <circle cx={sx} cy={sy} r={8} fill="#0d99ff" opacity={0.9} />
-                        <text x={sx} y={sy + 4} textAnchor="middle" fontSize={9} fill="white">
-                          {interaction.trigger === 'click' ? '↗' : interaction.trigger === 'hover' ? '◎' : '⇢'}
-                        </text>
-                        <path
-                          d={`M ${sx} ${sy} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${tx} ${ty}`}
-                          fill="none" stroke="#0d99ff" strokeWidth={2}
-                          strokeDasharray="6 3" markerEnd="url(#proto-arrow)" opacity={0.8}
-                        />
-                        <rect
-                          x={target.x * vp.zoom + vp.x} y={target.y * vp.zoom + vp.y}
-                          width={target.width * vp.zoom} height={target.height * vp.zoom}
-                          fill="none" stroke="#0d99ff" strokeWidth={2} strokeDasharray="4 4" opacity={0.5}
-                        />
-                      </g>
-                    );
-                  })
-                  .filter((x): x is React.ReactElement => x !== null)
-              )}
-            </svg>
-          );
-        })()}
 
         {/* Context menu */}
         {ctxMenu && (

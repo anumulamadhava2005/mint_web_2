@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { ChevronRight, ChevronDown, Plus, Minus } from 'lucide-react';
-import { useFigmaStore, type FigmaLayer, type Fill, type Stroke, type Effect, type ColorStop, type LayoutGrid, type AutoLayout, type Interaction, type InteractionTrigger, type InteractionAction, type TransitionType } from '@/lib/stores/figmaStore';
+import { useFigmaStore, type FigmaLayer, type Fill, type Stroke, type Effect, type ColorStop, type LayoutGrid, type AutoLayout, type Interaction, type InteractionTrigger, type InteractionAction, type TransitionType, type OverlayPosition } from '@/lib/stores/figmaStore';
 
 const LAYER_EVENTS: Record<string, string[]> = {
   frame: ['onClick', 'onLongPress'],
@@ -116,14 +116,29 @@ function Section({
 
 function ColorSwatch({ color, alpha = 1, onChange, onAlphaChange, showAlpha }: {
   color: string; alpha?: number;
-  onChange: (hex: string) => void;
+  // onChange receives hex AND the current alpha so callers can update both in one store write
+  onChange: (hex: string, alpha: number) => void;
   onAlphaChange?: (v: number) => void;
   showAlpha?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // Viewport-relative position for the picker (position: fixed escapes overflow clipping)
+  const [pickerPos, setPickerPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const { recentColors, colorStyles, addRecentColor, addColorStyle } = useFigmaStore();
   const anchorRef = useRef<HTMLButtonElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
+
+  const openPicker = () => {
+    if (anchorRef.current) {
+      const r = anchorRef.current.getBoundingClientRect();
+      const PICKER_W = 256;
+      const vw = window.innerWidth;
+      // prefer to the right of anchor, flip left if it would overflow viewport
+      const left = r.right + PICKER_W > vw ? r.left - PICKER_W : r.right + 4;
+      setPickerPos({ top: r.top, left: Math.max(4, left) });
+    }
+    setOpen(v => !v);
+  };
 
   // Close on outside click
   useEffect(() => {
@@ -145,12 +160,14 @@ function ColorSwatch({ color, alpha = 1, onChange, onAlphaChange, showAlpha }: {
     backgroundColor: '#888',
   };
 
+  const safeColor = (typeof color === 'string' && color.startsWith('#')) ? color : '#e2e2e2';
+
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, position: 'relative' }}>
       {/* Swatch button */}
       <button
         ref={anchorRef}
-        onClick={() => setOpen(v => !v)}
+        onClick={openPicker}
         title="Pick color"
         style={{
           width: 22, height: 22, padding: 0, border: '1px solid #555',
@@ -158,7 +175,7 @@ function ColorSwatch({ color, alpha = 1, onChange, onAlphaChange, showAlpha }: {
         }}
       >
         <div style={{ ...checkerStyle, position: 'absolute', inset: 0 }} />
-        <div style={{ position: 'absolute', inset: 0, background: color, opacity: alpha }} />
+        <div style={{ position: 'absolute', inset: 0, background: safeColor, opacity: alpha }} />
       </button>
 
       {/* Hex display */}
@@ -168,9 +185,9 @@ function ColorSwatch({ color, alpha = 1, onChange, onAlphaChange, showAlpha }: {
           color: '#ccc', fontSize: 11, padding: '2px 5px', fontFamily: 'monospace',
           cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}
-        onClick={() => setOpen(v => !v)}
+        onClick={openPicker}
       >
-        {color.replace('#', '').toUpperCase()}
+        {safeColor.replace('#', '').toUpperCase()}
       </div>
 
       {/* Alpha */}
@@ -180,20 +197,21 @@ function ColorSwatch({ color, alpha = 1, onChange, onAlphaChange, showAlpha }: {
         </div>
       )}
 
-      {/* Picker popover */}
+      {/* Picker popover — position: fixed so it escapes overflow:auto scroll containers */}
       {open && (
         <div
           ref={pickerRef}
-          style={{ position: 'absolute', top: 28, right: 0, zIndex: 9999 }}
+          style={{ position: 'fixed', top: pickerPos.top, left: pickerPos.left, zIndex: 99999 }}
         >
           <ColorPicker
-            color={color}
+            color={safeColor}
             alpha={alpha}
             onChange={(hex, a) => {
-              onChange(hex);
-              onAlphaChange?.(a);
+              // Pass both hex and alpha together — callers update them in one store write
+              // to avoid the second write reverting the color via a stale fills closure.
+              onChange(hex, a);
             }}
-            onClose={() => { setOpen(false); addRecentColor(color); }}
+            onClose={() => { setOpen(false); addRecentColor(safeColor); }}
             recentColors={recentColors}
             documentColors={colorStyles.map(s => s.color)}
             onSaveStyle={(c) => { addColorStyle('Color style', c); addRecentColor(c); }}
@@ -237,6 +255,113 @@ function AlignmentSection({ layer, updateLayer }: { layer: FigmaLayer | null; up
           </svg>
         </button>
       ))}
+    </div>
+  );
+}
+
+// ── Frame dimension presets ──────────────────────────────────────
+
+const FRAME_PRESETS: { label: string; presets: { name: string; w: number; h: number }[] }[] = [
+  { label: 'Mobile', presets: [
+    { name: 'iPhone 14', w: 390, h: 844 },
+    { name: 'iPhone 14 Pro Max', w: 430, h: 932 },
+    { name: 'iPhone SE', w: 375, h: 667 },
+    { name: 'Android (360)', w: 360, h: 800 },
+  ]},
+  { label: 'Tablet', presets: [
+    { name: 'iPad', w: 768, h: 1024 },
+    { name: 'iPad Pro 11"', w: 834, h: 1194 },
+    { name: 'iPad Pro 12.9"', w: 1024, h: 1366 },
+  ]},
+  { label: 'Desktop', presets: [
+    { name: '1280 × 800', w: 1280, h: 800 },
+    { name: '1440 × 900', w: 1440, h: 900 },
+    { name: '1920 × 1080', w: 1920, h: 1080 },
+  ]},
+  { label: 'Watch', presets: [
+    { name: 'Apple Watch 45mm', w: 198, h: 242 },
+    { name: 'Apple Watch 41mm', w: 176, h: 215 },
+  ]},
+  { label: 'Social', presets: [
+    { name: 'Instagram Post', w: 1080, h: 1080 },
+    { name: 'Instagram Story', w: 1080, h: 1920 },
+    { name: 'Twitter Header', w: 1500, h: 500 },
+    { name: 'Facebook Cover', w: 820, h: 312 },
+  ]},
+];
+
+function FramePresetsButton({ layerId, updateLayer }: { layerId: string; updateLayer: (id: string, p: Partial<FigmaLayer>) => void }) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        btnRef.current && !btnRef.current.contains(e.target as Node) &&
+        menuRef.current && !menuRef.current.contains(e.target as Node)
+      ) setOpen(false);
+    };
+    window.addEventListener('mousedown', handler);
+    return () => window.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        ref={btnRef}
+        onClick={() => setOpen(v => !v)}
+        title="Frame size presets"
+        style={{
+          background: open ? 'rgba(13,153,255,0.15)' : 'none',
+          border: `1px solid ${open ? 'rgba(13,153,255,0.4)' : '#333'}`,
+          borderRadius: 4, cursor: 'pointer',
+          color: open ? '#0d99ff' : '#666',
+          fontSize: 10, padding: '2px 6px', lineHeight: 1.4,
+        }}
+      >
+        Presets
+      </button>
+      {open && (
+        <div
+          ref={menuRef}
+          style={{
+            position: 'absolute', top: '100%', right: 0, zIndex: 9999,
+            background: '#252525', border: '1px solid #3a3a3a',
+            borderRadius: 6, boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+            width: 192, marginTop: 4, overflow: 'hidden',
+          }}
+        >
+          {FRAME_PRESETS.map(group => (
+            <div key={group.label}>
+              <div style={{
+                padding: '6px 10px 3px', fontSize: 9, color: '#555',
+                fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
+                borderTop: group.label !== FRAME_PRESETS[0].label ? '1px solid #2e2e2e' : undefined,
+              }}>
+                {group.label}
+              </div>
+              {group.presets.map(p => (
+                <button
+                  key={p.name}
+                  onClick={() => { updateLayer(layerId, { width: p.w, height: p.h }); setOpen(false); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    width: '100%', padding: '5px 10px', background: 'none',
+                    border: 'none', cursor: 'pointer', textAlign: 'left',
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.07)'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; }}
+                >
+                  <span style={{ fontSize: 11, color: '#ccc' }}>{p.name}</span>
+                  <span style={{ fontSize: 10, color: '#555', fontFamily: 'monospace' }}>{p.w}×{p.h}</span>
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -367,7 +492,7 @@ function GradientEditor({ fill, updateFill }: { fill: Fill; updateFill: (p: Part
           <ColorSwatch
             color={s.color}
             alpha={s.opacity}
-            onChange={c => updateStop(s.id, { color: c })}
+            onChange={(c, v) => updateStop(s.id, { color: c, opacity: v })}
             onAlphaChange={v => updateStop(s.id, { opacity: v })}
             showAlpha
           />
@@ -474,7 +599,7 @@ function FillSection({ layer, updateLayer }: { layer: FigmaLayer; updateLayer: (
             <ColorSwatch
               color={fill.color}
               alpha={fill.opacity}
-              onChange={c => updateFill(fill.id, { color: c })}
+              onChange={(c, v) => updateFill(fill.id, { color: c, opacity: v })}
               onAlphaChange={v => updateFill(fill.id, { opacity: v })}
               showAlpha
             />
@@ -520,7 +645,7 @@ function StrokeSection({ layer, updateLayer }: { layer: FigmaLayer; updateLayer:
             <ColorSwatch
               color={stroke.color}
               alpha={stroke.opacity}
-              onChange={c => updateStroke(stroke.id, { color: c })}
+              onChange={(c, v) => updateStroke(stroke.id, { color: c, opacity: v })}
               onAlphaChange={v => updateStroke(stroke.id, { opacity: v })}
               showAlpha
             />
@@ -624,7 +749,7 @@ function EffectsSection({ layer, updateLayer }: { layer: FigmaLayer; updateLayer
               <ColorSwatch
                 color={eff.color}
                 alpha={eff.opacity}
-                onChange={c => updateEffect(eff.id, { color: c })}
+                onChange={(c, v) => updateEffect(eff.id, { color: c, opacity: v })}
                 onAlphaChange={v => updateEffect(eff.id, { opacity: v })}
                 showAlpha
               />
@@ -1548,7 +1673,16 @@ function DesignTab() {
         <AlignmentSection layer={selectedLayer} updateLayer={updateLayer} />
       </Section>
 
-      <Section label="Transform" expanded={!!expanded.transform} onToggle={() => toggle('transform')}>
+      <Section
+        label="Transform"
+        expanded={!!expanded.transform}
+        onToggle={() => toggle('transform')}
+        action={
+          (selectedLayer.type === 'frame' || selectedLayer.type === 'component')
+            ? <FramePresetsButton layerId={selectedLayer.id} updateLayer={updateLayer} />
+            : undefined
+        }
+      >
         <TransformSection layer={selectedLayer} updateLayer={updateLayer} />
       </Section>
 
@@ -1794,6 +1928,14 @@ function InteractionRow({
   onRemove: () => void;
 }) {
   const allFrames = layers.filter(l => l.type === 'frame' || l.type === 'component');
+  const sel = { flex: 1, background: '#0d0d0d', border: '1px solid #333', borderRadius: 3, color: '#ccc', fontSize: 11, padding: '2px 4px' } as const;
+  const row = { display: 'flex', gap: 4 } as const;
+  const lbl = { fontSize: 10, color: '#666', width: 50, display: 'flex', alignItems: 'center' } as const;
+  const inp = { flex: 1, background: '#0d0d0d', border: '1px solid #333', borderRadius: 3, color: '#ccc', fontSize: 11, padding: '2px 6px' } as const;
+
+  const isOverlay = interaction.action === 'openOverlay' || interaction.action === 'swapOverlay';
+  const needsTarget = interaction.action === 'navigate' || isOverlay || interaction.action === 'scrollTo';
+
   return (
     <div style={{ background: '#1e1e1e', border: '1px solid #2e2e2e', borderRadius: 6, padding: 8, marginBottom: 6 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -1801,54 +1943,147 @@ function InteractionRow({
         <button onClick={onRemove} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: 13 }}>✕</button>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div style={{ display: 'flex', gap: 4 }}>
-          <label style={{ fontSize: 10, color: '#666', width: 50, display: 'flex', alignItems: 'center' }}>Trigger</label>
-          <select value={interaction.trigger} onChange={e => onUpdate({ trigger: e.target.value as InteractionTrigger })}
-            style={{ flex: 1, background: '#0d0d0d', border: '1px solid #333', borderRadius: 3, color: '#ccc', fontSize: 11, padding: '2px 4px' }}>
+        {/* Trigger */}
+        <div style={row}>
+          <label style={lbl}>Trigger</label>
+          <select value={interaction.trigger} onChange={e => onUpdate({ trigger: e.target.value as InteractionTrigger })} style={sel}>
             <option value="click">Click</option>
             <option value="hover">Hover</option>
+            <option value="mouseLeave">Mouse leave</option>
             <option value="press">Mouse down</option>
             <option value="drag">Drag</option>
+            <option value="afterDelay">After delay</option>
+            <option value="keyDown">Key down</option>
+            <option value="scroll">Scroll</option>
           </select>
         </div>
-        <div style={{ display: 'flex', gap: 4 }}>
-          <label style={{ fontSize: 10, color: '#666', width: 50, display: 'flex', alignItems: 'center' }}>Action</label>
-          <select value={interaction.action} onChange={e => onUpdate({ action: e.target.value as InteractionAction })}
-            style={{ flex: 1, background: '#0d0d0d', border: '1px solid #333', borderRadius: 3, color: '#ccc', fontSize: 11, padding: '2px 4px' }}>
+        {interaction.trigger === 'afterDelay' && (
+          <div style={row}>
+            <label style={lbl}>Delay</label>
+            <input type="number" value={interaction.delay ?? 1000} min={100} max={10000} step={100}
+              onChange={e => onUpdate({ delay: Number(e.target.value) })} style={inp} />
+            <span style={{ fontSize: 10, color: '#555', display: 'flex', alignItems: 'center' }}>ms</span>
+          </div>
+        )}
+        {interaction.trigger === 'keyDown' && (
+          <div style={row}>
+            <label style={lbl}>Key</label>
+            <input type="text" placeholder="e.g. Enter" value={interaction.keyCode ?? ''}
+              onChange={e => onUpdate({ keyCode: e.target.value })} style={inp} />
+          </div>
+        )}
+
+        {/* Action */}
+        <div style={row}>
+          <label style={lbl}>Action</label>
+          <select value={interaction.action} onChange={e => onUpdate({ action: e.target.value as InteractionAction })} style={sel}>
             <option value="navigate">Navigate to</option>
             <option value="openOverlay">Open overlay</option>
+            <option value="swapOverlay">Swap overlay</option>
+            <option value="closeOverlay">Close overlay</option>
             <option value="back">Go back</option>
             <option value="scrollTo">Scroll to</option>
+            <option value="openUrl">Open URL</option>
           </select>
         </div>
-        {(interaction.action === 'navigate' || interaction.action === 'openOverlay') && (
-          <div style={{ display: 'flex', gap: 4 }}>
-            <label style={{ fontSize: 10, color: '#666', width: 50, display: 'flex', alignItems: 'center' }}>To</label>
-            <select value={interaction.targetFrameId ?? ''} onChange={e => onUpdate({ targetFrameId: e.target.value || undefined })}
-              style={{ flex: 1, background: '#0d0d0d', border: '1px solid #333', borderRadius: 3, color: '#ccc', fontSize: 11, padding: '2px 4px' }}>
+
+        {/* Target frame */}
+        {needsTarget && (
+          <div style={row}>
+            <label style={lbl}>To</label>
+            <select value={interaction.targetFrameId ?? ''} onChange={e => onUpdate({ targetFrameId: e.target.value || undefined })} style={sel}>
               <option value="">— select frame —</option>
               {allFrames.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
           </div>
         )}
-        <div style={{ display: 'flex', gap: 4 }}>
-          <label style={{ fontSize: 10, color: '#666', width: 50, display: 'flex', alignItems: 'center' }}>Anim</label>
-          <select value={interaction.transition} onChange={e => onUpdate({ transition: e.target.value as TransitionType })}
-            style={{ flex: 1, background: '#0d0d0d', border: '1px solid #333', borderRadius: 3, color: '#ccc', fontSize: 11, padding: '2px 4px' }}>
-            <option value="instant">Instant</option>
-            <option value="dissolve">Dissolve</option>
-            <option value="slide-left">Slide left</option>
-            <option value="slide-right">Slide right</option>
-            <option value="push-left">Push left</option>
-            <option value="push-right">Push right</option>
-          </select>
-        </div>
-        {interaction.transition !== 'instant' && (
-          <div style={{ display: 'flex', gap: 4 }}>
-            <label style={{ fontSize: 10, color: '#666', width: 50, display: 'flex', alignItems: 'center' }}>ms</label>
+
+        {/* URL */}
+        {interaction.action === 'openUrl' && (
+          <div style={row}>
+            <label style={lbl}>URL</label>
+            <input type="url" placeholder="https://" value={interaction.url ?? ''}
+              onChange={e => onUpdate({ url: e.target.value })} style={inp} />
+          </div>
+        )}
+
+        {/* Overlay options */}
+        {isOverlay && (
+          <>
+            <div style={row}>
+              <label style={lbl}>Position</label>
+              <select value={interaction.overlayPosition ?? 'center'} onChange={e => onUpdate({ overlayPosition: e.target.value as OverlayPosition })} style={sel}>
+                <option value="center">Center</option>
+                <option value="top-left">Top left</option>
+                <option value="top-right">Top right</option>
+                <option value="bottom-left">Bottom left</option>
+                <option value="bottom-right">Bottom right</option>
+                <option value="origin">On click</option>
+              </select>
+            </div>
+            <div style={row}>
+              <label style={lbl}>Background</label>
+              <select value={interaction.overlayBackground ?? 'none'} onChange={e => onUpdate({ overlayBackground: e.target.value as Interaction['overlayBackground'] })} style={sel}>
+                <option value="none">None</option>
+                <option value="dim">Dim</option>
+                <option value="blur">Blur</option>
+              </select>
+            </div>
+            {interaction.overlayBackground === 'dim' && (
+              <div style={row}>
+                <label style={lbl}>Opacity</label>
+                <input type="range" min={0} max={100} value={Math.round((interaction.overlayBgOpacity ?? 0.4) * 100)}
+                  onChange={e => onUpdate({ overlayBgOpacity: Number(e.target.value) / 100 })}
+                  style={{ flex: 1, accentColor: '#0d99ff' }} />
+                <span style={{ fontSize: 10, color: '#555', width: 28, textAlign: 'right' }}>{Math.round((interaction.overlayBgOpacity ?? 0.4) * 100)}%</span>
+              </div>
+            )}
+            <div style={row}>
+              <label style={{ ...lbl, width: 'auto', marginRight: 6 }}>
+                <input type="checkbox" checked={interaction.overlayCloseOnClickOutside ?? true}
+                  onChange={e => onUpdate({ overlayCloseOnClickOutside: e.target.checked })}
+                  style={{ accentColor: '#0d99ff', marginRight: 4 }} />
+                <span style={{ fontSize: 10, color: '#888' }}>Close on click outside</span>
+              </label>
+            </div>
+          </>
+        )}
+
+        {/* Animation */}
+        {interaction.action !== 'closeOverlay' && interaction.action !== 'openUrl' && interaction.action !== 'back' && (
+          <div style={row}>
+            <label style={lbl}>Anim</label>
+            <select value={interaction.transition} onChange={e => onUpdate({ transition: e.target.value as TransitionType })} style={sel}>
+              <option value="instant">Instant</option>
+              <option value="dissolve">Dissolve</option>
+              <option value="slide-left">Slide left</option>
+              <option value="slide-right">Slide right</option>
+              <option value="push-left">Push left</option>
+              <option value="push-right">Push right</option>
+              <option value="smart-animate">Smart animate</option>
+            </select>
+          </div>
+        )}
+
+        {/* Duration */}
+        {interaction.transition !== 'instant' && interaction.action !== 'closeOverlay' && interaction.action !== 'openUrl' && (
+          <div style={row}>
+            <label style={lbl}>ms</label>
             <input type="number" value={interaction.duration} min={50} max={2000} step={50}
-              onChange={e => onUpdate({ duration: Number(e.target.value) })}
-              style={{ flex: 1, background: '#0d0d0d', border: '1px solid #333', borderRadius: 3, color: '#ccc', fontSize: 11, padding: '2px 6px' }} />
+              onChange={e => onUpdate({ duration: Number(e.target.value) })} style={inp} />
+          </div>
+        )}
+
+        {/* Easing */}
+        {interaction.transition !== 'instant' && (
+          <div style={row}>
+            <label style={lbl}>Easing</label>
+            <select value={interaction.easing ?? 'ease-out'} onChange={e => onUpdate({ easing: e.target.value as Interaction['easing'] })} style={sel}>
+              <option value="ease-out">Ease out</option>
+              <option value="ease-in">Ease in</option>
+              <option value="ease-in-out">Ease in-out</option>
+              <option value="linear">Linear</option>
+            </select>
           </div>
         )}
       </div>
@@ -2367,7 +2602,7 @@ function InspectTab() {
 // ── Root component ──────────────────────────────────────────────
 
 export default function RightPanel() {
-  const { rightPanelWidth, rightPanelCollapsed, rightPanelTab, setRightPanelTab, setRightPanelCollapsed, setRightPanelWidth } = useFigmaStore();
+  const { rightPanelWidth, rightPanelCollapsed, editorMode, setRightPanelCollapsed, setRightPanelWidth } = useFigmaStore();
 
   const resizingRef = useRef(false);
   const startXRef = useRef(0);
@@ -2415,29 +2650,11 @@ export default function RightPanel() {
         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
       />
 
-      {/* Tab bar */}
-      <div style={{ height: 40, display: 'flex', alignItems: 'flex-end', borderBottom: '1px solid #3c3c3c', flexShrink: 0, paddingLeft: 4 }}>
-        {(['design', 'prototype', 'inspect'] as const).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setRightPanelTab(tab)}
-            style={{
-              flex: 1, height: '100%', background: 'none', border: 'none', cursor: 'pointer',
-              color: rightPanelTab === tab ? '#ebebeb' : '#666', fontSize: 11,
-              fontWeight: rightPanelTab === tab ? 500 : 400,
-              borderBottom: rightPanelTab === tab ? '2px solid #0d99ff' : '2px solid transparent',
-            }}
-          >
-            {tab[0].toUpperCase() + tab.slice(1)}
-          </button>
-        ))}
-      </div>
-
       {/* Content */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {rightPanelTab === 'design' && <DesignTab />}
-        {rightPanelTab === 'prototype' && <PrototypeTab />}
-        {rightPanelTab === 'inspect' && <InspectTab />}
+        {editorMode === 'design' && <DesignTab />}
+        {editorMode === 'prototype' && <PrototypeTab />}
+        {editorMode === 'dev' && <InspectTab />}
       </div>
     </div>
   );
