@@ -38,6 +38,7 @@ export function genSQL(tables: TableSchema[]): string {
 
 // ── Types ─────────────────────────────────────────────────────────
 type CardPos = { x: number; y: number };
+const defaultPos = (i: number): CardPos => ({ x: 60 + (i % 3) * 320, y: 80 + Math.floor(i / 3) * 320 });
 type DeployResult = {
   success: boolean;
   applied: string[];
@@ -383,35 +384,16 @@ function ErdCard({
 // ── Main component ─────────────────────────────────────────────────
 export function DatabaseEditor({ projectId }: { projectId?: string }) {
   const { schema, addTable, removeTable, addField } = useRuntimeStore();
-  const tables: TableSchema[] = schema.database?.tables ?? [];
+  const tables: TableSchema[] = useMemo(() => schema.database?.tables ?? [], [schema.database?.tables]);
 
-  const [positions, setPositions] = useState<Record<string, CardPos>>(() => {
-    const init: Record<string, CardPos> = {};
-    tables.forEach((t, i) => {
-      init[t.id] = {
-        x: 60 + (i % 3) * 320,
-        y: 80 + Math.floor(i / 3) * 320,
-      };
-    });
-    return init;
-  });
-
-  useEffect(() => {
-    setPositions((prev) => {
-      let changed = false;
-      const next = { ...prev };
-      tables.forEach((t, i) => {
-        if (!next[t.id]) {
-          next[t.id] = {
-            x: 60 + (i % 3) * 320,
-            y: 80 + Math.floor(i / 3) * 320,
-          };
-          changed = true;
-        }
-      });
-      return changed ? next : prev;
-    });
-  }, [tables]);
+  // Only user-dragged overrides live in state; everything else falls back to a
+  // deterministic default layout (avoids setState-in-effect for new tables).
+  const [overrides, setOverrides] = useState<Record<string, CardPos>>({});
+  const positions = useMemo(() => {
+    const m: Record<string, CardPos> = {};
+    tables.forEach((t, i) => { m[t.id] = overrides[t.id] ?? defaultPos(i); });
+    return m;
+  }, [tables, overrides]);
 
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 60, y: 40 });
@@ -452,7 +434,8 @@ export function DatabaseEditor({ projectId }: { projectId?: string }) {
     (cardId: string, e: React.MouseEvent) => {
       e.stopPropagation();
       setActiveCard(cardId);
-      const pos = positions[cardId] ?? { x: 0, y: 0 };
+      const idx = tables.findIndex((t) => t.id === cardId);
+      const pos = overrides[cardId] ?? defaultPos(idx);
       dragRef.current = {
         cardId,
         startX: e.clientX,
@@ -461,7 +444,7 @@ export function DatabaseEditor({ projectId }: { projectId?: string }) {
         origY: pos.y,
       };
     },
-    [positions]
+    [overrides, tables]
   );
 
   const onCanvasMouseDown = useCallback(
@@ -484,7 +467,7 @@ export function DatabaseEditor({ projectId }: { projectId?: string }) {
         const d = dragRef.current;
         const dx = (e.clientX - d.startX) / zoom;
         const dy = (e.clientY - d.startY) / zoom;
-        setPositions((prev) => ({
+        setOverrides((prev) => ({
           ...prev,
           [d.cardId]: { x: d.origX + dx, y: d.origY + dy },
         }));
@@ -515,17 +498,13 @@ export function DatabaseEditor({ projectId }: { projectId?: string }) {
       indexes: [],
       policies: [],
     });
-    setPositions((prev) => ({
-      ...prev,
-      [id]: { x: 60 + (i % 3) * 320, y: 80 + Math.floor(i / 3) * 320 },
-    }));
     setActiveCard(id);
   }, [addTable, tables.length]);
 
   const deleteTable = useCallback(
     (id: string) => {
       removeTable(id);
-      setPositions((prev) => {
+      setOverrides((prev) => {
         const n = { ...prev };
         delete n[id];
         return n;

@@ -9,6 +9,7 @@ import Canvas from './Canvas';
 import RightPanel from './RightPanel';
 import PrototypePreview from './PrototypePreview';
 import PrototypeCanvas from './PrototypeCanvas';
+import DevDatabaseStudio from './DevDatabaseStudio';
 import FindReplacePanel from './FindReplacePanel';
 import ShortcutsPanel from './ShortcutsPanel';
 import { useFigmaCollaboration } from '@/hooks/useFigmaCollaboration';
@@ -302,15 +303,19 @@ export default function FigmaEditor({ projectId, embedded, onExit }: Props) {
       color: '#ebebeb',
     }}>
       <TopBar onExit={onExit} />
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        <ToolStrip />
-        <LeftPanel />
-        {editorMode === 'prototype'
-          ? <PrototypeCanvas />
-          : <Canvas remoteCursors={remoteCursors} emitCursor={emitCursor} />
-        }
-        <RightPanel />
-      </div>
+      {editorMode === 'dev' ? (
+        <DevDatabaseStudio projectId={projectId} />
+      ) : (
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+          <ToolStrip />
+          <LeftPanel />
+          {editorMode === 'prototype'
+            ? <PrototypeCanvas />
+            : <Canvas remoteCursors={remoteCursors} emitCursor={emitCursor} />
+          }
+          <RightPanel />
+        </div>
+      )}
       {previewMode && <PrototypePreview onClose={() => setPreviewMode(false)} />}
       {showFind && <FindReplacePanel onClose={() => setShowFind(false)} />}
       {showShortcuts && <ShortcutsPanel onClose={() => setShowShortcuts(false)} />}

@@ -235,6 +235,23 @@ export interface DbIndex {
   unique: boolean;
 }
 
+export interface DbRelation {
+  type: 'one-to-one' | 'one-to-many' | 'many-to-many';
+  targetTable: string;   // target table NAME
+  foreignKey: string;    // column on this table
+  targetKey?: string;    // defaults to "id"
+  junctionTable?: string; // for many-to-many
+  onDelete?: 'cascade' | 'set-null' | 'restrict' | 'no-action';
+}
+
+export interface DbPolicy {
+  name: string;
+  operation: 'select' | 'insert' | 'update' | 'delete' | 'all';
+  role?: string;
+  condition?: string; // SQL USING expression
+  check?: string;     // SQL WITH CHECK expression
+}
+
 export interface DbTable {
   id: string;
   name: string;
@@ -242,6 +259,8 @@ export interface DbTable {
   timestamps: boolean;
   softDelete: boolean;
   indexes: DbIndex[];
+  relations: DbRelation[];
+  policies: DbPolicy[];
 }
 
 export type DbProvider = 'mint' | 'supabase' | 'firebase' | 'custom';
@@ -523,6 +542,13 @@ interface FigmaState {
   addField: (tableId: string, field: Omit<DbField, 'id'>) => void;
   updateField: (tableId: string, fieldId: string, patch: Partial<DbField>) => void;
   deleteField: (tableId: string, fieldId: string) => void;
+  addRelation: (tableId: string, rel: DbRelation) => void;
+  deleteRelation: (tableId: string, index: number) => void;
+  addPolicy: (tableId: string, policy: DbPolicy) => void;
+  updatePolicy: (tableId: string, index: number, patch: Partial<DbPolicy>) => void;
+  deletePolicy: (tableId: string, index: number) => void;
+  addIndex: (tableId: string, index: DbIndex) => void;
+  deleteIndex: (tableId: string, name: string) => void;
 
   auth: AuthConfig;
   setAuthConfig: (patch: Partial<AuthConfig>) => void;
@@ -1325,6 +1351,8 @@ export const useFigmaStore = create<FigmaState>((set, get) => ({
         timestamps: true,
         softDelete: false,
         indexes: [],
+        relations: [],
+        policies: [],
       }],
     },
   })),
@@ -1363,6 +1391,24 @@ export const useFigmaStore = create<FigmaState>((set, get) => ({
       ...s.database,
       tables: s.database.tables.map(t => t.id === tableId
         ? { ...t, fields: t.fields.filter(f => f.id !== fieldId) }
+        : t),
+    },
+  })),
+
+  addRelation: (tableId, rel) => set(s => ({
+    database: {
+      ...s.database,
+      tables: s.database.tables.map(t => t.id === tableId
+        ? { ...t, relations: [...(t.relations ?? []), rel] }
+        : t),
+    },
+  })),
+
+  deleteRelation: (tableId, index) => set(s => ({
+    database: {
+      ...s.database,
+      tables: s.database.tables.map(t => t.id === tableId
+        ? { ...t, relations: (t.relations ?? []).filter((_, i) => i !== index) }
         : t),
     },
   })),
