@@ -46,6 +46,125 @@ const STEP_GROUPS: { label: string; types: ActionStepType[] }[] = [
 
 // ── Step field editor ─────────────────────────────────────────────────────────
 
+// ── CRUD column mapping editor (dbInsert/dbUpdate/dbDelete) ──────────────────
+
+function CrudStepFields({ step, flowId }: { step: ActionStep; flowId: string }) {
+  const { updateActionStep, database } = useFigmaStore();
+  const upd = (patch: Partial<ActionStep>) => updateActionStep(flowId, step.id, patch);
+  const tables = database?.tables ?? [];
+  const selectedTable = tables.find(t => t.name === step.dbTable);
+  const editableCols = selectedTable
+    ? selectedTable.fields.filter(f => !f.primary && f.name !== 'created_at' && f.name !== 'updated_at' && f.name !== 'deleted_at').map(f => f.name)
+    : [];
+
+  const isInsert = step.type === 'dbInsert';
+  const isDelete = step.type === 'dbDelete';
+  const showValues = !isDelete;
+  const showWhere = !isInsert;
+
+  const values = step.dbValues ?? {};
+  const where = step.dbWhere ?? (showWhere ? { id: '$item.id' } : {});
+
+  const setValues = (v: Record<string, string>) => upd({ dbValues: v });
+  const setWhere = (w: Record<string, string>) => upd({ dbWhere: w });
+
+  const autoFillValues = () => {
+    const v: Record<string, string> = {};
+    editableCols.forEach(c => { v[c] = `$form.${c}`; });
+    setValues(v);
+  };
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', background: '#0d0d0d', border: '1px solid #2a2a2a',
+    borderRadius: 4, color: '#ebebeb', fontSize: 11, padding: '5px 8px',
+    outline: 'none', boxSizing: 'border-box', fontFamily: 'monospace',
+  };
+  const labelStyle: React.CSSProperties = {
+    fontSize: 9, color: '#888', marginBottom: 3, fontWeight: 600,
+    textTransform: 'uppercase' as const, letterSpacing: '0.06em',
+  };
+
+  const MapEditor = ({ map, onChange, label, defaultCol }: {
+    map: Record<string, string>; onChange: (m: Record<string, string>) => void;
+    label: string; defaultCol?: string;
+  }) => {
+    const entries = Object.entries(map);
+    const addRow = () => onChange({ ...map, [defaultCol || '']: '' });
+    const removeRow = (key: string) => { const m = { ...map }; delete m[key]; onChange(m); };
+    const updateKey = (oldKey: string, newKey: string) => {
+      const m: Record<string, string> = {};
+      for (const [k, v] of Object.entries(map)) m[k === oldKey ? newKey : k] = v;
+      onChange(m);
+    };
+    const updateVal = (key: string, val: string) => onChange({ ...map, [key]: val });
+
+    return (
+      <div style={{ marginTop: 4 }}>
+        <div style={labelStyle}>{label}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+          {entries.length === 0 && (
+            <div style={{ fontSize: 10, color: '#555', fontStyle: 'italic', padding: '4px 0' }}>
+              No mappings. Click + to add or Auto-fill.
+            </div>
+          )}
+          {entries.map(([col, expr], i) => (
+            <div key={i} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              {editableCols.length > 0 ? (
+                <select value={col} onChange={e => updateKey(col, e.target.value)}
+                  style={{ ...inputStyle, width: 120, fontFamily: 'Inter, sans-serif', cursor: 'pointer' }}>
+                  <option value="">— col —</option>
+                  {editableCols.map(c => <option key={c} value={c}>{c}</option>)}
+                  {col && !editableCols.includes(col) && <option value={col}>{col}</option>}
+                </select>
+              ) : (
+                <input value={col} onChange={e => updateKey(col, e.target.value)}
+                  placeholder="column" style={{ ...inputStyle, width: 120 }} />
+              )}
+              <input value={expr} onChange={e => updateVal(col, e.target.value)}
+                placeholder="$form.value or $item.id" style={{ ...inputStyle, flex: 1 }} />
+              <button onClick={() => removeRow(col)}
+                style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: 14, padding: '0 4px', flexShrink: 0 }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#ff4444'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#555'; }}>×</button>
+            </div>
+          ))}
+          <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
+            <button onClick={addRow}
+              style={{ background: 'none', border: '1px dashed #2a2a2a', borderRadius: 4, color: '#888', fontSize: 10, padding: '3px 10px', cursor: 'pointer' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#0d99ff'; (e.currentTarget as HTMLButtonElement).style.color = '#0d99ff'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#2a2a2a'; (e.currentTarget as HTMLButtonElement).style.color = '#888'; }}>
+              + Add
+            </button>
+            {editableCols.length > 0 && label.toLowerCase().includes('value') && (
+              <button onClick={autoFillValues}
+                style={{ background: 'none', border: '1px dashed #2a2a2a', borderRadius: 4, color: '#888', fontSize: 10, padding: '3px 10px', cursor: 'pointer' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#00c864'; (e.currentTarget as HTMLButtonElement).style.color = '#00c864'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#2a2a2a'; (e.currentTarget as HTMLButtonElement).style.color = '#888'; }}>
+                ⚡ Auto-fill from schema
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+      <div>
+        <div style={labelStyle}>Table</div>
+        <select value={step.dbTable ?? ''} onChange={e => upd({ dbTable: e.target.value })}
+          style={{ ...inputStyle, fontFamily: 'Inter, sans-serif', cursor: 'pointer' }}>
+          <option value="">— select table —</option>
+          {tables.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+        </select>
+      </div>
+      {showValues && <MapEditor map={values} onChange={setValues} label="Values (column → expression)" defaultCol={editableCols[0]} />}
+      {showWhere && <MapEditor map={where} onChange={setWhere} label="Where (filter row)" defaultCol="id" />}
+    </div>
+  );
+}
+
 function StepFields({ step, flowId }: { step: ActionStep; flowId: string }) {
   const { updateActionStep, apiSources, pages } = useFigmaStore();
   const upd = (patch: Partial<ActionStep>) => updateActionStep(flowId, step.id, patch);
@@ -88,9 +207,45 @@ function StepFields({ step, flowId }: { step: ActionStep; flowId: string }) {
 
     case 'goBack':
     case 'closeModal':
-    case 'signIn':
     case 'signOut':
       return <div style={{ fontSize: 11, color: '#555', marginTop: 8, fontStyle: 'italic' }}>No configuration needed.</div>;
+
+    case 'signIn':
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+          {row(<>{fieldLabel('Email binding')}
+            <input value={step.authBindings?.email ?? '$form.email'} onChange={e => upd({ authBindings: { ...step.authBindings, email: e.target.value } })}
+              placeholder="$form.email" style={monoInput} />
+          </>)}
+          {row(<>{fieldLabel('Password binding')}
+            <input value={step.authBindings?.password ?? '$form.password'} onChange={e => upd({ authBindings: { ...step.authBindings, password: e.target.value } })}
+              placeholder="$form.password" style={monoInput} />
+          </>)}
+        </div>
+      );
+
+    case 'signUp':
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+          {row(<>{fieldLabel('Email binding')}
+            <input value={step.authBindings?.email ?? '$form.email'} onChange={e => upd({ authBindings: { ...step.authBindings, email: e.target.value } })}
+              placeholder="$form.email" style={monoInput} />
+          </>)}
+          {row(<>{fieldLabel('Password binding')}
+            <input value={step.authBindings?.password ?? '$form.password'} onChange={e => upd({ authBindings: { ...step.authBindings, password: e.target.value } })}
+              placeholder="$form.password" style={monoInput} />
+          </>)}
+          {row(<>{fieldLabel('Name binding')}
+            <input value={step.authBindings?.name ?? '$form.username'} onChange={e => upd({ authBindings: { ...step.authBindings, name: e.target.value } })}
+              placeholder="$form.username" style={monoInput} />
+          </>)}
+        </div>
+      );
+
+    case 'dbInsert':
+    case 'dbUpdate':
+    case 'dbDelete':
+      return <CrudStepFields step={step} flowId={flowId} />;
 
     case 'setState':
     case 'updateState':

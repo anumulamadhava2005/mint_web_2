@@ -95,9 +95,9 @@ export function MintProvider({ children }) {
     reset: (routes) => { if (routes && routes[0]) navigate(routeFor(routes[0])); },
   }), [navigate]);
 
-  const dispatch = useMemo(() => (refs, event) => {
+  const dispatch = useMemo(() => (refs, event, loopCtx) => {
     const list = Array.isArray(refs) ? refs : [refs];
-    for (const r of list) Promise.resolve(runtime.actions.dispatch(r, { navigation, event })).catch((e) => {
+    for (const r of list) Promise.resolve(runtime.actions.dispatch(r, { navigation, event, loopCtx })).catch((e) => {
       const msg = (e && e.message) || String(e);
       console.error("[mint] action failed:", msg);
       runtime.state.set("_lastError", msg); // bind a component to $_lastError to surface it
@@ -169,7 +169,7 @@ function Node({ comp, loopCtx }) {
   for (const k in b) { try { props[k] = runtime.evalExpr(b[k], ctx); } catch {} }
 
   const style = STYLES[comp.id] || {};
-  const fire = (refs, e) => { if (refs && refs.length) dispatch(refs, e); };
+  const fire = (refs, e) => { if (refs && refs.length) dispatch(refs, e, loopCtx); };
   const ev = comp.events || {};
   const kids = (lc) => (comp.children || []).map((ch) => <Node key={ch.id} comp={ch} loopCtx={lc || loopCtx} />);
 

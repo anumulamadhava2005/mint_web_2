@@ -58,7 +58,7 @@ const ACTION_LABELS: Record<ClickActionKind, string> = {
 
 export default function CanvasBindingOverlay({
   layersWorld, selection, viewport, designMode, screens, actionFlows, tables, screenIds,
-  onSetInputType, onBindValue, onSetClickAction, onEditText, onBindText, onSetDataSource, onToggleRequiresAuth,
+  onSetInputType, onBindValue, onSetClickAction, onRemoveStep, onAddStepToFlow, onEditText, onBindText, onSetDataSource, onToggleRequiresAuth,
 }: {
   layersWorld: WorldLayer[];
   selection: string[];
@@ -71,6 +71,8 @@ export default function CanvasBindingOverlay({
   onSetInputType: (layerId: string, type: InputFieldType, placeholder: string) => void;
   onBindValue: (layerId: string, anchor: DOMRect) => void;
   onSetClickAction: (layerId: string, kind: ClickActionKind, opts?: { navigateTo?: string; table?: string }) => void;
+  onRemoveStep: (layerId: string, flowId: string, stepId: string) => void;
+  onAddStepToFlow: (layerId: string, flowId: string) => void;
   onEditText: (layerId: string) => void;
   onBindText: (layerId: string, anchor: DOMRect) => void;
   onSetDataSource: (layerId: string, table: string | null) => void;
@@ -210,36 +212,102 @@ export default function CanvasBindingOverlay({
             )}
             <MousePointerClick size={12} style={{ color: '#9a9a9a', marginLeft: 2 }} />
             <span style={{ fontSize: 10, color: '#888' }}>On click</span>
-            <select
-              value={clickAction.kind}
-              onChange={e => onSetClickAction(selectedClickable.id, e.target.value as ClickActionKind, { navigateTo: clickAction.navigateTo, table: clickAction.table })}
-              style={{ background: '#0d0d0d', border: '1px solid #333', borderRadius: 4, color: '#ebebeb', fontSize: 11, padding: '3px 6px', outline: 'none', cursor: 'pointer' }}>
-              {(Object.keys(ACTION_LABELS) as ClickActionKind[]).map(k => (
-                <option key={k} value={k}>{ACTION_LABELS[k]}</option>
-              ))}
-            </select>
-            {/* CRUD kinds need a target table */}
-            {CRUD_KINDS.includes(clickAction.kind) && (
-              <select
-                value={clickAction.table ?? ''}
-                onChange={e => onSetClickAction(selectedClickable.id, clickAction.kind, { navigateTo: clickAction.navigateTo, table: e.target.value || undefined })}
-                style={{ background: '#0d0d0d', border: '1px solid #333', borderRadius: 4, color: '#ebebeb', fontSize: 11, padding: '3px 6px', outline: 'none', cursor: 'pointer' }}>
-                <option value="">— table —</option>
-                {tables.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            )}
-            {clickAction.kind !== 'none' && screens.length > 0 && (
-              <>
-                <span style={{ fontSize: 10, color: '#888' }}>then go to</span>
-                <select
-                  value={clickAction.navigateTo ?? ''}
-                  onChange={e => onSetClickAction(selectedClickable.id, clickAction.kind, { navigateTo: e.target.value || undefined, table: clickAction.table })}
-                  style={{ background: '#0d0d0d', border: '1px solid #333', borderRadius: 4, color: '#ebebeb', fontSize: 11, padding: '3px 6px', outline: 'none', cursor: 'pointer' }}>
-                  <option value="">— stay —</option>
-                  {screens.map(s => <option key={s.route} value={s.route}>{s.name}</option>)}
-                </select>
-              </>
-            )}
+            {/* Multi-step chain: show each step as a pill */}
+            {(() => {
+              const flowId = selectedClickable.layerEvents?.onClick?.[0];
+              const flow = flowId ? actionFlows.find(f => f.id === flowId) : undefined;
+              const steps = flow?.steps ?? [];
+
+              if (steps.length === 0) {
+                // No steps yet — show the legacy single-action dropdown
+                return (
+                  <>
+                    <select
+                      value={clickAction.kind}
+                      onChange={e => onSetClickAction(selectedClickable.id, e.target.value as ClickActionKind, { navigateTo: clickAction.navigateTo, table: clickAction.table })}
+                      style={{ background: '#0d0d0d', border: '1px solid #333', borderRadius: 4, color: '#ebebeb', fontSize: 11, padding: '3px 6px', outline: 'none', cursor: 'pointer' }}>
+                      {(Object.keys(ACTION_LABELS) as ClickActionKind[]).map(k => (
+                        <option key={k} value={k}>{ACTION_LABELS[k]}</option>
+                      ))}
+                    </select>
+                    {CRUD_KINDS.includes(clickAction.kind) && (
+                      <select
+                        value={clickAction.table ?? ''}
+                        onChange={e => onSetClickAction(selectedClickable.id, clickAction.kind, { navigateTo: clickAction.navigateTo, table: e.target.value || undefined })}
+                        style={{ background: '#0d0d0d', border: '1px solid #333', borderRadius: 4, color: '#ebebeb', fontSize: 11, padding: '3px 6px', outline: 'none', cursor: 'pointer' }}>
+                        <option value="">— table —</option>
+                        {tables.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    )}
+                    {clickAction.kind !== 'none' && screens.length > 0 && (
+                      <>
+                        <span style={{ fontSize: 10, color: '#888' }}>then go to</span>
+                        <select
+                          value={clickAction.navigateTo ?? ''}
+                          onChange={e => onSetClickAction(selectedClickable.id, clickAction.kind, { navigateTo: e.target.value || undefined, table: clickAction.table })}
+                          style={{ background: '#0d0d0d', border: '1px solid #333', borderRadius: 4, color: '#ebebeb', fontSize: 11, padding: '3px 6px', outline: 'none', cursor: 'pointer' }}>
+                          <option value="">— stay —</option>
+                          {screens.map(s => <option key={s.route} value={s.route}>{s.name}</option>)}
+                        </select>
+                      </>
+                    )}
+                  </>
+                );
+              }
+
+              // Multi-step mode: render each step as a compact pill
+              const PILL_COLORS: Record<string, string> = {
+                navigate: '#0d99ff', goBack: '#0d99ff', openModal: '#0d99ff', closeModal: '#0d99ff',
+                setState: '#7b61ff', updateState: '#7b61ff', resetState: '#7b61ff',
+                fetch: '#00c864', mutate: '#00c864',
+                dbInsert: '#00c864', dbUpdate: '#00c864', dbDelete: '#ff4444',
+                toast: '#ff9500', alert: '#ff9500', condition: '#f72585', delay: '#888',
+                custom: '#ebebeb', signUp: '#00c864', signIn: '#00c864', signOut: '#ff4444',
+              };
+              const PILL_LABELS: Record<string, string> = {
+                navigate: 'Nav', goBack: 'Back', signUp: 'Sign up', signIn: 'Log in', signOut: 'Sign out',
+                dbInsert: 'Create', dbUpdate: 'Update', dbDelete: 'Delete',
+                setState: 'Set', toast: 'Toast', delay: 'Wait', condition: 'If', custom: 'Code',
+                fetch: 'Fetch', mutate: 'Mutate', updateState: 'Upd', resetState: 'Reset',
+                openModal: 'Modal', closeModal: 'Close', alert: 'Alert',
+              };
+              return (
+                <>
+                  {steps.map((s, i) => {
+                    const c = PILL_COLORS[s.type] ?? '#888';
+                    const label = PILL_LABELS[s.type] ?? s.type;
+                    const detail = s.dbTable ? `:${s.dbTable}` : s.navigateTo ? `:${s.navigateTo}` : '';
+                    return (
+                      <React.Fragment key={s.id}>
+                        {i > 0 && <span style={{ fontSize: 10, color: '#555' }}>→</span>}
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 3,
+                          background: c + '18', border: `1px solid ${c}40`, borderRadius: 4,
+                          padding: '2px 6px', fontSize: 10, color: c, fontWeight: 600, whiteSpace: 'nowrap',
+                        }}>
+                          {label}{detail && <span style={{ fontWeight: 400, opacity: 0.8 }}>{detail}</span>}
+                          <span
+                            onClick={e => { e.stopPropagation(); onRemoveStep(selectedClickable.id, flow!.id, s.id); }}
+                            style={{ cursor: 'pointer', opacity: 0.6, marginLeft: 2 }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLSpanElement).style.opacity = '1'; }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLSpanElement).style.opacity = '0.6'; }}
+                          >×</span>
+                        </span>
+                      </React.Fragment>
+                    );
+                  })}
+                  <button
+                    onClick={e => { e.stopPropagation(); onAddStepToFlow(selectedClickable.id, flow!.id); }}
+                    style={{
+                      background: 'none', border: '1px dashed #333', borderRadius: 4,
+                      color: '#888', fontSize: 10, padding: '2px 6px', cursor: 'pointer',
+                    }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#0d99ff'; (e.currentTarget as HTMLButtonElement).style.color = '#0d99ff'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#333'; (e.currentTarget as HTMLButtonElement).style.color = '#888'; }}
+                  >+</button>
+                </>
+              );
+            })()}
           </div>
         );
       })()}

@@ -75,16 +75,26 @@ function stepToSchema(step: ActionStep, id: string, projectId: string): ActionSc
   switch (step.type) {
     case 'dbInsert': {
       const table = step.dbTable ?? '';
-      const values = Object.fromEntries(formColumns(table).map(c => [c, `$form.${c}`]));
+      const values = step.dbValues && Object.keys(step.dbValues).length
+        ? step.dbValues
+        : Object.fromEntries(formColumns(table).map(c => [c, `$form.${c}`]));
       return { ...base, type: 'dbInsert', config: { projectId, table, values } };
     }
     case 'dbUpdate': {
       const table = step.dbTable ?? '';
-      const values = Object.fromEntries(formColumns(table).map(c => [c, `$form.${c}`]));
-      return { ...base, type: 'dbUpdate', config: { projectId, table, values, where: { id: '$item.id' } } };
+      const values = step.dbValues && Object.keys(step.dbValues).length
+        ? step.dbValues
+        : Object.fromEntries(formColumns(table).map(c => [c, `$form.${c}`]));
+      const where = step.dbWhere && Object.keys(step.dbWhere).length
+        ? step.dbWhere
+        : { id: '$item.id' };
+      return { ...base, type: 'dbUpdate', config: { projectId, table, values, where } };
     }
     case 'dbDelete': {
-      return { ...base, type: 'dbDelete', config: { projectId, table: step.dbTable ?? '', where: { id: '$item.id' } } };
+      const where = step.dbWhere && Object.keys(step.dbWhere).length
+        ? step.dbWhere
+        : { id: '$item.id' };
+      return { ...base, type: 'dbDelete', config: { projectId, table: step.dbTable ?? '', where } };
     }
     case 'navigate':
       return { ...base, type: 'navigate', config: { route: step.navigateTo ?? '/', replace: !!step.navigateReplace } };
@@ -98,24 +108,31 @@ function stepToSchema(step: ActionStep, id: string, projectId: string): ActionSc
       return { ...base, type: 'resetState', config: { path: step.stateTarget ?? '' } };
     case 'toast':
       return { ...base, type: 'toast', config: { message: step.toastMessage ?? '', type: step.toastType ?? 'info' } };
-    case 'signUp':
+    case 'signUp': {
+      const ab = step.authBindings ?? {};
       return {
         ...base, type: 'signUp',
         config: {
           url: `/api/app-auth/${projectId}/signup`,
-          email: '$form.email', password: '$form.password', name: '$form.username',
+          email: ab.email || '$form.email',
+          password: ab.password || '$form.password',
+          name: ab.name || '$form.username',
           userPath: 'user', tokenPath: 'token',
         },
       };
-    case 'signIn':
+    }
+    case 'signIn': {
+      const ab = step.authBindings ?? {};
       return {
         ...base, type: 'signIn',
         config: {
           url: `/api/app-auth/${projectId}/login`,
-          email: '$form.email', password: '$form.password',
+          email: ab.email || '$form.email',
+          password: ab.password || '$form.password',
           userPath: 'user', tokenPath: 'token',
         },
       };
+    }
     case 'signOut':
       return { ...base, type: 'signOut', config: { url: `/api/app-auth/${projectId}/logout`, userPath: 'user', tokenPath: 'token' } };
     case 'delay':

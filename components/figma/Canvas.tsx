@@ -1945,6 +1945,19 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
           onToggleRequiresAuth={(layerId, value) => updateLayer(layerId, { requiresAuth: value })}
           onSetDataSource={onSetDataSource}
           onSetClickAction={onSetClickAction}
+          onRemoveStep={(layerId, flowId, stepId) => {
+            const store = useFigmaStore.getState();
+            store.deleteActionStep(flowId, stepId);
+            // If flow is now empty, clean up
+            const flow = useFigmaStore.getState().actionFlows.find(f => f.id === flowId);
+            if (flow && flow.steps.length === 0) {
+              store.setLayerEvent(layerId, 'onClick', []);
+              store.deleteActionFlow(flowId);
+            }
+          }}
+          onAddStepToFlow={(_layerId, flowId) => {
+            useFigmaStore.getState().addActionStep(flowId, { type: 'navigate', label: '' });
+          }}
           onEditText={(layerId) => { setSelection([layerId]); setTextEditId(layerId); }}
           onBindText={(layerId, anchor) => setBindPicker({ layerId, mode: 'prop', prop: 'text', current: flatAll.find(l => l.id === layerId)?.bindings?.text, anchor })}
           onSetInputType={(layerId, type, placeholder) => {

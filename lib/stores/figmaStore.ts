@@ -204,6 +204,16 @@ export interface ActionStep {
   // CRUD steps (dbInsert/dbUpdate/dbDelete): the target table. Column→value and
   // where mapping is derived from the table schema by convention at build time.
   dbTable?: string;
+  /** Column→expression map for dbInsert/dbUpdate values. When empty, auto-fills from table schema. */
+  dbValues?: Record<string, string>;
+  /** Column→expression map for dbUpdate/dbDelete where clause. When empty, defaults to {id: '$item.id'}. */
+  dbWhere?: Record<string, string>;
+  /** Auth action bindings (signIn/signUp: which state vars hold email/password/name). */
+  authBindings?: {
+    email?: string;    // default "$form.email"
+    password?: string; // default "$form.password"
+    name?: string;     // default "$form.username" (signUp only)
+  };
 }
 
 export interface ActionFlow {
