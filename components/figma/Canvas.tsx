@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { useFigmaStore, type FigmaLayer, type LayerType, type ToolType, type Viewport, type LayoutGrid, type VectorPoint, type AutoLayout, type Interaction } from '@/lib/stores/figmaStore';
+import { useFigmaStore, type FigmaLayer, type LayerType, type ToolType, type Viewport, type LayoutGrid, type VectorPoint, type AutoLayout, type Interaction, type ActionStep, type ActionStepType } from '@/lib/stores/figmaStore';
 import type { RemoteCursor } from '@/hooks/useFigmaCollaboration';
 import BindingPicker from './BindingPicker';
 import CanvasBindingOverlay, { type ClickActionKind, type ScreenOption } from './CanvasBindingOverlay';
@@ -650,6 +650,17 @@ function findLayerInTree(layers: FigmaLayer[], id: string): FigmaLayer | null {
   return null;
 }
 
+// Parent id of a layer (null = top level; undefined = not found).
+function findParentIdOf(layers: FigmaLayer[], id: string, parent: string | null = null): string | null | undefined {
+  for (const l of layers) {
+    if (l.id === id) return parent;
+    if (l.children) { const r = findParentIdOf(l.children, id, l.id); if (r !== undefined) return r; }
+  }
+  return undefined;
+}
+
+const REPARENT_CONTAINERS: LayerType[] = ['frame', 'group', 'section', 'component', 'instance'];
+
 type WorldEntry = FigmaLayer & { wx: number; wy: number };
 
 function flattenWorldSpace(layers: FigmaLayer[], ox = 0, oy = 0): WorldEntry[] {
@@ -944,7 +955,7 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
     updateVectorPoint, deleteVectorPoints,
     components, createComponent, detachInstance, deleteLayer, duplicateLayer, paste,
     editorMode, showRulers, showGrid,
-    actionFlows,
+    actionFlows, moveLayerToParent,
   } = useFigmaStore();
 
   const currentLayers = React.useMemo(() => layers[activePageId] ?? [], [layers, activePageId]);
@@ -1681,8 +1692,38 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
       const x = isClick ? drag.startWX - w / 2 : Math.min(drag.startWX, drag.curWX);
       const y = isClick ? drag.startWY - h / 2 : Math.min(drag.startWY, drag.curWY);
       commitNewLayer(layerType, x, y, w, h);
+      return;
     }
-  }, [commitNewLayer]);
+
+    // Drag-into-frame reparenting: after moving a single layer, nest it into the
+    // deepest frame under its center (or move to top level if dragged out).
+    if (drag.mode === 'move') {
+      const sel = selectionRef.current;
+      if (sel.length !== 1) return;
+      const id = sel[0];
+      const roots = layersRef.current;
+      const flat = flattenWorldSpace(roots);
+      const me = flat.find(l => l.id === id);
+      if (!me) return;
+      const cx = me.wx + me.width / 2;
+      const cy = me.wy + (me.type === 'line' ? 0 : me.height) / 2;
+
+      let target: { id: string; area: number } | null = null;
+      for (const l of flat) {
+        if (l.id === id) continue;
+        if (!REPARENT_CONTAINERS.includes(l.type)) continue;
+        if (findLayerInTree(me.children ?? [], l.id)) continue; // skip own descendants
+        if (cx >= l.wx && cx <= l.wx + l.width && cy >= l.wy && cy <= l.wy + l.height) {
+          const area = Math.max(1, l.width) * Math.max(1, l.height);
+          if (!target || area < target.area) target = { id: l.id, area };
+        }
+      }
+      const targetId = target?.id ?? null;
+      const curParent = findParentIdOf(roots, id) ?? null;
+      if (targetId !== curParent) moveLayerToParent(id, targetId, null);
+      return;
+    }
+  }, [commitNewLayer, moveLayerToParent]);
 
   // Node point drag handler
   const handleNodePointMouseDown = (e: React.MouseEvent, layerId: string, pointId: string) => {
@@ -1735,6 +1776,12 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
     }));
   }, [currentLayers]);
 
+  // Top-level frames are screens — eligible for the "Requires login" toggle.
+  const screenFrameIds = React.useMemo(
+    () => currentLayers.filter(l => l.type === 'frame' || l.type === 'component' || l.type === 'section').map(l => l.id),
+    [currentLayers],
+  );
+
   // DB table names for the "Repeat with data" picker.
   const dbTables = useFigmaStore(s => s.database?.tables ?? []);
   const tableNames = React.useMemo(() => dbTables.map(t => t.name), [dbTables]);
@@ -1746,9 +1793,9 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
     else updateLayer(layerId, { dataSource: { table }, repeatFor: { items: `$${table}`, as: 'item' } });
   }, [updateLayer]);
 
-  // Wire a layer's onClick to a real action flow (sign up / log in / sign out,
-  // optionally navigating on success). Canvas-native — no right panel.
-  const onSetClickAction = useCallback((layerId: string, kind: ClickActionKind, navigateTo?: string) => {
+  // Wire a layer's onClick to a real action flow: auth (signUp/signIn/signOut),
+  // CRUD (create/update/delete a table row), optionally navigating on success.
+  const onSetClickAction = useCallback((layerId: string, kind: ClickActionKind, opts?: { navigateTo?: string; table?: string }) => {
     const store = useFigmaStore.getState();
     const layer = flattenWorldSpace(store.layers[store.activePageId] ?? []).find(l => l.id === layerId);
     const existingId = layer?.layerEvents?.onClick?.[0];
@@ -1759,10 +1806,14 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
       return;
     }
 
+    const CRUD_STEP: Record<string, ActionStepType> = { create: 'dbInsert', update: 'dbUpdate', delete: 'dbDelete' };
     const now = Date.now();
-    const steps = [
-      { id: `step-${now}-0`, type: kind },
-      ...(navigateTo ? [{ id: `step-${now}-1`, type: 'navigate' as const, navigateTo }] : []),
+    const primary = CRUD_STEP[kind]
+      ? { id: `step-${now}-0`, type: CRUD_STEP[kind], dbTable: opts?.table }
+      : { id: `step-${now}-0`, type: kind as ActionStepType };
+    const steps: ActionStep[] = [
+      primary,
+      ...(opts?.navigateTo ? [{ id: `step-${now}-1`, type: 'navigate' as ActionStepType, navigateTo: opts.navigateTo }] : []),
     ];
 
     if (existingId && store.actionFlows.some(f => f.id === existingId)) {
@@ -1890,6 +1941,8 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
           screens={screenOptions}
           actionFlows={actionFlows}
           tables={tableNames}
+          screenIds={screenFrameIds}
+          onToggleRequiresAuth={(layerId, value) => updateLayer(layerId, { requiresAuth: value })}
           onSetDataSource={onSetDataSource}
           onSetClickAction={onSetClickAction}
           onEditText={(layerId) => { setSelection([layerId]); setTextEditId(layerId); }}

@@ -20,6 +20,7 @@ import type { ComponentSchema } from "@/lib/runtime/schema";
 import { StateEngine } from "@/lib/runtime/state";
 import { BindingEngine } from "@/lib/runtime/bindings";
 import { styleToCss } from "@/lib/runtime/styleToCss";
+import { previewLog } from "@/lib/runtime/previewLog";
 import { useRuntime, type RuntimeHandle } from "@/components/runtime/RuntimeProvider";
 import DataTable from "@/components/runtime/DataTable";
 import Timeline from "@/components/runtime/Timeline";
@@ -129,10 +130,29 @@ function RenderNode({
     const items = engine.resolveListItems(component);
     const as = component.repeatFor.as;
     const children = component.children ?? [];
+    if (previewLog.active) {
+      previewLog.push(
+        children.length === 0 ? "error" : "debug",
+        "repeat",
+        `${component.type} · ${items.length} row(s) × ${children.length} child layer(s) (as "${as}")`,
+        children.length === 0 ? "the repeating frame has NO child layers — the text must be nested INSIDE it" : undefined,
+      );
+    }
+    // The children are absolutely positioned within the frame, so each repeated
+    // row needs its own positioning context + explicit height, otherwise every
+    // row stacks at the same coordinates. Row height = the children's bounding box.
+    const rowHeight = Math.max(
+      24,
+      ...children.map((ch) => {
+        const top = Number(ch.style?.layout?.top ?? 0) || 0;
+        const h = typeof ch.style?.sizing?.height === "number" ? (ch.style.sizing.height as number) : 0;
+        return top + h;
+      }),
+    );
     return (
-      <div data-repeat={component.type} style={css}>
+      <div data-repeat={component.type} style={{ ...css, overflow: css.overflow ?? "auto" }}>
         {items.map((item, i) => (
-          <div key={i} data-index={i}>
+          <div key={i} data-index={i} style={{ position: "relative", height: rowHeight }}>
             {children.map((ch) => (
               <RenderNode
                 key={ch.id}

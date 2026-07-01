@@ -11,6 +11,7 @@
 import type { ActionSchema, ActionType, ActionRef } from "./schema";
 import { parse, evaluate, type EvalContext } from "./expressions";
 import { StateEngine } from "./state";
+import { previewLog } from "./previewLog";
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -217,7 +218,9 @@ export class ActionRegistry {
     config: Record<string, unknown>,
     ctx: ActionContext
   ): Record<string, unknown> {
-    const evalCtx = ctx.state.getEvalContext();
+    // Merge event/loop context (ctx.params, e.g. the repeater's `item`) over
+    // state, so per-row expressions like $item.id resolve in an action's config.
+    const evalCtx = { ...ctx.state.getEvalContext(), ...(ctx.params as Record<string, unknown> ?? {}) };
     const resolved: Record<string, unknown> = {};
 
     for (const [key, value] of Object.entries(config)) {
@@ -309,18 +312,99 @@ export class ActionRegistry {
     this.register("dbQuery", async (config, ctx) => {
       const projectId = String(config.projectId || "");
       const url = `/api/db/${projectId}`;
+      const sql = String(config.sql || "");
       const init = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sql: String(config.sql || ""), params: (config.params as unknown[]) || [] }),
+        body: JSON.stringify({ sql, params: (config.params as unknown[]) || [] }),
       };
+      if (previewLog.active) previewLog.push("info", "db", `query → ${sql}`);
       const response = ctx.api
         ? await ctx.api.fetch(url, init)
         : await fetch(url, { ...init, credentials: "include" });
-      const data = (await response.json().catch(() => ({}))) as { rows?: unknown[] };
+      const data = (await response.json().catch(() => ({}))) as { rows?: unknown[]; error?: string };
+      if (!response.ok || data.error) {
+        const err = data.error || `HTTP ${response.status}`;
+        if (previewLog.active) previewLog.push("error", "db", `query failed: ${err}`);
+        if (config.storePath) ctx.state.set(String(config.storePath), []);
+        return [];
+      }
       const rows = Array.isArray(data.rows) ? data.rows : [];
+      if (previewLog.active) {
+        previewLog.push("success", "db", `${rows.length} row(s) → $${String(config.storePath ?? "")}`,
+          rows.length ? JSON.stringify(rows[0]) : undefined);
+      }
       if (config.storePath) ctx.state.set(String(config.storePath), rows);
       return rows;
+    });
+
+    // ── CRUD writes to the managed DB ──────────────────────────
+    // Nested value/where maps hold expressions ($form.email); resolveConfig
+    // only evaluates top-level $strings, so we resolve them here against state.
+    const resolveMap = (m: unknown, ctx: ActionContext): Record<string, unknown> => {
+      const out: Record<string, unknown> = {};
+      // Include ctx.params (repeater loop item) so where:{id:'$item.id'} resolves.
+      const evalCtx = { ...ctx.state.getEvalContext(), ...(ctx.params as Record<string, unknown> ?? {}) };
+      for (const [k, v] of Object.entries((m as Record<string, unknown>) || {})) {
+        if (typeof v === "string" && v.startsWith("$")) {
+          try { out[k] = evaluate(parse(v), evalCtx); } catch { out[k] = v; }
+        } else out[k] = v;
+      }
+      return out;
+    };
+    const runDml = async (ctx: ActionContext, projectId: string, sql: string, params: unknown[]): Promise<Record<string, unknown>[]> => {
+      const url = `/api/db/${projectId}`;
+      const init = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sql, params }) };
+      if (previewLog.active) previewLog.push("info", "db", sql);
+      const response = ctx.api ? await ctx.api.fetch(url, init) : await fetch(url, { ...init, credentials: "include" });
+      const data = (await response.json().catch(() => ({}))) as { rows?: Record<string, unknown>[]; error?: string };
+      if (!response.ok || data.error) {
+        const err = data.error || `HTTP ${response.status}`;
+        if (previewLog.active) previewLog.push("error", "db", `mutation failed: ${err}`);
+        throw new Error(err);
+      }
+      if (previewLog.active) previewLog.push("success", "db", `ok · ${(data.rows?.length ?? 0)} row(s) affected`);
+      return data.rows || [];
+    };
+
+    this.register("dbInsert", async (config, ctx) => {
+      const projectId = String(config.projectId || "");
+      const table = String(config.table || "");
+      const values = resolveMap(config.values, ctx);
+      const cols = Object.keys(values);
+      if (!table || cols.length === 0) return null;
+      const sql = `INSERT INTO ${table} (${cols.map(c => `"${c}"`).join(", ")}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(", ")}) RETURNING *`;
+      const rows = await runDml(ctx, projectId, sql, cols.map(c => values[c]));
+      if (config.storePath) ctx.state.set(String(config.storePath), rows[0] ?? null);
+      return rows[0] ?? null;
+    });
+
+    this.register("dbUpdate", async (config, ctx) => {
+      const projectId = String(config.projectId || "");
+      const table = String(config.table || "");
+      const values = resolveMap(config.values, ctx);
+      const where = resolveMap(config.where, ctx);
+      const cols = Object.keys(values);
+      const wcols = Object.keys(where);
+      if (!table || cols.length === 0 || wcols.length === 0) return null;
+      const sets = cols.map((c, i) => `"${c}" = $${i + 1}`).join(", ");
+      const conds = wcols.map((c, i) => `"${c}" = $${cols.length + i + 1}`).join(" AND ");
+      const sql = `UPDATE ${table} SET ${sets} WHERE ${conds} RETURNING *`;
+      const rows = await runDml(ctx, projectId, sql, [...cols.map(c => values[c]), ...wcols.map(c => where[c])]);
+      if (config.storePath) ctx.state.set(String(config.storePath), rows[0] ?? null);
+      return rows[0] ?? null;
+    });
+
+    this.register("dbDelete", async (config, ctx) => {
+      const projectId = String(config.projectId || "");
+      const table = String(config.table || "");
+      const where = resolveMap(config.where, ctx);
+      const wcols = Object.keys(where);
+      if (!table || wcols.length === 0) return null;
+      const conds = wcols.map((c, i) => `"${c}" = $${i + 1}`).join(" AND ");
+      const sql = `DELETE FROM ${table} WHERE ${conds}`;
+      await runDml(ctx, projectId, sql, wcols.map(c => where[c]));
+      return true;
     });
 
     this.register("mutate", async (config, ctx) => {

@@ -18,8 +18,9 @@ import type { ActionFlow, FigmaLayer, InputFieldType, Viewport } from '@/lib/sto
 
 type WorldLayer = FigmaLayer & { wx: number; wy: number };
 
-export type ClickActionKind = 'none' | 'signUp' | 'signIn' | 'signOut';
+export type ClickActionKind = 'none' | 'signUp' | 'signIn' | 'signOut' | 'create' | 'update' | 'delete';
 export interface ScreenOption { name: string; route: string }
+const CRUD_KINDS: ClickActionKind[] = ['create', 'update', 'delete'];
 
 const INPUT_TYPES: InputFieldType[] = ['text', 'email', 'password', 'number', 'tel', 'url', 'textarea', 'date', 'checkbox'];
 
@@ -35,23 +36,29 @@ function varLabel(expr?: string): string | null {
   return m ? m[1] : expr.trim();
 }
 
+const STEP_TO_KIND: Record<string, ClickActionKind> = {
+  signUp: 'signUp', signIn: 'signIn', signOut: 'signOut',
+  dbInsert: 'create', dbUpdate: 'update', dbDelete: 'delete',
+};
+
 /** Read the current click action wired to a layer (via its onClick action flow). */
-function currentClickAction(layer: WorldLayer | undefined, flows: ActionFlow[]): { kind: ClickActionKind; navigateTo?: string } {
+function currentClickAction(layer: WorldLayer | undefined, flows: ActionFlow[]): { kind: ClickActionKind; navigateTo?: string; table?: string } {
   const flowId = layer?.layerEvents?.onClick?.[0];
   const flow = flowId ? flows.find(f => f.id === flowId) : undefined;
   if (!flow) return { kind: 'none' };
-  const auth = flow.steps.find(s => s.type === 'signUp' || s.type === 'signIn' || s.type === 'signOut');
+  const primary = flow.steps.find(s => STEP_TO_KIND[s.type]);
   const nav = flow.steps.find(s => s.type === 'navigate');
-  return { kind: (auth?.type as ClickActionKind) ?? 'none', navigateTo: nav?.navigateTo };
+  return { kind: primary ? STEP_TO_KIND[primary.type] : 'none', navigateTo: nav?.navigateTo, table: primary?.dbTable };
 }
 
 const ACTION_LABELS: Record<ClickActionKind, string> = {
   none: 'No action', signUp: 'Sign up', signIn: 'Log in', signOut: 'Sign out',
+  create: 'Create record', update: 'Update record', delete: 'Delete record',
 };
 
 export default function CanvasBindingOverlay({
-  layersWorld, selection, viewport, designMode, screens, actionFlows, tables,
-  onSetInputType, onBindValue, onSetClickAction, onEditText, onBindText, onSetDataSource,
+  layersWorld, selection, viewport, designMode, screens, actionFlows, tables, screenIds,
+  onSetInputType, onBindValue, onSetClickAction, onEditText, onBindText, onSetDataSource, onToggleRequiresAuth,
 }: {
   layersWorld: WorldLayer[];
   selection: string[];
@@ -60,12 +67,14 @@ export default function CanvasBindingOverlay({
   screens: ScreenOption[];
   actionFlows: ActionFlow[];
   tables: string[];
+  screenIds: string[];
   onSetInputType: (layerId: string, type: InputFieldType, placeholder: string) => void;
   onBindValue: (layerId: string, anchor: DOMRect) => void;
-  onSetClickAction: (layerId: string, kind: ClickActionKind, navigateTo?: string) => void;
+  onSetClickAction: (layerId: string, kind: ClickActionKind, opts?: { navigateTo?: string; table?: string }) => void;
   onEditText: (layerId: string) => void;
   onBindText: (layerId: string, anchor: DOMRect) => void;
   onSetDataSource: (layerId: string, table: string | null) => void;
+  onToggleRequiresAuth: (layerId: string, value: boolean) => void;
 }) {
   if (!designMode) return null;
   const z = viewport.zoom;
@@ -153,6 +162,21 @@ export default function CanvasBindingOverlay({
             boxShadow: '0 4px 16px rgba(0,0,0,0.5)', pointerEvents: 'all',
           }}
           onMouseDown={e => e.stopPropagation()}>
+            {/* Screen frames: require an authenticated user to view */}
+            {screenIds.includes(selectedClickable.id) && (
+              <>
+                <button
+                  onClick={e => { e.stopPropagation(); onToggleRequiresAuth(selectedClickable.id, !selectedClickable.requiresAuth); }}
+                  title="Redirect to login when no user is signed in"
+                  style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 4,
+                    border: `1px solid ${selectedClickable.requiresAuth ? 'rgba(13,153,255,0.6)' : '#3c3c3c'}`,
+                    background: selectedClickable.requiresAuth ? 'rgba(13,153,255,0.15)' : '#2a2a2a',
+                    color: selectedClickable.requiresAuth ? '#5cb3ff' : '#ebebeb', fontSize: 11, cursor: 'pointer' }}>
+                  {selectedClickable.requiresAuth ? '🔒' : '🔓'} Requires login
+                </button>
+                <div style={{ width: 1, height: 18, background: '#3c3c3c', margin: '0 2px' }} />
+              </>
+            )}
             {/* Container layers: bind to a DB table → live repeating list */}
             {(selectedClickable.type === 'frame' || selectedClickable.type === 'group') && (
               <>
@@ -188,18 +212,28 @@ export default function CanvasBindingOverlay({
             <span style={{ fontSize: 10, color: '#888' }}>On click</span>
             <select
               value={clickAction.kind}
-              onChange={e => onSetClickAction(selectedClickable.id, e.target.value as ClickActionKind, clickAction.navigateTo)}
+              onChange={e => onSetClickAction(selectedClickable.id, e.target.value as ClickActionKind, { navigateTo: clickAction.navigateTo, table: clickAction.table })}
               style={{ background: '#0d0d0d', border: '1px solid #333', borderRadius: 4, color: '#ebebeb', fontSize: 11, padding: '3px 6px', outline: 'none', cursor: 'pointer' }}>
               {(Object.keys(ACTION_LABELS) as ClickActionKind[]).map(k => (
                 <option key={k} value={k}>{ACTION_LABELS[k]}</option>
               ))}
             </select>
+            {/* CRUD kinds need a target table */}
+            {CRUD_KINDS.includes(clickAction.kind) && (
+              <select
+                value={clickAction.table ?? ''}
+                onChange={e => onSetClickAction(selectedClickable.id, clickAction.kind, { navigateTo: clickAction.navigateTo, table: e.target.value || undefined })}
+                style={{ background: '#0d0d0d', border: '1px solid #333', borderRadius: 4, color: '#ebebeb', fontSize: 11, padding: '3px 6px', outline: 'none', cursor: 'pointer' }}>
+                <option value="">— table —</option>
+                {tables.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            )}
             {clickAction.kind !== 'none' && screens.length > 0 && (
               <>
                 <span style={{ fontSize: 10, color: '#888' }}>then go to</span>
                 <select
                   value={clickAction.navigateTo ?? ''}
-                  onChange={e => onSetClickAction(selectedClickable.id, clickAction.kind, e.target.value || undefined)}
+                  onChange={e => onSetClickAction(selectedClickable.id, clickAction.kind, { navigateTo: e.target.value || undefined, table: clickAction.table })}
                   style={{ background: '#0d0d0d', border: '1px solid #333', borderRadius: 4, color: '#ebebeb', fontSize: 11, padding: '3px 6px', outline: 'none', cursor: 'pointer' }}>
                   <option value="">— stay —</option>
                   {screens.map(s => <option key={s.route} value={s.route}>{s.name}</option>)}

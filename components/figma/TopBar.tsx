@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
-import { Share2, Play, Zap, ChevronDown } from 'lucide-react';
+import { Share2, Play, Zap, ChevronDown, GitCommit, Download } from 'lucide-react';
 import { useFigmaStore } from '@/lib/stores/figmaStore';
+import { commitProjectFromFigma, exportProjectFromFigma, EXPORT_FRAMEWORKS, type ExportFramework } from '@/lib/stores/commitExport';
 import MLogo from '@/app/M.png';
 
 const ZOOM_PRESETS = [
@@ -28,6 +29,29 @@ export default function TopBar({ onExit }: TopBarProps) {
   const [titleVal, setTitleVal] = useState(fileName);
   const [menuOpen, setMenuOpen] = useState(false);
   const [zoomOpen, setZoomOpen] = useState(false);
+  const [busy, setBusy] = useState<'commit' | 'export' | null>(null);
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  const [framework, setFramework] = useState<ExportFramework>('react');
+
+  const showToast = (msg: string, ok: boolean) => {
+    setToast({ msg, ok });
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  const handleCommit = async () => {
+    setBusy('commit');
+    const r = await commitProjectFromFigma(framework);
+    setBusy(null);
+    showToast(r.ok ? `Committed v${r.version} — live in runtime` : r.error || 'Commit failed', r.ok);
+  };
+
+  const handleExport = async () => {
+    setBusy('export');
+    const r = await exportProjectFromFigma(framework);
+    setBusy(null);
+    if (!r.ok) showToast(r.error || 'Export failed', false);
+    else showToast(`Exported ${framework} — ZIP downloaded`, true);
+  };
 
   const menuRef = useRef<HTMLDivElement>(null);
   const zoomRef = useRef<HTMLDivElement>(null);
@@ -313,6 +337,53 @@ export default function TopBar({ onExit }: TopBarProps) {
         {/* Separator */}
         <div style={{ width: 1, height: 20, background: '#3c3c3c' }} />
 
+        {/* Target framework (only schema-driven, data-driven targets) */}
+        <select
+          value={framework}
+          onChange={e => setFramework(e.target.value as ExportFramework)}
+          title="Target framework for Commit / Export"
+          style={{
+            height: 28, background: '#2c2c2c', border: '1px solid #3c3c3c', borderRadius: 6,
+            color: '#ebebeb', fontSize: 12, padding: '0 8px', cursor: 'pointer',
+          }}
+        >
+          {EXPORT_FRAMEWORKS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+        </select>
+
+        {/* Export ZIP (standalone runnable app) */}
+        <button
+          title="Export a standalone React app (ZIP)"
+          onClick={handleExport}
+          disabled={busy !== null}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, height: 28, padding: '0 10px', borderRadius: 6,
+            background: 'transparent', border: '1px solid #3c3c3c', cursor: busy ? 'wait' : 'pointer',
+            color: '#ebebeb', fontSize: 12, fontWeight: 500,
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+        >
+          <Download size={13} />
+          {busy === 'export' ? 'Exporting…' : 'Export'}
+        </button>
+
+        {/* Commit (build the figma schema → version it → live in runtime) */}
+        <button
+          title="Commit this design so the runtime app reflects it"
+          onClick={handleCommit}
+          disabled={busy !== null}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, height: 28, padding: '0 12px', borderRadius: 6,
+            background: '#0d99ff', border: 'none', cursor: busy ? 'wait' : 'pointer',
+            color: '#fff', fontSize: 12, fontWeight: 600,
+          }}
+          onMouseEnter={e => { if (!busy) (e.currentTarget as HTMLElement).style.background = '#0a7fd6'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#0d99ff'; }}
+        >
+          <GitCommit size={13} />
+          {busy === 'commit' ? 'Committing…' : 'Commit'}
+        </button>
+
         {/* Share */}
         <button style={{
           display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px',
@@ -325,6 +396,18 @@ export default function TopBar({ onExit }: TopBarProps) {
           <Share2 size={13} />
           Share
         </button>
+
+        {/* Commit/Export status toast */}
+        {toast && (
+          <div style={{
+            position: 'fixed', top: 52, right: 16, zIndex: 5000, maxWidth: 340,
+            background: '#1e1e1e', border: `1px solid ${toast.ok ? '#00c864' : '#ff4444'}`, borderRadius: 8,
+            padding: '10px 14px', color: toast.ok ? '#9be8bf' : '#ffb4a8', fontSize: 12,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+          }}>
+            {toast.ok ? '✓ ' : '✗ '}{toast.msg}
+          </div>
+        )}
 
         {/* Live preview — runs the real runtime (data-driven) */}
         <button

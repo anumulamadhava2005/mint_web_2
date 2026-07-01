@@ -114,7 +114,7 @@ export default function FigmaEditor({ projectId, embedded, onExit }: Props) {
 
       const toolMap: Record<string, ToolType> = {
         v: 'select', k: 'scale', f: 'frame', r: 'rect', o: 'ellipse',
-        l: 'line', p: 'pen', t: 'text', h: 'hand', c: 'comment',
+        l: 'line', p: 'pen', t: 'text', i: 'input', h: 'hand', c: 'comment',
       };
 
       const key = e.key.toLowerCase();
@@ -141,6 +141,17 @@ export default function FigmaEditor({ projectId, embedded, onExit }: Props) {
       if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
         e.preventDefault();
         selection.forEach(id => duplicateLayer(id));
+        return;
+      }
+
+      // Ctrl+] / Ctrl+[ — z-order within the layer's siblings (Shift = front/back)
+      if ((e.ctrlKey || e.metaKey) && (e.key === ']' || e.key === '[')) {
+        e.preventDefault();
+        const forward = e.key === ']';
+        selection.forEach(id => {
+          if (e.shiftKey) (forward ? bringToFront : sendToBack)(id);
+          else (forward ? bringForward : sendBackward)(id);
+        });
         return;
       }
 

@@ -176,6 +176,7 @@ export type ActionStepType =
   | 'navigate' | 'goBack' | 'openModal' | 'closeModal'
   | 'setState' | 'updateState' | 'resetState'
   | 'fetch' | 'mutate'
+  | 'dbInsert' | 'dbUpdate' | 'dbDelete'
   | 'toast' | 'alert'
   | 'condition'
   | 'delay'
@@ -200,6 +201,9 @@ export interface ActionStep {
   elseSteps?: ActionStep[];
   delayMs?: number;
   customCode?: string;
+  // CRUD steps (dbInsert/dbUpdate/dbDelete): the target table. Column→value and
+  // where mapping is derived from the table schema by convention at build time.
+  dbTable?: string;
 }
 
 export interface ActionFlow {
@@ -398,6 +402,8 @@ export interface FigmaLayer {
   // Pairs with `repeatFor` (items: "$<table>", as: "item"); the table's rows are
   // loaded into that state var on screen mount.
   dataSource?: { table: string };
+  // Screen frames only: require an authenticated user to view (else redirect to login).
+  requiresAuth?: boolean;
 }
 
 export interface FigmaPage {
@@ -441,6 +447,8 @@ interface FigmaState {
   setHovered: (id: string | null) => void;
   addLayer: (layer: FigmaLayer) => void;
   addLayerToParent: (layer: FigmaLayer, parentId: string) => void;
+  /** Reparent/reorder a layer. newParentId null = top level. index = position among the new siblings. */
+  moveLayerToParent: (layerId: string, newParentId: string | null, index?: number | null) => void;
   updateLayer: (id: string, partial: Partial<FigmaLayer>) => void;
   deleteLayer: (id: string) => void;
   duplicateLayer: (id: string) => void;
@@ -603,6 +611,49 @@ function addChildToParent(layers: FigmaLayer[], parentId: string, child: FigmaLa
   });
 }
 
+// Insert a child into a parent's children at a specific index (append if null).
+function insertChildAt(layers: FigmaLayer[], parentId: string, child: FigmaLayer, index?: number | null): FigmaLayer[] {
+  return layers.map(l => {
+    if (l.id === parentId) {
+      const arr = [...(l.children ?? [])];
+      const at = index == null ? arr.length : Math.max(0, Math.min(index, arr.length));
+      arr.splice(at, 0, child);
+      return { ...l, children: arr };
+    }
+    if (l.children) return { ...l, children: insertChildAt(l.children, parentId, child, index) };
+    return l;
+  });
+}
+
+// Reorder a layer within its own sibling list (nested-aware z-order).
+function reorderSibling(
+  layers: FigmaLayer[], id: string, mode: 'forward' | 'backward' | 'front' | 'back',
+): FigmaLayer[] {
+  const idx = layers.findIndex(l => l.id === id);
+  if (idx >= 0) {
+    const arr = [...layers];
+    const [item] = arr.splice(idx, 1);
+    if (mode === 'forward') arr.splice(Math.min(idx + 1, arr.length), 0, item);
+    else if (mode === 'backward') arr.splice(Math.max(idx - 1, 0), 0, item);
+    else if (mode === 'front') arr.push(item);
+    else arr.unshift(item);
+    return arr;
+  }
+  return layers.map(l => (l.children ? { ...l, children: reorderSibling(l.children, id, mode) } : l));
+}
+
+// Absolute (world) position of a layer = sum of ancestor offsets. Null if not found.
+function worldPosOf(layers: FigmaLayer[], id: string, ox = 0, oy = 0): { x: number; y: number } | null {
+  for (const l of layers) {
+    if (l.id === id) return { x: ox + l.x, y: oy + l.y };
+    if (l.children) {
+      const r = worldPosOf(l.children, id, ox + l.x, oy + l.y);
+      if (r) return r;
+    }
+  }
+  return null;
+}
+
 function updateLayerById(layers: FigmaLayer[], id: string, partial: Partial<FigmaLayer>): FigmaLayer[] {
   return layers.map(l => {
     if (l.id === id) return { ...l, ...partial };
@@ -752,6 +803,35 @@ export const useFigmaStore = create<FigmaState>((set, get) => ({
     });
   },
 
+  moveLayerToParent: (layerId, newParentId, index) => {
+    get().pushHistory();
+    set(s => {
+      const pageId = s.activePageId;
+      const roots = s.layers[pageId] ?? [];
+      const layer = findLayerById(roots, layerId);
+      if (!layer) return s;
+      if (newParentId === layerId) return s;
+      // Prevent cycles: can't move a layer into its own descendant.
+      if (newParentId && findLayerById(layer.children ?? [], newParentId)) return s;
+
+      // Preserve visual position: convert to the new parent's local space.
+      const lw = worldPosOf(roots, layerId) ?? { x: layer.x, y: layer.y };
+      const pw = newParentId ? (worldPosOf(roots, newParentId) ?? { x: 0, y: 0 }) : { x: 0, y: 0 };
+      const moved: FigmaLayer = { ...layer, x: Math.round(lw.x - pw.x), y: Math.round(lw.y - pw.y) };
+
+      let next = deleteLayerById(roots, layerId);
+      if (newParentId) {
+        next = insertChildAt(next, newParentId, moved, index);
+      } else {
+        const arr = [...next];
+        const at = index == null ? arr.length : Math.max(0, Math.min(index, arr.length));
+        arr.splice(at, 0, moved);
+        next = arr;
+      }
+      return { layers: { ...s.layers, [pageId]: next } };
+    });
+  },
+
   updateLayer: (id, partial) => {
     get().pushHistory();
     set(s => {
@@ -818,46 +898,16 @@ export const useFigmaStore = create<FigmaState>((set, get) => ({
   },
 
   bringForward: (id) =>
-    set(s => {
-      const pageId = s.activePageId;
-      const arr = [...(s.layers[pageId] ?? [])];
-      const idx = arr.findIndex(l => l.id === id);
-      if (idx < 0 || idx >= arr.length - 1) return s;
-      [arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]];
-      return { layers: { ...s.layers, [pageId]: arr } };
-    }),
+    set(s => ({ layers: { ...s.layers, [s.activePageId]: reorderSibling(s.layers[s.activePageId] ?? [], id, 'forward') } })),
 
   sendBackward: (id) =>
-    set(s => {
-      const pageId = s.activePageId;
-      const arr = [...(s.layers[pageId] ?? [])];
-      const idx = arr.findIndex(l => l.id === id);
-      if (idx <= 0) return s;
-      [arr[idx], arr[idx - 1]] = [arr[idx - 1], arr[idx]];
-      return { layers: { ...s.layers, [pageId]: arr } };
-    }),
+    set(s => ({ layers: { ...s.layers, [s.activePageId]: reorderSibling(s.layers[s.activePageId] ?? [], id, 'backward') } })),
 
   bringToFront: (id) =>
-    set(s => {
-      const pageId = s.activePageId;
-      const arr = [...(s.layers[pageId] ?? [])];
-      const idx = arr.findIndex(l => l.id === id);
-      if (idx < 0) return s;
-      const [layer] = arr.splice(idx, 1);
-      arr.push(layer);
-      return { layers: { ...s.layers, [pageId]: arr } };
-    }),
+    set(s => ({ layers: { ...s.layers, [s.activePageId]: reorderSibling(s.layers[s.activePageId] ?? [], id, 'front') } })),
 
   sendToBack: (id) =>
-    set(s => {
-      const pageId = s.activePageId;
-      const arr = [...(s.layers[pageId] ?? [])];
-      const idx = arr.findIndex(l => l.id === id);
-      if (idx < 0) return s;
-      const [layer] = arr.splice(idx, 1);
-      arr.unshift(layer);
-      return { layers: { ...s.layers, [pageId]: arr } };
-    }),
+    set(s => ({ layers: { ...s.layers, [s.activePageId]: reorderSibling(s.layers[s.activePageId] ?? [], id, 'back') } })),
 
   addRecentColor: (color) =>
     set(s => {

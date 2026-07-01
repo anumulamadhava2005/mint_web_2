@@ -37,6 +37,7 @@ export interface ScreenSchema {
   backgroundColor?: string;
   onMount?: ActionRef[];
   onUnmount?: ActionRef[];
+  requiresAuth?: boolean; // redirect to login when no authenticated user
   meta?: { title?: string; description?: string; themeOverrides?: Record<string, string> };
 }
 
@@ -265,7 +266,7 @@ export type ActionType =
   // Data
   | "fetch" | "mutate" | "setState" | "resetState"
   | "updateState" | "removeState"
-  | "dbQuery"
+  | "dbQuery" | "dbInsert" | "dbUpdate" | "dbDelete"
   | "cacheSet" | "cacheInvalidate" | "sync" | "upload"
   // Logic
   | "condition" | "loop" | "sequence" | "parallel"
@@ -332,6 +333,7 @@ export interface NavigationSchema {
   type: "stack" | "tabs" | "drawer" | "custom";
   initialRoute: string;
   routes: RouteSchema[];
+  loginRoute?: string; // where protected screens redirect when unauthenticated
 }
 
 export interface RouteSchema {

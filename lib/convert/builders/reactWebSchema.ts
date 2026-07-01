@@ -49,17 +49,23 @@ export function collectStyles(schema: AppSchema): Record<string, object> {
 function providerFile(opts: WebSchemaOptions): string {
   const bakedOrigin = opts.apiOrigin || "";
   const bakedToken = opts.authToken || "";
-  return `import React, { createContext, useContext, useEffect, useMemo, useReducer, useRef } from "react";
+  return `import React, { createContext, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { createMintRuntime, configureMint } from "./mint-runtime.js";
+import { createMintRuntime, configureMint, hydrateSession } from "./mint-runtime.js";
 import { SCHEMA, ROUTES } from "./schema.js";
 
 // Backend origin + project token. Override per-environment with a .env file
 // (Vite inlines VITE_* at build time); falls back to the values baked at export.
 const API_ORIGIN = (import.meta.env && import.meta.env.VITE_MINT_API_ORIGIN) || ${JSON.stringify(bakedOrigin)};
 const MINT_TOKEN = (import.meta.env && import.meta.env.VITE_MINT_TOKEN) || ${JSON.stringify(bakedToken)};
+// Persist the signed-in session across reloads via localStorage.
+const _webStorage = (typeof window !== "undefined" && window.localStorage) ? {
+  getItem: (k) => window.localStorage.getItem(k),
+  setItem: (k, v) => window.localStorage.setItem(k, v),
+  removeItem: (k) => window.localStorage.removeItem(k),
+} : null;
 // Must run before createMintRuntime so the DB client picks up base + token.
-configureMint({ apiOrigin: API_ORIGIN, authToken: MINT_TOKEN });
+configureMint({ apiOrigin: API_ORIGIN, authToken: MINT_TOKEN, projectId: SCHEMA.id, storage: _webStorage });
 
 const Ctx = createContext(null);
 export function useMint() { return useContext(Ctx); }
@@ -76,8 +82,10 @@ export function MintProvider({ children }) {
   const runtime = ref.current;
   const navigate = useNavigate();
   const [, force] = useReducer((x) => x + 1, 0);
+  const [hydrated, setHydrated] = useState(false);
 
-  // Re-render the whole tree whenever any state changes (preview-grade).
+  // Restore a persisted session before rendering, then re-render on any change.
+  useEffect(() => { Promise.resolve(hydrateSession(runtime, { userPath: "user" })).finally(() => setHydrated(true)); }, []);
   useEffect(() => runtime.state.subscribe("", () => force()), []);
 
   const navigation = useMemo(() => ({
@@ -104,7 +112,7 @@ export function MintProvider({ children }) {
   }, [dispatch]);
 
   const value = useMemo(() => ({ runtime, dispatch, navigation }), [dispatch, navigation]);
-  return React.createElement(Ctx.Provider, { value }, children);
+  return React.createElement(Ctx.Provider, { value }, hydrated ? children : null);
 }
 `;
 }
@@ -113,6 +121,7 @@ export function rendererFile(): string {
   return `"use client";
 import React from "react";
 import { useMint } from "./MintProvider.jsx";
+import { SCHEMA } from "./schema.js";
 import { STYLES } from "./styles.js";
 
 // Screen = the list of top-level components for a route.
@@ -126,8 +135,14 @@ export function Screen({ components, background }) {
 
 // ScreenHost wraps a Screen and runs its onMount actions + async auto-fetch.
 export function ScreenHost({ screen, background }) {
-  const { dispatch } = useMint();
+  const { dispatch, runtime, navigation } = useMint();
   React.useEffect(() => {
+    // Protected screen: redirect to login when there's no authenticated user.
+    if (screen.requiresAuth) {
+      const u = runtime.state.get("user");
+      const login = (SCHEMA.navigation && SCHEMA.navigation.loginRoute) || "/";
+      if ((!u || !u.id) && screen.route !== login) { navigation.navigate(login); return; }
+    }
     (screen.onMount || []).forEach((a) => dispatch([a]));
     (screen.localState || []).forEach((d) => { if (d.async && d.async.autoFetch && d.async.source) dispatch([d.async.source]); });
     // eslint-disable-next-line

@@ -26,10 +26,41 @@ export function generateMintRuntimeBundle(): string {
 // hit the right host with credentials instead of the app's own origin.
 let _apiBase = "";
 let _authToken = "";
+let _storage = null;
+let _projectId = "";
 export function configureMint(opts) {
   if (!opts) return;
   if (opts.apiOrigin != null) _apiBase = String(opts.apiOrigin).replace(/\\/$/, "");
   if (opts.authToken != null) _authToken = String(opts.authToken);
+  if (opts.storage != null) _storage = opts.storage;
+  if (opts.projectId != null) _projectId = String(opts.projectId);
+}
+// Persisted session (end-user account + token). Note: managed-DB calls still
+// authenticate with the baked project sync token — the server DML endpoint does
+// not validate per-user tokens yet — so this is for session restore, not DB auth.
+function _sessionKey() { return "mint:session:" + (_projectId || "app"); }
+async function _persistSession(user, token) {
+  if (!_storage) return;
+  try { await _storage.setItem(_sessionKey(), JSON.stringify({ user: user, token: token })); } catch (e) {}
+}
+async function _clearSession() {
+  if (!_storage) return;
+  try { await _storage.removeItem(_sessionKey()); } catch (e) {}
+}
+// Restore { user, token } into runtime state on app startup. Call once on mount.
+export async function hydrateSession(runtime, opts) {
+  opts = opts || {};
+  if (!_storage || !runtime || !runtime.state) return null;
+  try {
+    const raw = await _storage.getItem(_sessionKey());
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (s && s.user) {
+      runtime.state.set(opts.userPath || "user", s.user);
+      if (s.token !== undefined) runtime.state.set(opts.tokenPath || "session.token", s.token);
+    }
+    return s;
+  } catch (e) { return null; }
 }
 function _isAbsUrl(u) { return /^https?:\\/\\//.test(String(u)); }
 function _resolveUrl(u) {
@@ -450,6 +481,61 @@ export class MintActions {
       try { const r = await this._handlers.fetch(c, {}); opt.commit(); return r; }
       catch (e) { opt.rollback(); throw e; }
     });
+    this.register("dbQuery", async (c) => {
+      const base = _apiBase || "";
+      const url = base + "/api/db/" + String(c.projectId || "");
+      const res = await fetch(url, { method: "POST", headers: _authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ sql: String(c.sql || ""), params: c.params || [] }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || (data && data.error)) throw new Error((data && data.error) || ("DB query failed (" + res.status + ")"));
+      const rows = Array.isArray(data.rows) ? data.rows : [];
+      if (c.storePath) this._state.set(String(c.storePath), rows);
+      return rows;
+    });
+    // ── CRUD writes ── nested value/where maps hold $expressions; resolve them
+    // against state (top-level config resolution only handles $strings).
+    const _resolveMap = (m) => {
+      const out = {}; const ctx = this._state.getContext();
+      for (const k in (m || {})) {
+        const v = m[k];
+        if (typeof v === "string" && v.charAt(0) === "$") { try { out[k] = evalExpr(v, ctx); } catch (e) { out[k] = v; } }
+        else out[k] = v;
+      }
+      return out;
+    };
+    const _runDml = async (projectId, sql, params) => {
+      const url = (_apiBase || "") + "/api/db/" + String(projectId || "");
+      const res = await fetch(url, { method: "POST", headers: _authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ sql: sql, params: params }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || (data && data.error)) throw new Error((data && data.error) || ("DB write failed (" + res.status + ")"));
+      return Array.isArray(data.rows) ? data.rows : [];
+    };
+    this.register("dbInsert", async (c) => {
+      const values = _resolveMap(c.values); const cols = Object.keys(values);
+      if (!c.table || !cols.length) return null;
+      const sql = "INSERT INTO " + c.table + " (" + cols.map(function (x) { return '"' + x + '"'; }).join(", ") + ") VALUES (" + cols.map(function (_x, i) { return "$" + (i + 1); }).join(", ") + ") RETURNING *";
+      const rows = await _runDml(c.projectId, sql, cols.map(function (x) { return values[x]; }));
+      if (c.storePath) this._state.set(String(c.storePath), rows[0] || null);
+      return rows[0] || null;
+    });
+    this.register("dbUpdate", async (c) => {
+      const values = _resolveMap(c.values); const where = _resolveMap(c.where);
+      const cols = Object.keys(values); const wcols = Object.keys(where);
+      if (!c.table || !cols.length || !wcols.length) return null;
+      const sets = cols.map(function (x, i) { return '"' + x + '" = $' + (i + 1); }).join(", ");
+      const conds = wcols.map(function (x, i) { return '"' + x + '" = $' + (cols.length + i + 1); }).join(" AND ");
+      const sql = "UPDATE " + c.table + " SET " + sets + " WHERE " + conds + " RETURNING *";
+      const rows = await _runDml(c.projectId, sql, cols.map(function (x) { return values[x]; }).concat(wcols.map(function (x) { return where[x]; })));
+      if (c.storePath) this._state.set(String(c.storePath), rows[0] || null);
+      return rows[0] || null;
+    });
+    this.register("dbDelete", async (c) => {
+      const where = _resolveMap(c.where); const wcols = Object.keys(where);
+      if (!c.table || !wcols.length) return null;
+      const conds = wcols.map(function (x, i) { return '"' + x + '" = $' + (i + 1); }).join(" AND ");
+      const sql = "DELETE FROM " + c.table + " WHERE " + conds;
+      await _runDml(c.projectId, sql, wcols.map(function (x) { return where[x]; }));
+      return true;
+    });
     this.register("condition", async (c, ctx) => {
       const result = evalExpr(String(c.expression), this._state.getContext());
       const branch = result ? c.then : c.else;
@@ -471,6 +557,7 @@ export class MintActions {
     const storeSession = (c, data) => {
       if (data.user !== undefined) this._state.set(String(c.userPath || "user"), data.user);
       if (data.token !== undefined) this._state.set(String(c.tokenPath || "session.token"), data.token);
+      _persistSession(data.user, data.token);
     };
     this.register("signIn", async (c) => {
       const data = await postJson(String(c.url || "/api/login"), { email: c.email, password: c.password });
@@ -485,6 +572,7 @@ export class MintActions {
       try { await fetch(String(c.url || "/api/logout"), { method: "POST" }); } catch (e) {}
       this._state.set(String(c.userPath || "user"), null);
       this._state.set(String(c.tokenPath || "session.token"), null);
+      _clearSession();
     });
   }
 

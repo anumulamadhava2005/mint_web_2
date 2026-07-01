@@ -7,12 +7,28 @@
 // exported apps. Built fresh on each preview open.
 // ═══════════════════════════════════════════════════════════════
 
-import { useFigmaStore, type ActionFlow, type ActionStep, type GlobalStateVar, type FigmaLayer } from './figmaStore';
+import { useFigmaStore, type ActionFlow, type ActionStep, type GlobalStateVar, type FigmaLayer, type AuthConfig } from './figmaStore';
 import { figmaPageToScreenSchemas, figmaLayerToComponent } from '@/lib/runtime/figmaToSchema';
+import { dbConfigToRuntimeSchema } from './figmaDbToSchema';
 import type {
   AppSchema, ScreenSchema, StateNodeSchema, StateScope, StateType,
-  ActionSchema, ActionType, ActionRef,
+  ActionSchema, ActionType, ActionRef, AuthConfigSchema,
 } from '@/lib/runtime/schema';
+
+// figmaStore.AuthConfig → runtime AuthConfigSchema (only when auth is enabled).
+function authToSchema(a: AuthConfig | undefined): AuthConfigSchema | undefined {
+  if (!a || !a.enabled) return undefined;
+  return {
+    providers: (a.providers ?? []).map(p => ({ type: p.type, enabled: p.enabled })),
+    sessionType: a.sessionType,
+    tokenExpiry: a.tokenExpiry,
+    refreshEnabled: a.refresh,
+    ...(a.roles?.length ? { rbac: { roles: a.roles, defaultRole: a.defaultRole } } : {}),
+    ...(a.mfaEnabled ? { mfa: { enabled: true, methods: [a.mfaType] } } : {}),
+    userStatePath: 'user',
+    roleField: 'role',
+  };
+}
 
 const EMPTY_THEME = { colors: {}, fonts: {}, spacing: {}, radii: {}, shadows: {} };
 
@@ -45,9 +61,31 @@ function varsToState(vars: GlobalStateVar[]): StateNodeSchema[] {
 // chain them via onSuccess; the flow's entry action keeps the flow id so layer
 // events can reference it. Branching (condition) is kept shallow for the slice.
 
+// Columns to populate from $form for a create/update on a table (skip PK + auto).
+function formColumns(table: string): string[] {
+  const t = useFigmaStore.getState().database?.tables?.find(tb => tb.name === table);
+  if (!t) return [];
+  return t.fields
+    .filter(f => !f.primary && f.name !== 'created_at' && f.name !== 'updated_at' && f.name !== 'deleted_at')
+    .map(f => f.name);
+}
+
 function stepToSchema(step: ActionStep, id: string, projectId: string): ActionSchema {
   const base = { id, name: step.label ?? step.type } as ActionSchema;
   switch (step.type) {
+    case 'dbInsert': {
+      const table = step.dbTable ?? '';
+      const values = Object.fromEntries(formColumns(table).map(c => [c, `$form.${c}`]));
+      return { ...base, type: 'dbInsert', config: { projectId, table, values } };
+    }
+    case 'dbUpdate': {
+      const table = step.dbTable ?? '';
+      const values = Object.fromEntries(formColumns(table).map(c => [c, `$form.${c}`]));
+      return { ...base, type: 'dbUpdate', config: { projectId, table, values, where: { id: '$item.id' } } };
+    }
+    case 'dbDelete': {
+      return { ...base, type: 'dbDelete', config: { projectId, table: step.dbTable ?? '', where: { id: '$item.id' } } };
+    }
     case 'navigate':
       return { ...base, type: 'navigate', config: { route: step.navigateTo ?? '/', replace: !!step.navigateReplace } };
     case 'goBack':
@@ -159,9 +197,12 @@ export function buildAppSchemaFromFigma(projectId: string): AppSchema {
     if (root) collectTables(root, tables);
     else pageLayers.forEach(l => collectTables(l, tables)); // synthetic screen
     tables.forEach(t => allTables.add(t));
-    return tables.size
+    const requiresAuth = !!root?.requiresAuth;
+    const withMount = tables.size
       ? { ...screen, onMount: [...(screen.onMount ?? []), ...[...tables].map(t => ({ actionId: loadActionId(t) } as ActionRef))] }
-      : screen;
+      : { ...screen };
+    if (requiresAuth) withMount.requiresAuth = true;
+    return withMount;
   });
 
   const globalState = varsToState(s.globalStateVars ?? []);
@@ -173,6 +214,31 @@ export function buildAppSchemaFromFigma(projectId: string): AppSchema {
       globalActions.push(dbQueryAction(t, projectId));
     }
   }
+
+  // After a write, refresh the affected table's list (if that table is shown
+  // via a data source) so the UI reflects the change without a manual reload.
+  for (const a of globalActions) {
+    if ((a.type === 'dbInsert' || a.type === 'dbUpdate' || a.type === 'dbDelete') && !a.onSuccess) {
+      const table = String((a.config as { table?: string }).table ?? '');
+      if (table && allTables.has(table)) {
+        a.onSuccess = [{ actionId: loadActionId(table) } as ActionRef];
+      }
+    }
+  }
+
+  // Login route = the screen that hosts a sign-in / sign-up action (protected
+  // screens redirect here when no user is signed in).
+  const authActionIds = new Set(globalActions.filter(a => a.type === 'signIn' || a.type === 'signUp').map(a => a.id));
+  const screenHasAuth = (comps: AppSchema['screens'][number]['components']): boolean => {
+    for (const c of comps ?? []) {
+      for (const refs of Object.values(c.events ?? {})) {
+        for (const r of refs) { const id = typeof r === 'string' ? r : r.actionId; if (authActionIds.has(id)) return true; }
+      }
+      if (c.children && screenHasAuth(c.children)) return true;
+    }
+    return false;
+  };
+  const loginRoute = screens.find(sc => screenHasAuth(sc.components))?.route ?? screens[0]?.route ?? '/';
 
   return {
     id: projectId,
@@ -188,6 +254,9 @@ export function buildAppSchemaFromFigma(projectId: string): AppSchema {
       type: 'stack',
       initialRoute: screens[0]?.route ?? '/',
       routes: screens.map(sc => ({ path: sc.route, screenId: sc.id })),
+      loginRoute,
     },
+    ...(authToSchema(s.auth) ? { auth: authToSchema(s.auth) } : {}),
+    ...(s.database?.tables?.length ? { database: dbConfigToRuntimeSchema(s.database) } : {}),
   };
 }

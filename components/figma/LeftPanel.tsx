@@ -54,6 +54,19 @@ function LayerIcon({ type }: { type: LayerType }) {
 // Context menu for pages
 interface ContextMenu { x: number; y: number; pageId: string; }
 
+// ── Layer drag-and-drop (reparent / reorder) ──────────────────────
+type DropMode = 'inside' | 'before' | 'after';
+interface LayerDnD {
+  dragId: string | null;
+  dropTarget: { id: string; mode: DropMode } | null;
+  onDragStart: (id: string) => void;
+  onRowDragOver: (id: string, type: LayerType, e: React.DragEvent) => void;
+  onRowDrop: () => void;
+  onDragEnd: () => void;
+}
+const LayerDnDContext = React.createContext<LayerDnD | null>(null);
+const CONTAINER_TYPES: LayerType[] = ['frame', 'group', 'section', 'component', 'instance'];
+
 function LayerRow({
   layer, depth, expandedIds, toggleExpand,
 }: {
@@ -63,10 +76,13 @@ function LayerRow({
   toggleExpand: (id: string) => void;
 }) {
   const { selection, setSelection, updateLayer } = useFigmaStore();
+  const dnd = React.useContext(LayerDnDContext);
   const [hovered, setHovered] = useState(false);
   const selected = selection.includes(layer.id);
   const hasChildren = (layer.children?.length ?? 0) > 0;
   const expanded = expandedIds.has(layer.id);
+  const drop = dnd?.dropTarget?.id === layer.id ? dnd.dropTarget.mode : null;
+  const isDragging = dnd?.dragId === layer.id;
 
   const handleClick = (e: React.MouseEvent) => {
     if (e.ctrlKey || e.metaKey) {
@@ -79,16 +95,28 @@ function LayerRow({
   return (
     <>
       <div
+        draggable
+        onDragStart={e => { e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', layer.id); dnd?.onDragStart(layer.id); }}
+        onDragOver={e => { if (dnd?.dragId) { e.preventDefault(); dnd.onRowDragOver(layer.id, layer.type, e); } }}
+        onDrop={e => { if (dnd?.dragId) { e.preventDefault(); dnd.onRowDrop(); } }}
+        onDragEnd={() => dnd?.onDragEnd()}
         onClick={handleClick}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         style={{
+          position: 'relative',
           display: 'flex', alignItems: 'center', height: 28,
           paddingLeft: 8 + depth * 12, paddingRight: 8,
-          background: selected ? 'rgba(13,153,255,0.15)' : hovered ? 'rgba(255,255,255,0.04)' : 'transparent',
+          background: drop === 'inside' ? 'rgba(13,153,255,0.28)'
+            : selected ? 'rgba(13,153,255,0.15)' : hovered ? 'rgba(255,255,255,0.04)' : 'transparent',
+          boxShadow: drop === 'inside' ? 'inset 0 0 0 1px #0d99ff' : undefined,
+          opacity: isDragging ? 0.4 : 1,
           cursor: 'default', userSelect: 'none', gap: 4, borderRadius: 2,
         }}
       >
+        {(drop === 'before' || drop === 'after') && (
+          <div style={{ position: 'absolute', left: 6, right: 6, [drop === 'before' ? 'top' : 'bottom']: -1, height: 2, background: '#0d99ff', borderRadius: 2 }} />
+        )}
         {/* Expand toggle */}
         <div
           onClick={e => { e.stopPropagation(); if (hasChildren) toggleExpand(layer.id); }}
@@ -141,13 +169,25 @@ function LayerRow({
   );
 }
 
+// Locate a layer's parent id (null = top level) and its index among siblings.
+function findParentAndIndex(
+  layers: FigmaLayer[], id: string, parentId: string | null = null,
+): { parentId: string | null; index: number } | null {
+  for (let i = 0; i < layers.length; i++) {
+    if (layers[i].id === id) return { parentId, index: i };
+    const ch = layers[i].children;
+    if (ch) { const r = findParentAndIndex(ch, id, layers[i].id); if (r) return r; }
+  }
+  return null;
+}
+
 export default function LeftPanel() {
   const {
     pages, activePageId, layers, leftPanelWidth, leftPanelCollapsed, leftPanelTab,
     setActivePage, addPage, renamePage, deletePage, reorderPage,
     setLeftPanelTab, setLeftPanelCollapsed, setLeftPanelWidth,
     colorStyles, textStyles, effectStyles, deleteTextStyle, deleteEffectStyle,
-    components, createInstance, deleteComponent,
+    components, createInstance, deleteComponent, moveLayerToParent,
   } = useFigmaStore();
 
   const [editingPageId, setEditingPageId] = useState<string | null>(null);
@@ -155,6 +195,43 @@ export default function LeftPanel() {
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [search, setSearch] = useState('');
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  // Layer drag-and-drop state
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ id: string; mode: DropMode } | null>(null);
+
+  const layerDnD: LayerDnD = React.useMemo(() => ({
+    dragId, dropTarget,
+    onDragStart: (id) => setDragId(id),
+    onRowDragOver: (id, type, e) => {
+      if (!dragId || id === dragId) { setDropTarget(null); return; }
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const rel = (e.clientY - rect.top) / rect.height;
+      const canNest = CONTAINER_TYPES.includes(type);
+      let mode: DropMode;
+      if (canNest) mode = rel < 0.28 ? 'before' : rel > 0.72 ? 'after' : 'inside';
+      else mode = rel < 0.5 ? 'before' : 'after';
+      setDropTarget({ id, mode });
+    },
+    onRowDrop: () => {
+      if (!dragId || !dropTarget || dragId === dropTarget.id) { setDragId(null); setDropTarget(null); return; }
+      const roots = layers[activePageId] ?? [];
+      if (dropTarget.mode === 'inside') {
+        moveLayerToParent(dragId, dropTarget.id, null);
+      } else {
+        const tgt = findParentAndIndex(roots, dropTarget.id);
+        if (tgt) {
+          const dragPI = findParentAndIndex(roots, dragId);
+          let desired = dropTarget.mode === 'before' ? tgt.index : tgt.index + 1;
+          if (dragPI && dragPI.parentId === tgt.parentId && dragPI.index < desired) desired -= 1;
+          moveLayerToParent(dragId, tgt.parentId, desired);
+        }
+      }
+      setDragId(null);
+      setDropTarget(null);
+    },
+    onDragEnd: () => { setDragId(null); setDropTarget(null); },
+  }), [dragId, dropTarget, layers, activePageId, moveLayerToParent]);
 
   // Auto-expand any layer that gains children
   useEffect(() => {
@@ -334,9 +411,19 @@ export default function LeftPanel() {
                   {search ? 'No layers match' : 'No layers yet'}
                 </div>
               ) : (
-                currentLayers.map(layer => (
-                  <LayerRow key={layer.id} layer={layer} depth={0} expandedIds={expandedIds} toggleExpand={toggleExpand} />
-                ))
+                <LayerDnDContext.Provider value={layerDnD}>
+                  {currentLayers.map(layer => (
+                    <LayerRow key={layer.id} layer={layer} depth={0} expandedIds={expandedIds} toggleExpand={toggleExpand} />
+                  ))}
+                  {/* Drop zone to move a layer to the very end of the top level */}
+                  {dragId && (
+                    <div
+                      onDragOver={e => { e.preventDefault(); setDropTarget(null); }}
+                      onDrop={e => { e.preventDefault(); moveLayerToParent(dragId, null, null); setDragId(null); setDropTarget(null); }}
+                      style={{ height: 24 }}
+                    />
+                  )}
+                </LayerDnDContext.Provider>
               )}
             </div>
           </div>

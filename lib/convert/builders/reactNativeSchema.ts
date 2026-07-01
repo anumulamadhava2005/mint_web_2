@@ -1,20 +1,20 @@
 // ═══════════════════════════════════════════════════════════════
 // reactNativeSchema — AppSchema → React Native (Expo) emitter
 //
-// SEPARATE path from reactNative.ts (which consumes DrawableNode[]).
-// This consumes AppSchema.screens[].components[] (ComponentSchema) and
-// emits flexbox RN JSX. Screens are STATIC codegen; only the approval
-// "next step" lookup is dynamic at runtime (live workflow_steps query).
-//
-// Dispatch shape mirrors components/SchemaRenderer.tsx; behavior for
-// dataTable/timeline/pipeline ported from lib/runtime/components/*.
+// SCHEMA-DRIVEN AT RUNTIME (mirrors reactWebSchema.ts): the AppSchema is
+// baked as data (lib/schema.ts) and rendered by a generic RN SchemaRenderer
+// against the SAME framework-agnostic engine as the web export
+// (lib/runtime/bundle → createMintRuntime): expression bindings, two-way
+// inputs, real action dispatch (signUp/dbQuery/navigate/…), repeaters.
+// Screens are NOT static codegen — they just host their schema screen.
 // ═══════════════════════════════════════════════════════════════
 
 import type {
   AppSchema,
-  ScreenSchema,
   ComponentSchema,
+  StyleSchema,
 } from "../../runtime/schema";
+import { generateMintRuntimeBundle } from "../../runtime/bundle";
 
 export interface GeneratedFile {
   path: string;
@@ -39,445 +39,354 @@ const compName = (s: string) =>
   (s.replace(/[^a-zA-Z0-9]/g, " ").split(" ").filter(Boolean)
     .map((w) => w[0].toUpperCase() + w.slice(1)).join("") || "Screen") + "Screen";
 
-/** state path accessor: "$local.x" / "local.x" -> state.local?.x ; loop var passthrough */
-function acc(expr: string, loopVar?: string): string {
-  const path = expr.replace(/^\$/, "").trim();
-  const parts = path.split(".");
-  if (loopVar && parts[0] === loopVar) {
-    return parts.length === 1 ? loopVar : loopVar + parts.slice(1).map((p) => `?.${p}`).join("");
-  }
-  return "state." + parts[0] + parts.slice(1).map((p) => `?.${p}`).join("");
+// ── Style conversion: StyleSchema → React Native style object ─
+// RN styles differ from web CSS (numeric props, flex enums, per-corner
+// radius, textDecorationLine, etc.), so we can't reuse styleToCss here.
+
+type RNStyle = Record<string, unknown>;
+
+function applyBox(out: RNStyle, prop: string, v: unknown): void {
+  if (v == null) return;
+  if (Array.isArray(v)) {
+    out[prop + "Top"] = v[0]; out[prop + "Right"] = v[1];
+    out[prop + "Bottom"] = v[2]; out[prop + "Left"] = v[3];
+  } else out[prop] = v;
 }
 
-const esc = (s: string) => String(s).replace(/`/g, "\\`").replace(/\$/g, "\\$");
+function styleToRN(style: StyleSchema | undefined): RNStyle {
+  const out: RNStyle = {};
+  if (!style) return out;
+  const L = style.layout || {};
+  if (L.position) out.position = L.position === "absolute" ? "absolute" : "relative";
+  if (typeof L.left === "number") out.left = L.left;
+  if (typeof L.top === "number") out.top = L.top;
+  if (typeof L.right === "number") out.right = L.right;
+  if (typeof L.bottom === "number") out.bottom = L.bottom;
+  if (typeof L.zIndex === "number") out.zIndex = L.zIndex;
+  if (L.display === "none") out.display = "none";
+  if (L.direction) out.flexDirection = String(L.direction).startsWith("row") ? "row" : "column";
+  const jmap: Record<string, string> = { start: "flex-start", center: "center", end: "flex-end", between: "space-between", around: "space-around", evenly: "space-evenly" };
+  if (L.justify) out.justifyContent = jmap[L.justify] || "flex-start";
+  const amap: Record<string, string> = { start: "flex-start", center: "center", end: "flex-end", stretch: "stretch", baseline: "baseline" };
+  if (L.align) out.alignItems = amap[L.align] || "stretch";
+  if (L.wrap) out.flexWrap = "wrap";
+  if (typeof L.gap === "number") out.gap = L.gap;
 
-// ── Component emission ───────────────────────────────────────
+  const SP = style.spacing || {};
+  applyBox(out, "padding", SP.padding);
+  applyBox(out, "margin", SP.margin);
 
-function emit(c: ComponentSchema, indent: number, loopVar?: string): string {
-  const pad = "  ".repeat(indent);
-  const p = (c.props || {}) as Record<string, any>;
-  const b = (c.bindings || {}) as Record<string, string>;
+  const SZ = style.sizing || {};
+  if (SZ.width != null) out.width = SZ.width;
+  if (SZ.height != null) out.height = SZ.height;
+  if (SZ.minWidth != null) out.minWidth = SZ.minWidth;
+  if (SZ.minHeight != null) out.minHeight = SZ.minHeight;
+  if (SZ.maxWidth != null) out.maxWidth = SZ.maxWidth;
+  if (SZ.maxHeight != null) out.maxHeight = SZ.maxHeight;
+  if (typeof SZ.flex === "number") out.flex = SZ.flex;
 
-  // role visibility (auth-guard.ts) — wrap with user-role check
-  let roleOpen = "", roleClose = "";
-  if (c.requiredRoles?.length) {
-    const roles = JSON.stringify(c.requiredRoles);
-    roleOpen = `${pad}{(${roles}).includes(state.user?.role) && (\n`;
-    roleClose = `\n${pad})}`;
-    indent += 1;
+  const BG = style.background || {};
+  if (BG.color) out.backgroundColor = BG.color;
+  if (typeof BG.opacity === "number") out.opacity = BG.opacity;
+
+  const BR = style.border || {};
+  if (typeof BR.width === "number") out.borderWidth = BR.width;
+  if (BR.color) out.borderColor = BR.color;
+  if (BR.radius != null) {
+    if (Array.isArray(BR.radius)) {
+      out.borderTopLeftRadius = BR.radius[0]; out.borderTopRightRadius = BR.radius[1];
+      out.borderBottomRightRadius = BR.radius[2]; out.borderBottomLeftRadius = BR.radius[3];
+    } else out.borderRadius = BR.radius;
   }
-  const ip = "  ".repeat(indent);
 
-  // visibleBind
-  let visOpen = "", visClose = "";
-  if (b.visibleBind) {
-    visOpen = `${ip}{${acc(b.visibleBind, loopVar)} && (\n`;
-    visClose = `\n${ip})}`;
-    indent += 1;
-  }
-  const body = emitInner(c, indent, loopVar);
-  return roleOpen + visOpen + body + visClose + roleClose;
+  const T = style.typography || {};
+  if (T.color) out.color = T.color;
+  if (typeof T.fontSize === "number") out.fontSize = T.fontSize;
+  if (T.fontWeight) out.fontWeight = String(T.fontWeight);
+  if (T.fontFamily) out.fontFamily = T.fontFamily;
+  if (T.fontStyle) out.fontStyle = T.fontStyle;
+  if (T.textAlign) out.textAlign = T.textAlign;
+  if (typeof T.lineHeight === "number") out.lineHeight = T.lineHeight;
+  if (typeof T.letterSpacing === "number") out.letterSpacing = T.letterSpacing;
+  if (T.textDecoration && T.textDecoration !== "none") out.textDecorationLine = T.textDecoration;
+
+  const E = style.effects || {};
+  if (E.overflow) out.overflow = E.overflow;
+
+  return out;
 }
 
-function emitInner(c: ComponentSchema, indent: number, loopVar?: string): string {
-  const pad = "  ".repeat(indent);
-  const p = (c.props || {}) as Record<string, any>;
-  const b = (c.bindings || {}) as Record<string, string>;
-  const kids = () => (c.children || []).map((k) => emit(k, indent + 1, loopVar)).join("\n");
-
-  switch (c.type) {
-    case "text": {
-      const txt = b.textBind
-        ? `{String(${acc(b.textBind, loopVar)} ?? "")}`
-        : `{\`${esc(p.text ?? p.value ?? "")}\`}`;
-      return `${pad}<Text style={s.text}>${txt}</Text>`;
+/** styleToRN for every component id across all screens (recurses children). */
+function collectRNStyles(schema: AppSchema): Record<string, RNStyle> {
+  const out: Record<string, RNStyle> = {};
+  const walk = (comps: ComponentSchema[] | undefined) => {
+    for (const c of comps ?? []) {
+      const st = styleToRN(c.style);
+      if (Object.keys(st).length) out[c.id] = st;
+      if (c.children?.length) walk(c.children);
     }
-    case "button": {
-      const label = b.textBind ? `{String(${acc(b.textBind, loopVar)} ?? "")}` : `{\`${esc(p.text ?? p.label ?? "Button")}\`}`;
-      const onPress = b.onClick ? ` onPress={() => actions(${JSON.stringify(b.onClick)}, ${loopVar || "{}"})}` : "";
-      return `${pad}<Pressable style={s.button}${onPress}><Text style={s.buttonText}>${label}</Text></Pressable>`;
-    }
-    case "input":
-    case "searchInput": {
-      const key = (b.inputBind || "").replace(/^\$/, "");
-      const val = b.inputBind ? `${acc(b.inputBind, loopVar)} ?? ""` : `""`;
-      const onCh = b.inputBind ? ` onChangeText={(t) => setState(${JSON.stringify(key)}, t)}` : "";
-      const multi = p.multiline ? ` multiline numberOfLines={4}` : "";
-      const st = p.multiline ? `[s.input, s.textArea]` : `s.input`;
-      return `${pad}<TextInput style={${st}}${multi} value={${val}}${onCh} placeholder={\`${esc(p.placeholder ?? "")}\`} placeholderTextColor="#9CA3AF" />`;
-    }
-    case "select": {
-      const opts = JSON.stringify(p.options || p.enumValues || []);
-      const key = (b.inputBind || "").replace(/^\$/, "");
-      return `${pad}<SelectInput options={${opts}} value={${b.inputBind ? acc(b.inputBind, loopVar) : "undefined"}} onChange={(v) => setState(${JSON.stringify(key)}, v)} placeholder={\`${esc(p.placeholder ?? "Select")}\`} />`;
-    }
-    case "datePicker": {
-      const key = (b.inputBind || "").replace(/^\$/, "");
-      return `${pad}<DateField value={${b.inputBind ? acc(b.inputBind, loopVar) : "undefined"}} onChange={(v) => setState(${JSON.stringify(key)}, v)} />`;
-    }
-    case "statusChip": {
-      const v = b.textBind ? acc(b.textBind, loopVar) : `\`${esc(p.value ?? "")}\``;
-      return `${pad}<StatusChip value={${v}} />`;
-    }
-    case "fileUpload":
-      return `${pad}<FileUpload projectId={PROJECT_ID} onUploaded={(url) => setState(${JSON.stringify((p.storePath||"local.receipt_url").replace(/^\$/,""))}, url)} />`;
-    case "timeline": {
-      const data = b.dataSource || p.dataSource || "$local.events";
-      return `${pad}<Timeline data={${acc(data, loopVar)} || []} config={${JSON.stringify(p)}} activeStepValue={${p.activeMatchKey ? acc(p.activeStepExpression || "$local.activeExpense.current_step_key", loopVar) : "undefined"}} />`;
-    }
-    case "dataTable": {
-      const data = b.dataSource || p.dataSource || "$local.rows";
-      return `${pad}<DataTable data={${acc(data, loopVar)} || []} config={${JSON.stringify(p)}} />`;
-    }
-    case "image": {
-      const src = b.src ? acc(b.src, loopVar) : `\`${esc(p.src ?? "")}\``;
-      return `${pad}<MintImage src={${src}} config={${JSON.stringify(p)}} />`;
-    }
-    case "camera": {
-      const key = String(p.storePath || "local.photo").replace(/^\$/, "");
-      return `${pad}<Camera config={${JSON.stringify(p)}} projectId={PROJECT_ID} onCaptured={(url) => setState(${JSON.stringify(key)}, url)} />`;
-    }
-    case "chart": {
-      const data = b.dataSource || p.dataSource || "$local.series";
-      return `${pad}<Chart data={${acc(data, loopVar)} || []} config={${JSON.stringify(p)}} />`;
-    }
-    case "statCard": {
-      const value = b.value ? acc(b.value, loopVar) : `\`${esc(p.value ?? "")}\``;
-      const delta = b.delta ? acc(b.delta, loopVar) : (p.delta != null ? `\`${esc(p.delta)}\`` : "undefined");
-      return `${pad}<StatCard value={${value}} delta={${delta}} config={${JSON.stringify(p)}} />`;
-    }
-    case "list":
-    case "grid": {
-      if (c.repeatFor) {
-        const listExpr = acc(c.repeatFor.items, loopVar);
-        const itemVar = c.repeatFor.as;
-        const inner = (c.children || []).map((k) => emit(k, indent + 3, itemVar)).join("\n");
-        return `${pad}<FlatList
-${pad}  data={${listExpr} || []}
-${pad}  keyExtractor={(_, i) => String(i)}
-${pad}  renderItem={({ item: ${itemVar} }) => (
-${pad}    <View style={s.row}>
-${inner}
-${pad}    </View>
-${pad}  )}
-${pad}/>`;
-      }
-      return `${pad}<View style={s.col}>\n${kids()}\n${pad}</View>`;
-    }
-    case "card":
-      return `${pad}<View style={s.card}>\n${kids()}\n${pad}</View>`;
-    case "scroll":
-      return `${pad}<ScrollView style={s.flex} contentContainerStyle={s.col}>\n${kids()}\n${pad}</ScrollView>`;
-    default: // view, container, form, modal
-      return `${pad}<View style={s.col}>\n${kids()}\n${pad}</View>`;
-  }
+  };
+  for (const s of schema.screens ?? []) walk(s.components);
+  return out;
 }
 
-// ── Screen file ──────────────────────────────────────────────
+// ── schema.ts — baked AppSchema + maps + config ──────────────
 
-function emitScreen(screen: ScreenSchema, isHome: boolean): string {
-  const onMount = screen.onMount?.length
-    ? screen.onMount.map((a) => `    actions(${JSON.stringify(typeof a === "string" ? a : a.actionId)}, {});`).join("\n")
-    : "";
-  const tree = (screen.components || []).map((c) => emit(c, 4)).join("\n");
-  return `import React from "react";
-import { View, Text, Pressable, TextInput, ScrollView, FlatList } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { useMint, PROJECT_ID } from "../lib/mint-runtime";
-import { DataTable, Timeline, StatusChip, SelectInput, DateField, FileUpload, MintImage, Camera, Chart, StatCard } from "../components/MintComponents";
-import { s } from "../lib/styles";
+function schemaFile(schema: AppSchema, opts: RNSchemaOptions, routesMap: Record<string, string>, themeBg: string): string {
+  return `// Auto-generated — the runtime AppSchema this app is driven by.
+export const SCHEMA = ${JSON.stringify(schema)};
+export const ROUTES = ${JSON.stringify(routesMap)};
+export const THEME_BG = ${JSON.stringify(themeBg)};
+export const STYLES = ${JSON.stringify(collectRNStyles(schema))};
+export const PROJECT_ID = ${JSON.stringify(opts.projectId)};
+export const API_ORIGIN_DEFAULT = ${JSON.stringify(opts.apiOrigin || "https://mintweb.mintit.pro")};
+export const AUTH_TOKEN_DEFAULT = ${JSON.stringify(opts.authToken || "")};
+`;
+}
 
-export default function ${compName(screen.name)}() {
-  const { state, setState, actions } = useMint();
-${onMount ? `  React.useEffect(() => {\n${onMount}\n  }, []);` : ""}
-  return (
-    <SafeAreaView style={s.screen}>
-      <ScrollView contentContainerStyle={s.screenContent}>
-${tree}
-      </ScrollView>
-    </SafeAreaView>
-  );
+// ── MintProvider.tsx — wires the runtime to React + expo-router ─
+
+function providerFile(): string {
+  return `import React, { createContext, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { router } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { createMintRuntime, configureMint, hydrateSession } from "./mint-runtime";
+import { SCHEMA, ROUTES, PROJECT_ID as _PID, API_ORIGIN_DEFAULT, AUTH_TOKEN_DEFAULT } from "./schema";
+
+// Backend origin + project token. Override per-environment with a .env file
+// (Expo inlines EXPO_PUBLIC_* at build time); falls back to the values baked
+// at export. On a phone/Android emulator "localhost" is the DEVICE — point
+// EXPO_PUBLIC_API_ORIGIN at your machine's LAN IP.
+export const API_ORIGIN =
+  (typeof process !== "undefined" && process.env && process.env.EXPO_PUBLIC_API_ORIGIN) || API_ORIGIN_DEFAULT;
+export const AUTH_TOKEN =
+  (typeof process !== "undefined" && process.env && process.env.EXPO_PUBLIC_MINT_TOKEN) || AUTH_TOKEN_DEFAULT;
+export const PROJECT_ID = _PID;
+// Persist the signed-in session across app launches via AsyncStorage.
+const _rnStorage = {
+  getItem: (k) => AsyncStorage.getItem(k),
+  setItem: (k, v) => AsyncStorage.setItem(k, v),
+  removeItem: (k) => AsyncStorage.removeItem(k),
+};
+// Must run before createMintRuntime so the DB/auth client picks up base + token.
+configureMint({ apiOrigin: API_ORIGIN, authToken: AUTH_TOKEN, projectId: PROJECT_ID, storage: _rnStorage });
+
+const Ctx = createContext(null);
+export function useMint() { return useContext(Ctx); }
+
+function routeFor(target) {
+  if (!target) return "/";
+  if (ROUTES[target]) return ROUTES[target];            // screenId → path
+  return String(target)[0] === "/" ? String(target) : "/" + target;
+}
+
+export function MintProvider({ children }) {
+  const ref = useRef(null);
+  if (!ref.current) ref.current = createMintRuntime(SCHEMA);
+  const runtime = ref.current;
+  const [, force] = useReducer((x) => x + 1, 0);
+  const [hydrated, setHydrated] = useState(false);
+
+  // Restore a persisted session before rendering, then re-render on any change.
+  useEffect(() => { Promise.resolve(hydrateSession(runtime, { userPath: "user" })).finally(() => setHydrated(true)); }, []);
+  useEffect(() => runtime.state.subscribe("", () => force()), []);
+
+  const navigation = useMemo(() => ({
+    navigate: (r) => router.push(routeFor(r)),
+    goBack: () => router.back(),
+    replace: (r) => router.replace(routeFor(r)),
+    reset: (routes) => { if (routes && routes[0]) router.replace(routeFor(routes[0])); },
+  }), []);
+
+  const dispatch = useMemo(() => (refs, event) => {
+    const list = Array.isArray(refs) ? refs : [refs];
+    for (const r of list) Promise.resolve(runtime.actions.dispatch(r, { navigation, event })).catch((e) => {
+      const msg = (e && e.message) || String(e);
+      console.error("[mint] action failed:", msg);
+      runtime.state.set("_lastError", msg); // bind a component to $_lastError to surface it
+    });
+  }, [navigation]);
+
+  const value = useMemo(() => ({ runtime, dispatch, navigation }), [dispatch, navigation]);
+  return React.createElement(Ctx.Provider, { value }, hydrated ? children : null);
 }
 `;
 }
 
-// ── Runtime provider (self-contained; live DB bridge) ────────
+// ── SchemaRenderer.tsx — generic RN renderer (ports the web one) ─
 
-function runtimeFile(
-  opts: RNSchemaOptions,
-  routesMap: Record<string, string> = {},
-  navAfter: Record<string, string> = {},
-  actionSchemas: Record<string, { type: string; config?: Record<string, unknown> }> = {}
-): string {
-  const origin = opts.apiOrigin || "https://mintweb.mintit.pro";
-  return `import React, { createContext, useContext, useState, useCallback, useRef } from "react";
-import { router } from "expo-router";
+function rendererFile(): string {
+  return `import React from "react";
+import { View, Text, TextInput, Pressable, ScrollView, Image } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useMint, PROJECT_ID } from "../lib/MintProvider";
+import { STYLES, SCHEMA } from "../lib/schema";
+import { DataTable, Timeline, StatusChip, SelectInput, DateField, FileUpload, MintImage, Camera, Chart, StatCard } from "./MintComponents";
 
-export const PROJECT_ID = ${JSON.stringify(opts.projectId)};
-// API origin. The baked default is the editor you exported from. On a phone
-// or Android emulator "localhost" is the DEVICE, not your computer — set
-// EXPO_PUBLIC_API_ORIGIN to your machine's LAN IP (e.g. http://192.168.1.20:3001)
-// in a .env file and restart Metro (no re-export needed).
-export const API_ORIGIN =
-  (typeof process !== "undefined" && process.env && process.env.EXPO_PUBLIC_API_ORIGIN) ||
-  ${JSON.stringify(origin)};
-// Project sync token — authenticates managed-DB calls from this app.
-export const AUTH_TOKEN =
-  (typeof process !== "undefined" && process.env && process.env.EXPO_PUBLIC_MINT_TOKEN) ||
-  ${JSON.stringify(opts.authToken || "")};
-const DB_BRIDGE = API_ORIGIN + "/api/db/" + PROJECT_ID;
-const AUTH_HEADERS = AUTH_TOKEN ? { Authorization: "Bearer " + AUTH_TOKEN } : {};
-
-// ── Navigation ───────────────────────────────────────────────
-// ROUTES: screenId -> expo-router path (home screen is "/").
-// NAV_AFTER: actionName -> screenId to navigate to once the action
-//            succeeds (skipped when the action returns false).
-const ROUTES = ${JSON.stringify(routesMap)};
-const NAV_AFTER = ${JSON.stringify(navAfter)};
-// Generic action schemas (name -> {type, config}) from the runtime schema.
-// Lets config-driven actions (setState/navigate/…) run alongside the built-in
-// domain ACTIONS map below — e.g. role onboarding setState on mobile.
-const ACTION_SCHEMAS = ${JSON.stringify(actionSchemas)};
-function routeFor(target) {
-  if (!target) return "/";
-  if (ROUTES[target]) return ROUTES[target];
-  return target.charAt(0) === "/" ? target : "/" + target;
-}
-
-// Live SQL against the project's hosted DB. Tables are project-scoped
-// server-side, so unprefixed names are used here.
-export async function dbQuery(sql, params = []) {
-  const res = await fetch(DB_BRIDGE, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...AUTH_HEADERS },
-    body: JSON.stringify({ sql, params }),
-  });
-  if (!res.ok) throw new Error("DB query failed: " + res.status);
-  const j = await res.json();
-  return j.rows || j.result || [];
-}
-
-// ── THE one dynamic-at-runtime piece ─────────────────────────
-// Next approval step is read FRESH from workflow_steps every call —
-// never a baked-in sequence. Add a step in the DB and this changes
-// with no re-export.
-export async function getNextStep(currentStepKey) {
-  const rows = await dbQuery(
-    "SELECT step_key, label, approver_role, position FROM workflow_steps WHERE active = true ORDER BY position ASC"
+// Screen = the top-level components for a route, in a scrollable safe area.
+export function Screen({ components, background }) {
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: background || "#0B0B0F" }}>
+      <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 16 }}>
+        <View style={{ flex: 1, position: "relative" }}>
+          {(components || []).map((c) => <Node key={c.id} comp={c} />)}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
-  if (!rows.length) return null;
-  if (!currentStepKey) return rows[0];
-  const idx = rows.findIndex((r) => r.step_key === currentStepKey);
-  if (idx === -1 || idx >= rows.length - 1) return null; // none left → approved
-  return rows[idx + 1];
 }
 
-const Ctx = createContext(null);
-
-export function MintProvider({ children }) {
-  const [version, setVersion] = useState(0);
-  const stateRef = useRef({ user: { role: "employee" }, local: {}, global: {} });
-  const rerender = useCallback(() => setVersion((v) => v + 1), []);
-
-  const setState = useCallback((path, value) => {
-    const parts = String(path).split(".");
-    let o = stateRef.current;
-    for (let i = 0; i < parts.length - 1; i++) {
-      if (typeof o[parts[i]] !== "object" || o[parts[i]] == null) o[parts[i]] = {};
-      o = o[parts[i]];
+// ScreenHost runs the screen's onMount actions (e.g. dbQuery loads), then renders it.
+export function ScreenHost({ screen, background }) {
+  const { dispatch, runtime, navigation } = useMint();
+  React.useEffect(() => {
+    // Protected screen: redirect to login when there's no authenticated user.
+    if (screen.requiresAuth) {
+      const u = runtime.state.get("user");
+      const login = (SCHEMA.navigation && SCHEMA.navigation.loginRoute) || "/";
+      if ((!u || !u.id) && screen.route !== login) { navigation.navigate(login); return; }
     }
-    o[parts[parts.length - 1]] = value;
-    rerender();
-  }, [rerender]);
-
-  // Action dispatcher — see ACTIONS map below.
-  // Handles the "navigate:<screenId>" button convention, runs the named
-  // action, then navigates if NAV_AFTER declares a target (unless the
-  // action returned false, e.g. failed sign-in).
-  const runGeneric = async (sch, ctx) => {
-    const c = sch.config || {};
-    switch (sch.type) {
-      case "setState": setState(String(c.path), c.value); return;
-      case "resetState": setState(String(c.path), c.defaultValue != null ? c.defaultValue : null); return;
-      case "navigate": router.push(routeFor(c.route || c.target)); return;
-      case "signIn": return ACTIONS.signIn({ state: stateRef.current, setState, dbQuery, getNextStep, ctx: ctx || {} });
-      case "signUp": return ACTIONS.signUp({ state: stateRef.current, setState, dbQuery, getNextStep, ctx: ctx || {} });
-      case "signOut": return ACTIONS.signOut({ state: stateRef.current, setState, dbQuery, getNextStep, ctx: ctx || {} });
-      default: console.warn("Unsupported action type: " + sch.type); return;
-    }
-  };
-
-  const actions = useCallback(async (name, ctx) => {
-    if (typeof name === "string" && name.indexOf("navigate:") === 0) {
-      router.push(routeFor(name.slice("navigate:".length)));
-      return;
-    }
-    const fn = ACTIONS[name];
-    let result;
-    if (fn) {
-      result = await fn({ state: stateRef.current, setState, dbQuery, getNextStep, ctx: ctx || {} });
-    } else if (ACTION_SCHEMAS[name]) {
-      result = await runGeneric(ACTION_SCHEMAS[name], ctx);
-    } else {
-      console.warn("Unknown action: " + name); return;
-    }
-    if (result !== false && NAV_AFTER[name]) router.replace(routeFor(NAV_AFTER[name]));
-    return result;
-  }, [setState]);
-
-  return React.createElement(Ctx.Provider, { value: { state: stateRef.current, setState, actions, _v: version } }, children);
+    (screen.onMount || []).forEach((a) => dispatch([a]));
+    (screen.localState || []).forEach((d) => { if (d.async && d.async.autoFetch && d.async.source) dispatch([d.async.source]); });
+    // eslint-disable-next-line
+  }, [screen.id]);
+  return <Screen components={screen.components} background={background} />;
 }
 
-export function useMint() {
-  const c = useContext(Ctx);
-  if (!c) throw new Error("useMint outside MintProvider");
-  return c;
+// Row height for repeaters = the children's bounding box, so absolutely
+// positioned children don't stack on top of each other (per-row context).
+function rowHeightOf(children) {
+  let h = 0;
+  for (const ch of children || []) {
+    const st = STYLES[ch.id] || {};
+    const t = Number(st.top) || 0;
+    const hh = Number(st.height) || 0;
+    if (t + hh > h) h = t + hh;
+  }
+  return h || undefined;
 }
 
-// ── Action library (data-access via dbQuery / getNextStep) ───
-const ACTIONS = {
-  // Load active expenses into local.expenses
-  loadExpenses: async ({ setState }) => {
-    const rows = await dbQuery("SELECT * FROM expenses ORDER BY created_at DESC");
-    setState("local.expenses", rows);
-  },
-  // Load workflow steps for the builder screen
-  loadSteps: async ({ setState }) => {
-    const rows = await dbQuery("SELECT * FROM workflow_steps ORDER BY position ASC");
-    setState("local.steps", rows);
-  },
-  // Load approval events for the active expense (Timeline)
-  loadEvents: async ({ state, setState }) => {
-    const id = state.local?.activeExpense?.id;
-    if (!id) return;
-    const rows = await dbQuery("SELECT * FROM approval_events WHERE expense_id = $1 ORDER BY created_at ASC", [id]);
-    setState("local.events", rows);
-  },
-  // Submit a new expense — first step computed LIVE
-  submitExpense: async ({ state, setState }) => {
-    const f = state.local?.form || {};
-    const first = await getNextStep(null);
-    const status = first ? "pending_" + first.step_key : "approved";
-    const rows = await dbQuery(
-      "INSERT INTO expenses (title, description, amount, category, receipt_url, status, current_step_key, employee_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",
-      [f.title || "", f.description || "", Number(f.amount) || 0, f.category || null, state.local?.receipt_url || null, status, first ? first.step_key : null, null]
-    );
-    setState("local.form", {});
-    return rows[0];
-  },
-  // Approve current step — advance using LIVE next-step lookup
-  approveExpense: async ({ state }) => {
-    const exp = state.local?.activeExpense;
-    if (!exp) return;
-    const next = await getNextStep(exp.current_step_key);
-    const status = next ? "pending_" + next.step_key : "approved";
-    await dbQuery("UPDATE expenses SET status=$1, current_step_key=$2 WHERE id=$3", [status, next ? next.step_key : null, exp.id]);
-    await dbQuery("INSERT INTO approval_events (expense_id, step_key, label, status) VALUES ($1,$2,$3,$4)", [exp.id, exp.current_step_key, "Approved", "completed"]);
-  },
-  // Workflow Builder: add a step row LIVE — re-fetch reflects it everywhere
-  addWorkflowStep: async ({ state, setState }) => {
-    const f = state.local?.newStep || {};
-    const cnt = await dbQuery("SELECT COALESCE(MAX(position),0)+1 AS pos FROM workflow_steps");
-    const pos = cnt[0] ? Number(cnt[0].pos) : 1;
-    await dbQuery(
-      "INSERT INTO workflow_steps (step_key, label, approver_role, position, active) VALUES ($1,$2,$3,$4,true)",
-      [f.step_key || "dept_head", f.label || "Department Head Approval", f.approver_role || "department_head", pos]
-    );
-    const rows = await dbQuery("SELECT * FROM workflow_steps ORDER BY position ASC");
-    setState("local.steps", rows);
-  },
-  // Dashboard: load role-conditional counts
-  loadDashboard: async ({ state, setState }) => {
-    const all = await dbQuery("SELECT status, amount FROM expenses");
-    const pending = all.filter((r) => r.status && r.status.startsWith("pending_")).length;
-    const approved = all.filter((r) => r.status === "approved" || r.status === "reimbursed").length;
-    const total = all.reduce((s, r) => s + Number(r.amount || 0), 0);
-    setState("local.pendingCount", String(pending));
-    setState("local.approvedCount", String(approved));
-    setState("local.totalAmount", "$" + total.toFixed(2));
-  },
-  // Manager Approvals: load expenses pending manager step
-  loadPendingManager: async ({ setState }) => {
-    const rows = await dbQuery("SELECT * FROM expenses WHERE status = $1 ORDER BY created_at DESC", ["pending_manager"]);
-    setState("local.pendingExpenses", rows);
-  },
-  // Finance Approvals: load expenses pending finance step
-  loadPendingFinance: async ({ setState }) => {
-    const rows = await dbQuery("SELECT * FROM expenses WHERE status = $1 ORDER BY created_at DESC", ["pending_finance"]);
-    setState("local.pendingExpenses", rows);
-  },
-  // Approve from list view (Manager/Finance) — sets activeExpense then delegates
-  approveExpenseFromList: async ({ state, setState, ctx }) => {
-    const exp = ctx; // the loop item
-    if (!exp?.id) return;
-    const next = await getNextStep(exp.current_step_key);
-    const status = next ? "pending_" + next.step_key : "approved";
-    await dbQuery("UPDATE expenses SET status=$1, current_step_key=$2 WHERE id=$3", [status, next ? next.step_key : null, exp.id]);
-    await dbQuery("INSERT INTO approval_events (expense_id, step_key, label, status) VALUES ($1,$2,$3,$4)", [exp.id, exp.current_step_key, "Approved", "completed"]);
-    // Refresh the list
-    const role = state.user?.role;
-    if (role === "finance") {
-      const rows = await dbQuery("SELECT * FROM expenses WHERE status = $1 ORDER BY created_at DESC", ["pending_finance"]);
-      setState("local.pendingExpenses", rows);
-    } else {
-      const rows = await dbQuery("SELECT * FROM expenses WHERE status = $1 ORDER BY created_at DESC", ["pending_manager"]);
-      setState("local.pendingExpenses", rows);
+function Node({ comp, loopCtx }) {
+  const { runtime, dispatch } = useMint();
+  const ctx = { ...runtime.state.getContext(), ...(loopCtx || {}) };
+
+  // visibility (role + conditionalRender)
+  if (comp.requiredRoles && comp.requiredRoles.length) {
+    const role = ctx.user && ctx.user.role;
+    if (!role || comp.requiredRoles.indexOf(role) === -1) return null;
+  }
+  if (comp.conditionalRender) {
+    try { if (!runtime.evalExpr(comp.conditionalRender, ctx)) return null; } catch {}
+  }
+
+  // resolve bound props
+  const props = { ...(comp.props || {}) };
+  const b = comp.bindings || {};
+  for (const k in b) { try { props[k] = runtime.evalExpr(b[k], ctx); } catch {} }
+
+  const style = STYLES[comp.id] || {};
+  const ev = comp.events || {};
+  const fire = (refs) => { if (refs && refs.length) dispatch(refs); };
+  const setBound = (key, v) => { const expr = b[key]; if (expr) runtime.state.set(String(expr).replace(/^\\$/, ""), v); };
+  const kids = (lc) => (comp.children || []).map((ch) => <Node key={ch.id} comp={ch} loopCtx={lc || loopCtx} />);
+
+  const bindVal = b.value || b.inputBind;
+  const setVal = (v) => { if (bindVal) runtime.state.set(String(bindVal).replace(/^\\$/, ""), v); fire(ev.onChange); };
+  const it = props.inputType ? String(props.inputType) : null;
+  const kbType = (t) => (t === "email" ? "email-address" : t === "number" ? "numeric" : t === "tel" ? "phone-pad" : "default");
+
+  switch (comp.type) {
+    case "text":
+      return <Text style={style}>{String(props.text ?? props.value ?? "")}</Text>;
+
+    case "button": {
+      const label = String(props.text ?? props.label ?? "Button");
+      const textStyle = { color: style.color || "#fff", fontSize: style.fontSize || 15, fontWeight: style.fontWeight || "600", textAlign: "center" };
+      return (
+        <Pressable style={style} disabled={!!props.disabled} onPress={() => fire(ev.onClick || ev.onPress)}>
+          <Text style={textStyle}>{label}</Text>
+        </Pressable>
+      );
     }
-  },
-  // Reject from list view
-  rejectExpenseFromList: async ({ state, setState, ctx }) => {
-    const exp = ctx;
-    if (!exp?.id) return;
-    await dbQuery("UPDATE expenses SET status=$1, current_step_key=$2 WHERE id=$3", ["rejected", null, exp.id]);
-    await dbQuery("INSERT INTO approval_events (expense_id, step_key, label, status) VALUES ($1,$2,$3,$4)", [exp.id, exp.current_step_key || "unknown", "Rejected", "failed"]);
-    const role = state.user?.role;
-    const statusFilter = role === "finance" ? "pending_finance" : "pending_manager";
-    const rows = await dbQuery("SELECT * FROM expenses WHERE status = $1 ORDER BY created_at DESC", [statusFilter]);
-    setState("local.pendingExpenses", rows);
-  },
-  // Mark expense as reimbursed (Finance)
-  markReimbursed: async ({ setState, ctx }) => {
-    const exp = ctx;
-    if (!exp?.id) return;
-    await dbQuery("UPDATE expenses SET status=$1 WHERE id=$2", ["reimbursed", exp.id]);
-    await dbQuery("INSERT INTO approval_events (expense_id, step_key, label, status) VALUES ($1,$2,$3,$4)", [exp.id, "finance", "Reimbursed", "completed"]);
-    const rows = await dbQuery("SELECT * FROM expenses WHERE status = $1 ORDER BY created_at DESC", ["pending_finance"]);
-    setState("local.pendingExpenses", rows);
-  },
-  // ── Auth (real platform endpoints) ─────────────────────────
-  signIn: async ({ state, setState }) => {
-    const f = state.local?.form || {};
-    const res = await fetch(API_ORIGIN + "/api/login", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: f.email, password: f.password }),
-    });
-    const j = await res.json().catch(() => ({}));
-    if (!res.ok) { setState("local.authError", j.error || "Sign in failed"); return false; }
-    if (j.user) setState("user", j.user);
-    if (j.token) setState("session.token", j.token);
-    setState("local.authError", "");
-    setState("local.form", {});
-  },
-  signUp: async ({ state, setState }) => {
-    const f = state.local?.form || {};
-    const res = await fetch(API_ORIGIN + "/api/signup", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: f.email, password: f.password, name: f.name }),
-    });
-    const j = await res.json().catch(() => ({}));
-    if (!res.ok) { setState("local.authError", j.error || "Sign up failed"); return false; }
-    if (j.user) setState("user", j.user);
-    if (j.token) setState("session.token", j.token);
-    setState("local.authError", "");
-    setState("local.form", {});
-  },
-  signOut: async ({ setState }) => {
-    try { await fetch(API_ORIGIN + "/api/logout", { method: "POST" }); } catch (e) {}
-    setState("user", null);
-    setState("session.token", null);
-  },
-  navigate: async ({ ctx }) => { if (ctx && ctx.to) router.push(routeFor(ctx.to)); },
-};
+
+    case "input":
+    case "searchInput":
+      return (
+        <TextInput
+          style={style}
+          value={props.value != null ? String(props.value) : ""}
+          onChangeText={setVal}
+          placeholder={props.placeholder != null ? String(props.placeholder) : ""}
+          placeholderTextColor="#9CA3AF"
+          secureTextEntry={it === "password"}
+          keyboardType={kbType(it)}
+          autoCapitalize={(it === "email" || it === "password") ? "none" : "sentences"}
+        />
+      );
+
+    case "select":
+      return <SelectInput options={props.options || props.enumValues || []} value={props.value} onChange={(v) => setVal(v)} placeholder={props.placeholder} />;
+
+    case "datePicker":
+      return <DateField value={props.value} onChange={(v) => setVal(v)} />;
+
+    case "statusChip": return <StatusChip value={props.value} />;
+    case "dataTable": return <DataTable data={Array.isArray(props.dataSource) ? props.dataSource : []} config={props} />;
+    case "timeline": return <Timeline data={Array.isArray(props.dataSource) ? props.dataSource : []} config={props} activeStepValue={props.activeStepValue} />;
+    case "chart": return <Chart data={Array.isArray(props.dataSource) ? props.dataSource : []} config={props} />;
+    case "statCard": return <StatCard value={props.value} delta={props.delta} config={props} />;
+    case "fileUpload": return <FileUpload projectId={PROJECT_ID} onUploaded={(url) => setBound("value", url)} />;
+    case "camera": return <Camera config={props} projectId={PROJECT_ID} onCaptured={(url) => setBound("value", url)} />;
+    case "image":
+      return props.src ? <MintImage src={String(props.src)} config={props} /> : <View style={style} />;
+
+    default: {
+      // frame-as-input (LayerContent.inputType on a frame)
+      if (it && comp.type === "frame") {
+        if (it === "textarea")
+          return <TextInput style={style} multiline numberOfLines={4} value={props.value != null ? String(props.value) : ""} onChangeText={setVal} placeholder={props.placeholder ? String(props.placeholder) : ""} placeholderTextColor="#9CA3AF" />;
+        if (it === "select")
+          return <SelectInput options={props.selectOptions || props.options || []} value={props.value} onChange={(v) => setVal(v)} placeholder={props.placeholder} />;
+        if (it === "checkbox")
+          return <Pressable style={style} onPress={() => setVal(!props.value)}><Text style={{ color: style.color || "#E5E7EB" }}>{props.value ? "☑" : "☐"} {props.placeholder || ""}</Text></Pressable>;
+        return <TextInput style={style} value={props.value != null ? String(props.value) : ""} onChangeText={setVal} placeholder={props.placeholder ? String(props.placeholder) : ""} placeholderTextColor="#9CA3AF" secureTextEntry={it === "password"} keyboardType={kbType(it)} autoCapitalize={(it === "email" || it === "password") ? "none" : "sentences"} />;
+      }
+
+      // repeater (list / grid / frame with repeatFor)
+      if (comp.repeatFor) {
+        let items = [];
+        try { const v = runtime.evalExpr(comp.repeatFor.items, ctx); items = Array.isArray(v) ? v : []; } catch {}
+        const as = comp.repeatFor.as || "item";
+        const rh = rowHeightOf(comp.children);
+        const rows = items.map((row, i) => (
+          <View key={i} style={rh ? { position: "relative", height: rh } : { position: "relative" }}>
+            {(comp.children || []).map((ch) => <Node key={ch.id} comp={ch} loopCtx={{ ...loopCtx, [as]: row }} />)}
+          </View>
+        ));
+        return ev.onClick
+          ? <Pressable style={style} onPress={() => fire(ev.onClick)}>{rows}</Pressable>
+          : <View style={style}>{rows}</View>;
+      }
+
+      return ev.onClick
+        ? <Pressable style={style} onPress={() => fire(ev.onClick)}>{kids()}</Pressable>
+        : <View style={style}>{kids()}</View>;
+    }
+  }
+}
+`;
+}
+
+// ── Screen file — just hosts its schema screen (no static JSX) ─
+
+function screenFile(name: string, index: number): string {
+  return `import React from "react";
+import { ScreenHost } from "../components/SchemaRenderer";
+import { SCHEMA, THEME_BG } from "../lib/schema";
+
+export default function ${compName(name)}() {
+  return <ScreenHost screen={SCHEMA.screens[${index}]} background={THEME_BG} />;
+}
 `;
 }
 
@@ -622,7 +531,7 @@ export function FileUpload({ projectId, onUploaded }) {
       const fd = new FormData();
       fd.append("projectId", projectId);
       fd.append("file", { uri: asset.uri, name: asset.fileName || "upload.jpg", type: asset.mimeType || "image/jpeg" });
-      const origin = require("../lib/mint-runtime").API_ORIGIN || "";
+      const origin = require("../lib/MintProvider").API_ORIGIN || "";
       const res = await fetch(origin + "/api/upload", { method: "POST", body: fd });
       const j = await res.json();
       if (j.url) { setName(asset.fileName || "uploaded"); onUploaded(j.url); }
@@ -658,7 +567,7 @@ export function Camera({ config, projectId, onCaptured }) {
       const fd = new FormData();
       fd.append("projectId", projectId);
       fd.append("file", { uri: asset.uri, name: asset.fileName || "photo.jpg", type: asset.mimeType || "image/jpeg" });
-      const origin = require("../lib/mint-runtime").API_ORIGIN || "";
+      const origin = require("../lib/MintProvider").API_ORIGIN || "";
       const res = await fetch(origin + (cfg.uploadUrl || "/api/upload"), { method: "POST", body: fd });
       const j = await res.json();
       if (j.url) onCaptured(j.url);
@@ -761,43 +670,35 @@ export function buildReactNativeFromSchema(
   const files: GeneratedFile[] = [];
   const screens = schema.screens || [];
 
-  // Routes: first screen is index
+  // Routes: first screen is index ("/"), the rest are slugged paths.
   const routes = screens.map((sc, i) => ({
     screen: sc,
+    index: i,
     isHome: i === 0,
     route: i === 0 ? "index" : slug(sc.name),
   }));
 
-  // screenId -> expo-router path (home is "/"), used by the runtime to
-  // resolve "navigate:<screenId>" and post-action navigation.
+  // screenId -> expo-router path (home is "/") — used by navigate-by-id.
   const routesMap: Record<string, string> = {};
   for (const r of routes) routesMap[r.screen.id] = r.isHome ? "/" : "/" + r.route;
 
-  // actionName -> screenId to navigate to after the action succeeds,
-  // declared per-action via config.navigateTo in the runtime schema.
-  const navAfter: Record<string, string> = {};
-  const actionSchemas: Record<string, { type: string; config?: Record<string, unknown> }> = {};
-  for (const a of (schema.globalActions || []) as any[]) {
-    const target = a?.config?.navigateTo;
-    if (target) navAfter[a.name] = String(target);
-    if (a?.name && a?.type) actionSchemas[a.name] = { type: a.type, config: a.config || {} };
-  }
+  const themeBg = (schema.theme?.colors?.background as string) || "#0B0B0F";
 
-  // app/_layout.tsx
+  // app/_layout.tsx — wraps the app in MintProvider + the expo-router Stack.
   files.push({
     path: "app/_layout.tsx",
     type: "text",
     content: `import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { MintProvider } from "../lib/mint-runtime";
+import { MintProvider } from "../lib/MintProvider";
 
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <StatusBar style="light" />
       <MintProvider>
-        <Stack screenOptions={{ headerStyle: { backgroundColor: "#0B0B0F" }, headerTintColor: "#fff", contentStyle: { backgroundColor: "#0B0B0F" } }}>
+        <Stack screenOptions={{ headerStyle: { backgroundColor: ${JSON.stringify(themeBg)} }, headerTintColor: "#fff", contentStyle: { backgroundColor: ${JSON.stringify(themeBg)} } }}>
 ${routes.map((r) => `          <Stack.Screen name="${r.route}" options={{ title: ${JSON.stringify(r.screen.name)} }} />`).join("\n")}
         </Stack>
       </MintProvider>
@@ -807,16 +708,20 @@ ${routes.map((r) => `          <Stack.Screen name="${r.route}" options={{ title:
 `,
   });
 
-  // screen files
+  // Screen files — each just hosts its schema screen (data-driven at runtime).
   for (const r of routes) {
     files.push({
       path: r.isHome ? "app/index.tsx" : `app/${r.route}.tsx`,
       type: "text",
-      content: emitScreen(r.screen, r.isHome),
+      content: screenFile(r.screen.name, r.index),
     });
   }
 
-  files.push({ path: "lib/mint-runtime.tsx", type: "text", content: runtimeFile(opts, routesMap, navAfter, actionSchemas) });
+  // Runtime + renderer + baked schema (mirrors the web export).
+  files.push({ path: "lib/mint-runtime.js", type: "text", content: generateMintRuntimeBundle() });
+  files.push({ path: "lib/schema.ts", type: "text", content: schemaFile(schema, opts, routesMap, themeBg) });
+  files.push({ path: "lib/MintProvider.tsx", type: "text", content: providerFile() });
+  files.push({ path: "components/SchemaRenderer.tsx", type: "text", content: rendererFile() });
   files.push({ path: "components/MintComponents.tsx", type: "text", content: mintComponentsFile() });
   files.push({ path: "lib/styles.ts", type: "text", content: stylesFile() });
 
@@ -840,6 +745,7 @@ ${routes.map((r) => `          <Stack.Screen name="${r.route}" options={{ title:
         lint: "expo lint",
       },
       dependencies: {
+        "@react-native-async-storage/async-storage": "2.1.2",
         "expo": "~54.0.33",
         "expo-constants": "~18.0.13",
         "expo-image-picker": "~17.0.8",
