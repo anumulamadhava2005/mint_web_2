@@ -9,13 +9,14 @@ import React, { useState, useCallback } from "react";
 import { Play, Terminal, RefreshCw } from "lucide-react";
 import { runProjectQuery, displayValue, type DbRow } from "./dbStudioQuery";
 import { C } from "./dbStudioTheme";
+import { usePersistentState } from "./usePersistentState";
 
 const PLACEHOLDER = `-- DML only (SELECT / INSERT / UPDATE / DELETE)
 -- Use bare table names; they're namespaced to your project.
 SELECT * FROM your_table LIMIT 50`;
 
 export default function SqlEditor({ projectId }: { projectId?: string }) {
-  const [sql, setSql] = useState("");
+  const [sql, setSql] = usePersistentState<string>(`mintdb:sql:${projectId ?? "local"}`, "");
   const [rows, setRows] = useState<DbRow[] | null>(null);
   const [rowCount, setRowCount] = useState(0);
   const [running, setRunning] = useState(false);

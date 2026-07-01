@@ -68,9 +68,8 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
+  const { projectId } = await params;
   try {
-    const { projectId } = await params;
-
     if (!projectId || typeof projectId !== "string") {
       return NextResponse.json({ error: "Missing projectId" }, { status: 400, headers: corsHeaders() });
     }
@@ -157,7 +156,7 @@ export async function POST(
     // All tables are prefixed with the project ID to provide isolation
     const namespacedSQL = namespaceQuery(sql, projectId);
 
-    const sanitizedParams = (queryParams || []).map((p: any) =>
+    const sanitizedParams = (queryParams || []).map((p: unknown) =>
       (p === "" || p === undefined) ? null : p
     );
 
@@ -175,8 +174,18 @@ export async function POST(
     }, { headers: corsHeaders() });
   } catch (e) {
     console.error("[MintDB] Query error:", e);
+    // Surface the underlying Postgres error, but translate it back to the
+    // user's terms: strip the internal per-project table prefix, and rewrite
+    // the "relation does not exist" case into an actionable hint.
+    const prefix = `mint_proj_${projectId.replace(/[^a-zA-Z0-9_]/g, "")}_`;
+    let message = e instanceof Error ? e.message : "Query failed";
+    message = message.split(prefix).join("");
+    const missing = message.match(/relation "([^"]+)" does not exist/i);
+    if (missing) {
+      message = `Table "${missing[1]}" is not deployed yet — create it with the Deploy button, then run this query.`;
+    }
     return NextResponse.json(
-      { error: "Query failed" },
+      { error: message },
       { status: 400, headers: corsHeaders() }
     );
   }

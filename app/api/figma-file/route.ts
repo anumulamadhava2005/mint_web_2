@@ -33,6 +33,17 @@ export async function GET(req: NextRequest) {
     }
     const projectName: string = projRes.rows[0].name;
 
+    // Serves the freshest available data: Redis pending write takes priority
+    // over the DB because saves are buffered in Redis for up to 15 min before
+    // flushing to the DB via /api/figma-flush. Without this check, opening the
+    // editor in a new tab would load stale DB data and lose recent changes
+    // (notably newly-created database tables).
+    type PendingCanvas = { fileId: string; figmaData: Record<string, unknown>; displayName: string };
+    const pending = await cacheGet<PendingCanvas>(PENDING_KEY(projectId));
+    if (pending) {
+      return NextResponse.json({ fileId: pending.fileId, fileName: pending.displayName, projectName, ...pending.figmaData });
+    }
+
     const result = await db.query(
       `SELECT f.id, f.name, f.data, f.revn
        FROM files f

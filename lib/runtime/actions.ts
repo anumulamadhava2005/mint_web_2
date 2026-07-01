@@ -303,6 +303,26 @@ export class ActionRegistry {
       return data;
     });
 
+    // Read rows from the project's managed database via the DML bridge endpoint.
+    // Stores the rows array (not the envelope) at storePath so a repeater can
+    // bind repeatFor.items = "$<storePath>".
+    this.register("dbQuery", async (config, ctx) => {
+      const projectId = String(config.projectId || "");
+      const url = `/api/db/${projectId}`;
+      const init = {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sql: String(config.sql || ""), params: (config.params as unknown[]) || [] }),
+      };
+      const response = ctx.api
+        ? await ctx.api.fetch(url, init)
+        : await fetch(url, { ...init, credentials: "include" });
+      const data = (await response.json().catch(() => ({}))) as { rows?: unknown[] };
+      const rows = Array.isArray(data.rows) ? data.rows : [];
+      if (config.storePath) ctx.state.set(String(config.storePath), rows);
+      return rows;
+    });
+
     this.register("mutate", async (config, ctx) => {
       const opt = ctx.state.optimistic(
         String(config.optimisticPath || config.storePath),

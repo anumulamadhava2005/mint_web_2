@@ -122,6 +122,33 @@ function RenderNode({
   const css = styleToCss(component.style);
   const onClick = clickHandler(component, runtime, context);
 
+  // Any container bound to data (repeatFor) becomes a live list: render the
+  // component's children once per row with the loop var (`as`) in context.
+  // list/grid have their own handling below.
+  if (component.repeatFor && component.type !== "list" && component.type !== "grid") {
+    const items = engine.resolveListItems(component);
+    const as = component.repeatFor.as;
+    const children = component.children ?? [];
+    return (
+      <div data-repeat={component.type} style={css}>
+        {items.map((item, i) => (
+          <div key={i} data-index={i}>
+            {children.map((ch) => (
+              <RenderNode
+                key={ch.id}
+                component={ch}
+                engine={engine}
+                runtime={runtime}
+                projectId={projectId}
+                context={{ ...context, [as]: item }}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   switch (component.type) {
     // ── Rich data components ──────────────────────────────────
     case "dataTable": {

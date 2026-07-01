@@ -24,6 +24,15 @@ function hashPassword(password: string, salt: string) {
   return hashPasswordWithCost(password, salt, 65536);
 }
 
+// Reusable scrypt primitives for generated apps' end-user auth (see
+// app/api/app-auth/[projectId]). Same cost factor as the platform's own auth.
+export function newSalt(): string {
+  return crypto.randomBytes(16).toString("hex");
+}
+export function scryptHash(password: string, salt: string): string {
+  return hashPassword(password, salt);
+}
+
 // Constant-time dummy hash for timing-safe user enumeration prevention (ATK-12)
 const DUMMY_SALT = "0000000000000000000000000000000000000000000000000000000000000000";
 export function dummyVerifyPassword(password: string): void {

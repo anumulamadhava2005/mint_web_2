@@ -3,7 +3,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import {
   MousePointer2, Maximize2, Scissors, Square, PenTool, Type, Hand,
-  MessageSquare, Triangle,
+  MessageSquare, Triangle, TextCursorInput,
 } from 'lucide-react';
 import { useFigmaStore, type ToolType } from '@/lib/stores/figmaStore';
 
@@ -116,6 +116,7 @@ export default function ToolStrip() {
   const bottomTools: Tool[] = [
     { id: 'pen', key: 'P', label: 'Pen', icon: <PenTool size={15} /> },
     { id: 'text', key: 'T', label: 'Text', icon: <Type size={15} /> },
+    { id: 'input', key: 'I', label: 'Input field', icon: <TextCursorInput size={15} /> },
   ];
 
   const utilTools: Tool[] = [

@@ -13,7 +13,6 @@ import type {
   FieldSchema,
   FieldType,
   RelationSchema,
-  IndexSchema,
   PolicySchema,
 } from "./schema";
 
@@ -79,6 +78,207 @@ export function generateMigrations(schema: DatabaseConfigSchema): Migration[] {
   }
 
   return migrations;
+}
+
+// ── Idempotent schema sync ───────────────────────────────────
+// Unlike generateMigrations (create-only), this emits statements that
+// converge an existing table to the desired schema on every deploy:
+//   • CREATE TABLE IF NOT EXISTS (id only) — safe whether or not it exists
+//   • ALTER TABLE ADD COLUMN IF NOT EXISTS for every column (adds new ones)
+//   • CREATE INDEX IF NOT EXISTS
+//   • DROP/CREATE for policies + enum CHECKs so edits round-trip
+//   • FK columns + constraints guarded by existence checks
+// It is intentionally ADDITIVE: it never drops columns/tables or alters
+// column types (those are destructive and left to manual migration).
+
+export interface SyncStatement { sql: string; label: string }
+
+export function generateSyncStatements(
+  schema: DatabaseConfigSchema,
+  existingTables: Set<string>,
+): SyncStatement[] {
+  const pass1: SyncStatement[] = []; // tables, columns, indexes, checks
+  const pass2: SyncStatement[] = []; // FKs, junctions, RLS, triggers (need targets to exist)
+
+  for (const table of schema.tables) {
+    const isNew = !existingTables.has(table.name);
+
+    pass1.push({
+      label: `table ${table.name}`,
+      sql: `CREATE TABLE IF NOT EXISTS "${table.name}" ("id" UUID PRIMARY KEY DEFAULT gen_random_uuid());`,
+    });
+
+    for (const field of table.fields) {
+      if (field.name === "id") continue;
+      pass1.push({
+        label: `column ${table.name}.${field.name}`,
+        sql: `ALTER TABLE "${table.name}" ADD COLUMN IF NOT EXISTS ${syncColumn(field, isNew)};`,
+      });
+    }
+
+    if (table.timestamps !== false) {
+      if (!table.fields.some((f) => f.name === "created_at"))
+        pass1.push({ label: `column ${table.name}.created_at`, sql: `ALTER TABLE "${table.name}" ADD COLUMN IF NOT EXISTS "created_at" TIMESTAMPTZ NOT NULL DEFAULT now();` });
+      if (!table.fields.some((f) => f.name === "updated_at"))
+        pass1.push({ label: `column ${table.name}.updated_at`, sql: `ALTER TABLE "${table.name}" ADD COLUMN IF NOT EXISTS "updated_at" TIMESTAMPTZ NOT NULL DEFAULT now();` });
+    }
+    if (table.softDelete && !table.fields.some((f) => f.name === "deleted_at")) {
+      pass1.push({ label: `column ${table.name}.deleted_at`, sql: `ALTER TABLE "${table.name}" ADD COLUMN IF NOT EXISTS "deleted_at" TIMESTAMPTZ DEFAULT NULL;` });
+    }
+
+    for (const idx of table.indexes) {
+      const type = idx.type ? ` USING ${idx.type}` : "";
+      const unique = idx.unique ? "UNIQUE " : "";
+      const cols = idx.fields.map((f) => `"${f}"`).join(", ");
+      pass1.push({ label: `index ${idx.name}`, sql: `CREATE ${unique}INDEX IF NOT EXISTS "${idx.name}" ON "${table.name}"${type} (${cols});` });
+    }
+
+    for (const field of table.fields) {
+      if (field.type === "enum" && field.enumValues?.length) {
+        const cn = `chk_${table.name}_${field.name}`;
+        const vals = field.enumValues.map((v) => `'${v}'`).join(", ");
+        pass1.push({
+          label: `check ${cn}`,
+          sql: `ALTER TABLE "${table.name}" DROP CONSTRAINT IF EXISTS "${cn}"; ALTER TABLE "${table.name}" ADD CONSTRAINT "${cn}" CHECK ("${field.name}" IN (${vals}));`,
+        });
+      }
+    }
+
+    for (const rel of table.relations) {
+      if (rel.type !== "many-to-many") {
+        const onDel = (rel.onDelete || "cascade").toUpperCase().replace("-", " ");
+        // Postgres truncates identifiers to 63 bytes; pre-truncate so the
+        // existence check below matches the name actually stored.
+        const fkName = `fk_${table.name}_${rel.foreignKey}`.slice(0, 63);
+        pass2.push({
+          label: `fk ${table.name}.${rel.foreignKey}`,
+          sql:
+            `ALTER TABLE "${table.name}" ADD COLUMN IF NOT EXISTS "${rel.foreignKey}" UUID; ` +
+            `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '${fkName}') THEN ` +
+            `ALTER TABLE "${table.name}" ADD CONSTRAINT "${fkName}" FOREIGN KEY ("${rel.foreignKey}") ` +
+            `REFERENCES "${rel.targetTable}"("${rel.targetKey || "id"}") ON DELETE ${onDel}; END IF; END $$;`,
+        });
+      } else if (rel.junctionTable) {
+        pass2.push({
+          label: `junction ${rel.junctionTable}`,
+          sql: `CREATE TABLE IF NOT EXISTS "${rel.junctionTable}" (` +
+            `"${table.name}_id" UUID NOT NULL REFERENCES "${table.name}"("id") ON DELETE CASCADE, ` +
+            `"${rel.targetTable}_id" UUID NOT NULL REFERENCES "${rel.targetTable}"("${rel.targetKey || "id"}") ON DELETE CASCADE, ` +
+            `"created_at" TIMESTAMPTZ DEFAULT now(), PRIMARY KEY ("${table.name}_id", "${rel.targetTable}_id"));`,
+        });
+      }
+    }
+
+    if (table.policies.length > 0) {
+      pass2.push({ label: `rls ${table.name}`, sql: `ALTER TABLE "${table.name}" ENABLE ROW LEVEL SECURITY;` });
+      for (const policy of table.policies) {
+        pass2.push({
+          label: `policy ${policy.name}`,
+          sql: `DROP POLICY IF EXISTS "${policy.name}" ON "${table.name}"; ${generatePolicy(table.name, policy)}`,
+        });
+      }
+    }
+
+    if (table.timestamps !== false) {
+      pass2.push({
+        label: `trigger ${table.name}`,
+        sql: `CREATE OR REPLACE FUNCTION update_${table.name}_modified_at() RETURNS TRIGGER AS $$ BEGIN NEW."updated_at" = now(); RETURN NEW; END; $$ LANGUAGE plpgsql; ` +
+          `DROP TRIGGER IF EXISTS "trg_${table.name}_updated_at" ON "${table.name}"; ` +
+          `CREATE TRIGGER "trg_${table.name}_updated_at" BEFORE UPDATE ON "${table.name}" FOR EACH ROW EXECUTE FUNCTION update_${table.name}_modified_at();`,
+      });
+    }
+  }
+
+  return [...pass1, ...pass2];
+}
+
+// Prefix every table/relation/index/policy name for per-project isolation
+// (mint_proj_<projectId>_<name>). Shared by the migrate + rollback routes.
+export function prefixSchemaTables(schema: DatabaseConfigSchema, projectId: string): DatabaseConfigSchema {
+  const prefix = `mint_proj_${projectId.replace(/[^a-zA-Z0-9_]/g, "")}_`;
+  return {
+    ...schema,
+    tables: schema.tables.map((t) => ({
+      ...t,
+      name: `${prefix}${t.name}`,
+      relations: (t.relations || []).map((r) => ({
+        ...r,
+        targetTable: `${prefix}${r.targetTable}`,
+        junctionTable: r.junctionTable ? `${prefix}${r.junctionTable}` : undefined,
+      })),
+      indexes: (t.indexes || []).map((idx) => ({ ...idx, name: `${prefix}${idx.name}` })),
+      policies: (t.policies || []).map((p) => ({ ...p, name: `${prefix}${p.name}` })),
+    })),
+  };
+}
+
+// The "down" side of a rollback: drop what the current schema has but the
+// target does not. Operates on prefixed schemas. Destructive by design —
+// only ever invoked by an explicit rollback, never by a normal deploy.
+// Conservatively scoped to dropped tables, user columns, policies, indexes,
+// and junction tables (system columns like created_at are left in place).
+export function generateDropStatements(
+  current: DatabaseConfigSchema,
+  target: DatabaseConfigSchema,
+): SyncStatement[] {
+  const out: SyncStatement[] = [];
+  const targetTables = new Map(target.tables.map((t) => [t.name, t]));
+
+  const junctionsOf = (schema: DatabaseConfigSchema) => {
+    const s = new Set<string>();
+    for (const t of schema.tables)
+      for (const r of t.relations)
+        if (r.type === "many-to-many" && r.junctionTable) s.add(r.junctionTable);
+    return s;
+  };
+  const targetJunctions = junctionsOf(target);
+
+  for (const cur of current.tables) {
+    const tgt = targetTables.get(cur.name);
+    if (!tgt) {
+      out.push({ label: `drop table ${cur.name}`, sql: `DROP TABLE IF EXISTS "${cur.name}" CASCADE;` });
+      continue;
+    }
+    const targetCols = new Set(tgt.fields.map((f) => f.name));
+    for (const f of cur.fields) {
+      if (f.name === "id") continue;
+      if (!targetCols.has(f.name))
+        out.push({ label: `drop column ${cur.name}.${f.name}`, sql: `ALTER TABLE "${cur.name}" DROP COLUMN IF EXISTS "${f.name}" CASCADE;` });
+    }
+    const targetPolicies = new Set(tgt.policies.map((p) => p.name));
+    for (const p of cur.policies) {
+      if (!targetPolicies.has(p.name))
+        out.push({ label: `drop policy ${p.name}`, sql: `DROP POLICY IF EXISTS "${p.name}" ON "${cur.name}";` });
+    }
+    const targetIdx = new Set(tgt.indexes.map((i) => i.name));
+    for (const i of cur.indexes) {
+      if (!targetIdx.has(i.name))
+        out.push({ label: `drop index ${i.name}`, sql: `DROP INDEX IF EXISTS "${i.name}";` });
+    }
+  }
+
+  for (const jt of junctionsOf(current)) {
+    if (!targetJunctions.has(jt))
+      out.push({ label: `drop junction ${jt}`, sql: `DROP TABLE IF EXISTS "${jt}" CASCADE;` });
+  }
+
+  return out;
+}
+
+function syncColumn(field: FieldSchema, tableIsNew: boolean): string {
+  let col = `"${field.name}" ${FIELD_TYPE_MAP[field.type] || "TEXT"}`;
+  // Only enforce NOT NULL when safe: a default exists, or the table is brand
+  // new (no existing rows that would violate it).
+  if (field.required && (field.default !== undefined || tableIsNew)) col += " NOT NULL";
+  if (field.unique) col += " UNIQUE";
+  if (field.default !== undefined) {
+    if (typeof field.default === "string") col += ` DEFAULT '${field.default}'`;
+    else if (typeof field.default === "boolean") col += ` DEFAULT ${field.default}`;
+    else if (typeof field.default === "number") col += ` DEFAULT ${field.default}`;
+    else if (field.default === null) col += " DEFAULT NULL";
+    else col += ` DEFAULT '${JSON.stringify(field.default)}'`;
+  }
+  return col;
 }
 
 function generateCreateTable(table: TableSchema): string {
@@ -343,7 +543,7 @@ export class MintDatabaseClient {
   }
 
   /** Execute a raw query through the managed database */
-  async query(sql: string, params: unknown[] = []): Promise<{ rows: any[]; rowCount: number }> {
+  async query(sql: string, params: unknown[] = []): Promise<{ rows: Record<string, unknown>[]; rowCount: number }> {
     const response = await fetch(`${this.baseUrl}/api/db/query`, {
       method: "POST",
       headers: {
@@ -416,7 +616,7 @@ export class MintDatabaseClient {
     `);
 
     const existing = await this.query(`SELECT "id" FROM "_mint_migrations"`);
-    const appliedIds = new Set(existing.rows.map((r: any) => r.id));
+    const appliedIds = new Set(existing.rows.map((r) => r.id as string));
 
     for (const migration of migrations) {
       if (appliedIds.has(migration.id)) continue;
@@ -443,7 +643,7 @@ export class MintDatabaseClient {
       );
       if (!last.rows.length) return { rolledBack: null };
       // Note: actual down SQL would need to be stored; for now just remove tracking
-      const id = last.rows[0].id;
+      const id = last.rows[0].id as string;
       await this.query(`DELETE FROM "_mint_migrations" WHERE "id" = $1`, [id]);
       return { rolledBack: id };
     } catch (e) {

@@ -265,6 +265,7 @@ export type ActionType =
   // Data
   | "fetch" | "mutate" | "setState" | "resetState"
   | "updateState" | "removeState"
+  | "dbQuery"
   | "cacheSet" | "cacheInvalidate" | "sync" | "upload"
   // Logic
   | "condition" | "loop" | "sequence" | "parallel"

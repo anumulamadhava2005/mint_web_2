@@ -61,6 +61,9 @@ const publicApiRoutes = [
   // Managed DB bridge for exported apps — the route itself authorizes via the
   // project sync token / public flag / session owner (see app/api/db/[projectId]).
   "/api/db",
+  // End-user auth for generated apps — inherently public (end users have no
+  // Mint session); the route scopes writes to an existing project's namespace.
+  "/api/app-auth",
   "/api/projects/community",
   "/api/login",
   "/api/signup",

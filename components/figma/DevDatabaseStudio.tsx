@@ -13,16 +13,21 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import {
   Database, Plus, Trash2, Key, Link2, Circle, Rocket, Code2,
-  ZoomIn, ZoomOut, Maximize2, RefreshCw, Table2, ShieldCheck, Terminal, Users, Rows3,
+  ZoomIn, ZoomOut, Maximize2, RefreshCw, Table2, ShieldCheck, Terminal, Users, Rows3, History,
 } from "lucide-react";
 import { useFigmaStore, type DbField, type DbFieldType, type DbTable, type DbRelation } from "@/lib/stores/figmaStore";
 import { dbConfigToRuntimeSchema } from "@/lib/stores/figmaDbToSchema";
 import { generateMigrations } from "@/lib/runtime/database";
 import { C, inputStyle, iconBtn } from "./dbStudioTheme";
+import { Toggle } from "./dbStudioControls";
 import DataGrid from "./DataGrid";
 import SqlEditor from "./SqlEditor";
+import PoliciesView from "./PoliciesView";
+import AuthView from "./AuthView";
+import HistoryView from "./HistoryView";
+import { usePersistentState } from "./usePersistentState";
 
-type StudioView = "schema" | "data" | "sql";
+type StudioView = "schema" | "data" | "sql" | "policies" | "auth" | "history";
 
 const FIELD_TYPES: DbFieldType[] = [
   "uuid", "text", "integer", "float", "boolean",
@@ -36,7 +41,7 @@ const FIELD_H = 28;
 const CARD_FOOTER_H = 32;
 
 type CardPos = { x: number; y: number };
-type DeployResult = { success: boolean; applied: string[]; errors: string[]; totalTables: number } | null;
+type DeployResult = { success: boolean; applied: string[]; errors: string[]; totalTables: number; version?: number | null } | null;
 
 const defaultPos = (i: number): CardPos => ({ x: 60 + (i % 3) * 300, y: 60 + Math.floor(i / 3) * 300 });
 
@@ -106,24 +111,29 @@ function FieldIcon({ field }: { field: DbField }) {
 
 // ── ERD table card ──────────────────────────────────────────────────
 function ErdCard({
-  table, pos, isActive, onHeaderMouseDown, onActivate, onDelete, onAddField,
+  table, pos, isActive, isLinkSource, isLinkTarget, onHeaderMouseDown, onActivate, onDelete, onAddField, onStartLink, onPickTarget,
 }: {
-  table: DbTable; pos: CardPos; isActive: boolean;
+  table: DbTable; pos: CardPos; isActive: boolean; isLinkSource: boolean; isLinkTarget: boolean;
   onHeaderMouseDown: (e: React.MouseEvent) => void;
   onActivate: () => void; onDelete: () => void; onAddField: () => void;
+  onStartLink: () => void; onPickTarget: () => void;
 }) {
+  const outline = isLinkSource ? C.pk : isLinkTarget ? C.ok : isActive ? C.accent : C.border;
   return (
-    <div onMouseDown={onActivate}
-      style={{ position: "absolute", left: pos.x, top: pos.y, width: CARD_W, userSelect: "none", zIndex: isActive ? 10 : 1 }}>
+    <div
+      onMouseDown={isLinkTarget ? undefined : onActivate}
+      onClick={isLinkTarget ? onPickTarget : undefined}
+      style={{ position: "absolute", left: pos.x, top: pos.y, width: CARD_W, userSelect: "none",
+        zIndex: isActive || isLinkSource ? 10 : 1, cursor: isLinkTarget ? "crosshair" : undefined }}>
       <div style={{
         borderRadius: 8,
-        border: `1px solid ${isActive ? C.accent : C.border}`,
+        border: `1px solid ${outline}`,
         overflow: "hidden", background: C.panel,
         boxShadow: isActive ? `0 0 0 1px ${C.accent}55, 0 12px 40px rgba(0,0,0,0.6)` : "0 4px 24px rgba(0,0,0,0.5)",
       }}>
-        <div onMouseDown={onHeaderMouseDown}
+        <div onMouseDown={isLinkTarget ? undefined : onHeaderMouseDown}
           style={{ height: CARD_HEADER_H, display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "0 8px 0 12px", background: C.panelAlt, borderBottom: `1px solid ${C.border}`, cursor: "grab" }}>
+            padding: "0 8px 0 12px", background: C.panelAlt, borderBottom: `1px solid ${C.border}`, cursor: isLinkTarget ? "crosshair" : "grab" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
             <Database size={13} style={{ color: C.accent, flexShrink: 0 }} />
             <span style={{ fontSize: 12, fontWeight: 600, color: C.text, fontFamily: "monospace",
@@ -133,6 +143,13 @@ function ErdCard({
             <span style={{ fontSize: 9, color: C.textDim, background: C.bg, borderRadius: 10, padding: "1px 6px" }}>
               {table.fields.length}
             </span>
+            <button type="button" title={isLinkSource ? "Cancel link" : "Draw relationship"}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); onStartLink(); }}
+              style={{ display: "flex", width: 22, height: 22, alignItems: "center", justifyContent: "center",
+                borderRadius: 4, border: "none", background: "none", cursor: "pointer", color: isLinkSource ? C.pk : C.textDim }}>
+              <Link2 size={11} />
+            </button>
             <button type="button" onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => { e.stopPropagation(); onDelete(); }}
               style={{ display: "flex", width: 22, height: 22, alignItems: "center", justifyContent: "center",
@@ -174,25 +191,9 @@ function ErdCard({
   );
 }
 
-// ── Tiny reusable controls ─────────────────────────────────────────
-function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
-  return (
-    <button type="button" onClick={onClick}
-      style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none",
-        cursor: "pointer", padding: "3px 0", color: on ? C.text : C.textDim, fontSize: 11 }}>
-      <span style={{ width: 26, height: 15, borderRadius: 8, background: on ? C.accent : "#555",
-        position: "relative", transition: "background .15s", flexShrink: 0 }}>
-        <span style={{ position: "absolute", top: 2, left: on ? 13 : 2, width: 11, height: 11, borderRadius: "50%",
-          background: "#fff", transition: "left .15s" }} />
-      </span>
-      {label}
-    </button>
-  );
-}
-
 // ── Inspector: edit the active table ────────────────────────────────
 function TableInspector({ table, allTables }: { table: DbTable; allTables: DbTable[] }) {
-  const { updateTable, updateField, deleteField, addField, addRelation, deleteRelation } = useFigmaStore();
+  const { updateTable, updateField, deleteField, addField, addRelation, deleteRelation, addIndex, deleteIndex } = useFigmaStore();
 
   return (
     <aside style={{ width: 280, flexShrink: 0, display: "flex", flexDirection: "column",
@@ -236,7 +237,7 @@ function TableInspector({ table, allTables }: { table: DbTable; allTables: DbTab
               </div>
               {!f.primary && (
                 <div style={{ display: "flex", gap: 12, marginTop: 7, flexWrap: "wrap" }}>
-                  <Toggle on={f.nullable === false} label="Required" onClick={() => updateField(table.id, f.id, { nullable: !(f.nullable === false) })} />
+                  <Toggle on={f.nullable === false} label="Required" onClick={() => updateField(table.id, f.id, { nullable: f.nullable === false })} />
                   <Toggle on={!!f.unique} label="Unique" onClick={() => updateField(table.id, f.id, { unique: !f.unique })} />
                 </div>
               )}
@@ -283,8 +284,52 @@ function TableInspector({ table, allTables }: { table: DbTable; allTables: DbTab
               addRelation(table.id, rel);
             }} />
         </div>
+
+        {/* Indexes */}
+        <div style={{ padding: "4px 14px 4px", fontSize: 9, fontWeight: 700, color: C.textDim, letterSpacing: ".1em", textTransform: "uppercase" }}>
+          Indexes
+        </div>
+        <div style={{ padding: "0 10px 16px" }}>
+          {(table.indexes ?? []).map((idx) => (
+            <div key={idx.name} style={{ display: "flex", alignItems: "center", gap: 6, background: C.bg,
+              border: `1px solid ${C.borderSoft}`, borderRadius: 6, padding: "6px 8px", marginBottom: 6, fontSize: 11, color: C.textMuted, fontFamily: "monospace" }}>
+              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {idx.unique ? "unique " : ""}({idx.fields.join(", ")})
+              </span>
+              <button type="button" onClick={() => deleteIndex(table.id, idx.name)}
+                style={{ background: "none", border: "none", color: C.textDim, cursor: "pointer", padding: 2 }}>
+                <Trash2 size={11} />
+              </button>
+            </div>
+          ))}
+          <IndexAdder table={table}
+            onAdd={(field, unique) => addIndex(table.id, {
+              name: `idx_${table.name}_${field}${unique ? "_uq" : ""}`,
+              fields: [field], unique, type: "btree",
+            })} />
+        </div>
       </div>
     </aside>
+  );
+}
+
+function IndexAdder({ table, onAdd }: { table: DbTable; onAdd: (field: string, unique: boolean) => void }) {
+  const [picked, setPicked] = useState("");
+  const [unique, setUnique] = useState(false);
+  if (table.fields.length === 0) return null;
+  const field = picked && table.fields.some((f) => f.name === picked) ? picked : table.fields[0].name;
+  return (
+    <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 2 }}>
+      <select value={field} onChange={(e) => setPicked(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: "pointer" }}>
+        {table.fields.map((f) => <option key={f.id} value={f.name}>{f.name}</option>)}
+      </select>
+      <Toggle on={unique} label="uniq" onClick={() => setUnique((v) => !v)} />
+      <button type="button" onClick={() => onAdd(field, unique)}
+        style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 10px", borderRadius: 6,
+          border: "none", background: C.accentSoft, color: C.accent, fontSize: 11, cursor: "pointer", flexShrink: 0 }}>
+        <Plus size={11} /> Index
+      </button>
+    </div>
   );
 }
 
@@ -324,18 +369,41 @@ export default function DevDatabaseStudio({ projectId }: { projectId?: string })
   const addTable = useFigmaStore((s) => s.addTable);
   const deleteTable = useFigmaStore((s) => s.deleteTable);
   const addField = useFigmaStore((s) => s.addField);
+  const addRelation = useFigmaStore((s) => s.addRelation);
   const tables = useMemo(() => database.tables ?? [], [database.tables]);
+
+  // Bootstrap from the latest deployed schema if the local store is empty.
+  // This recovers from the Redis→DB flush window: a save goes to Redis first
+  // and is flushed to the DB every 5 min. If Redis expires before the DB flush,
+  // or if the file was never saved, the store starts empty even though the user
+  // had tables. Pulling from the deployed version history fills that gap.
+  const bootstrappedRef = useRef(false);
+  useEffect(() => {
+    if (bootstrappedRef.current || !projectId) return;
+    bootstrappedRef.current = true;
+    if (useFigmaStore.getState().database.tables.length > 0) return;
+    fetch(`/api/db/versions/${projectId}?schema=1`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.latestSchema && useFigmaStore.getState().database.tables.length === 0) {
+          useFigmaStore.getState().setDatabaseConfig(json.latestSchema);
+        }
+      })
+      .catch(() => {});
+  }, [projectId]);
 
   // Card positions: only user-dragged overrides live in state; everything
   // else falls back to a deterministic default layout (no setState-in-effect).
-  const [overrides, setOverrides] = useState<Record<string, CardPos>>({});
+  const pkey = projectId ?? "local";
+  const [overrides, setOverrides] = usePersistentState<Record<string, CardPos>>(`mintdb:pos:${pkey}`, {});
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 40, y: 40 });
-  const [activeCard, setActiveCard] = useState<string | null>(null);
+  const [activeCard, setActiveCard] = usePersistentState<string | null>(`mintdb:table:${pkey}`, null);
   const [showSQL, setShowSQL] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [deployResult, setDeployResult] = useState<DeployResult>(null);
-  const [view, setView] = useState<StudioView>("schema");
+  const [view, setView] = usePersistentState<StudioView>(`mintdb:view:${pkey}`, "schema");
+  const [linkingFrom, setLinkingFrom] = useState<string | null>(null);
 
   const positions = useMemo(() => {
     const m: Record<string, CardPos> = {};
@@ -364,13 +432,13 @@ export default function DevDatabaseStudio({ projectId }: { projectId?: string })
     const idx = tables.findIndex((t) => t.id === id);
     const p = overrides[id] ?? defaultPos(idx);
     dragRef.current = { id, sx: e.clientX, sy: e.clientY, ox: p.x, oy: p.y };
-  }, [overrides, tables]);
+  }, [overrides, tables, setActiveCard]);
 
   const onCanvasDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
     setActiveCard(null);
     panRef.current = { sx: e.clientX, sy: e.clientY, ox: pan.x, oy: pan.y };
-  }, [pan]);
+  }, [pan, setActiveCard]);
 
   const onMove = useCallback((e: React.MouseEvent) => {
     if (dragRef.current) {
@@ -381,9 +449,29 @@ export default function DevDatabaseStudio({ projectId }: { projectId?: string })
       const p = panRef.current;
       setPan({ x: p.ox + (e.clientX - p.sx), y: p.oy + (e.clientY - p.sy) });
     }
-  }, [zoom]);
+  }, [zoom, setOverrides]);
 
   const onUp = useCallback(() => { dragRef.current = null; panRef.current = null; }, []);
+
+  // Click-to-connect: create a FK from the link source to the picked target.
+  const createLink = useCallback((targetId: string) => {
+    const from = linkingFrom;
+    setLinkingFrom(null);
+    if (!from || from === targetId) return;
+    const source = tables.find((t) => t.id === from);
+    const target = tables.find((t) => t.id === targetId);
+    if (!source || !target) return;
+    const fk = `${target.name}_id`;
+    if (!source.fields.some((f) => f.name === fk)) addField(from, { name: fk, type: "uuid", nullable: true });
+    addRelation(from, { type: "one-to-many", targetTable: target.name, foreignKey: fk, targetKey: "id", onDelete: "cascade" });
+  }, [linkingFrom, tables, addField, addRelation]);
+
+  // Esc cancels an in-progress link (setState in event callback — fine).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setLinkingFrom(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const handleAddTable = useCallback(() => {
     addTable(`table_${tables.length + 1}`);
@@ -391,7 +479,7 @@ export default function DevDatabaseStudio({ projectId }: { projectId?: string })
     const after = useFigmaStore.getState().database.tables;
     const newest = after[after.length - 1];
     if (newest) setActiveCard(newest.id);
-  }, [addTable, tables.length]);
+  }, [addTable, tables.length, setActiveCard]);
 
   const sql = useMemo(() => {
     try {
@@ -420,7 +508,7 @@ export default function DevDatabaseStudio({ projectId }: { projectId?: string })
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ schema }),
+        body: JSON.stringify({ schema, source: database }),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -481,8 +569,12 @@ export default function DevDatabaseStudio({ projectId }: { projectId?: string })
               onClick={() => { setView("data"); if (!activeCard && tables[0]) setActiveCard(tables[0].id); }} />
             <NavItem icon={<Terminal size={13} />} label="SQL Editor" active={view === "sql"}
               onClick={() => setView("sql")} />
-            <NavItem icon={<ShieldCheck size={13} />} label="Policies" soon />
-            <NavItem icon={<Users size={13} />} label="Auth" soon />
+            <NavItem icon={<ShieldCheck size={13} />} label="Policies" active={view === "policies"}
+              onClick={() => { setView("policies"); if (!activeCard && tables[0]) setActiveCard(tables[0].id); }} />
+            <NavItem icon={<Users size={13} />} label="Auth" active={view === "auth"}
+              onClick={() => setView("auth")} />
+            <NavItem icon={<History size={13} />} label="History" active={view === "history"}
+              onClick={() => setView("history")} />
           </div>
 
           <div style={{ padding: "8px 12px 4px", fontSize: 9, fontWeight: 700, color: C.textDim, letterSpacing: ".1em", textTransform: "uppercase" }}>
@@ -534,12 +626,25 @@ export default function DevDatabaseStudio({ projectId }: { projectId?: string })
             <FkLines tables={tables} positions={positions} />
             {tables.map((t) => (
               <ErdCard key={t.id} table={t} pos={positions[t.id] ?? { x: 0, y: 0 }} isActive={activeCard === t.id}
+                isLinkSource={linkingFrom === t.id}
+                isLinkTarget={linkingFrom !== null && linkingFrom !== t.id}
                 onHeaderMouseDown={(e) => onCardHeaderDown(t.id, e)}
                 onActivate={() => setActiveCard(t.id)}
                 onDelete={() => { deleteTable(t.id); if (activeCard === t.id) setActiveCard(null); }}
-                onAddField={() => addField(t.id, { name: `field_${t.fields.length + 1}`, type: "text", nullable: true })} />
+                onAddField={() => addField(t.id, { name: `field_${t.fields.length + 1}`, type: "text", nullable: true })}
+                onStartLink={() => setLinkingFrom((prev) => (prev === t.id ? null : t.id))}
+                onPickTarget={() => createLink(t.id)} />
             ))}
           </div>
+
+          {linkingFrom && (
+            <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 50,
+              display: "flex", alignItems: "center", gap: 8, padding: "6px 14px", borderRadius: 20,
+              background: C.panelAlt, border: `1px solid ${C.pk}`, color: C.text, fontSize: 11, pointerEvents: "none" }}>
+              <Link2 size={12} style={{ color: C.pk }} />
+              Click a table to link <b style={{ fontFamily: "monospace" }}>{tables.find((t) => t.id === linkingFrom)?.name}</b> → it · Esc to cancel
+            </div>
+          )}
 
           {tables.length === 0 && (
             <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center",
@@ -561,10 +666,15 @@ export default function DevDatabaseStudio({ projectId }: { projectId?: string })
         ) : view === "data" ? (
           activeTable
             ? <DataGrid key={activeTable.id} projectId={projectId} table={activeTable} />
-            : <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-                color: C.textDim, fontSize: 12, background: C.canvas }}>
-                Select a table on the left to view its data.
-              </div>
+            : <SelectTablePrompt label="view its data" />
+        ) : view === "policies" ? (
+          activeTable
+            ? <PoliciesView key={activeTable.id} table={activeTable} />
+            : <SelectTablePrompt label="edit its security policies" />
+        ) : view === "auth" ? (
+          <AuthView />
+        ) : view === "history" ? (
+          <HistoryView projectId={projectId} />
         ) : (
           <SqlEditor projectId={projectId} />
         )}
@@ -597,7 +707,8 @@ export default function DevDatabaseStudio({ projectId }: { projectId?: string })
               </p>
               {deployResult.success ? (
                 <p style={{ fontSize: 11, color: C.textMuted, margin: 0 }}>
-                  {deployResult.applied.length} migration{deployResult.applied.length !== 1 ? "s" : ""} applied · {deployResult.totalTables} table{deployResult.totalTables !== 1 ? "s" : ""}
+                  {deployResult.applied.length} statement{deployResult.applied.length !== 1 ? "s" : ""} · {deployResult.totalTables} table{deployResult.totalTables !== 1 ? "s" : ""}
+                  {deployResult.version != null ? ` · saved as v${deployResult.version}` : ""}
                 </p>
               ) : deployResult.errors.map((e, i) => (
                 <p key={i} style={{ fontSize: 11, color: C.textMuted, margin: 0 }}>{e}</p>
@@ -610,6 +721,15 @@ export default function DevDatabaseStudio({ projectId }: { projectId?: string })
       )}
 
       <style>{`@keyframes ddstudio-spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+function SelectTablePrompt({ label }: { label: string }) {
+  return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+      color: C.textDim, fontSize: 12, background: C.canvas }}>
+      Select a table on the left to {label}.
     </div>
   );
 }

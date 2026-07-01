@@ -8,6 +8,7 @@ import LeftPanel from './LeftPanel';
 import Canvas from './Canvas';
 import RightPanel from './RightPanel';
 import PrototypePreview from './PrototypePreview';
+import RuntimeEditorPreview from './RuntimeEditorPreview';
 import PrototypeCanvas from './PrototypeCanvas';
 import DevDatabaseStudio from './DevDatabaseStudio';
 import FindReplacePanel from './FindReplacePanel';
@@ -25,6 +26,7 @@ export default function FigmaEditor({ projectId, embedded, onExit }: Props) {
     selection, setActiveTool, setSelection, deleteLayer, duplicateLayer,
     setCopied, paste, bringForward, sendBackward, bringToFront, sendToBack,
     previewMode, setPreviewMode,
+    livePreviewMode, setLivePreviewMode,
     undo, redo, canUndo, canRedo,
     toggleRulers, toggleGrid,
     loadFromServer, editorMode,
@@ -317,6 +319,7 @@ export default function FigmaEditor({ projectId, embedded, onExit }: Props) {
         </div>
       )}
       {previewMode && <PrototypePreview onClose={() => setPreviewMode(false)} />}
+      {livePreviewMode && <RuntimeEditorPreview projectId={projectId} onClose={() => setLivePreviewMode(false)} />}
       {showFind && <FindReplacePanel onClose={() => setShowFind(false)} />}
       {showShortcuts && <ShortcutsPanel onClose={() => setShowShortcuts(false)} />}
     </div>

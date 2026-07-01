@@ -18,7 +18,7 @@ const STEP_COLORS: Record<ActionStepType, string> = {
   condition: '#f72585',
   delay: '#888',
   custom: '#ebebeb',
-  signIn: '#00c864', signOut: '#ff4444',
+  signUp: '#00c864', signIn: '#00c864', signOut: '#ff4444',
 };
 
 const STEP_LABELS: Record<ActionStepType, string> = {
@@ -29,7 +29,7 @@ const STEP_LABELS: Record<ActionStepType, string> = {
   condition: 'Condition (if/else)',
   delay: 'Delay',
   custom: 'Custom code',
-  signIn: 'Sign in', signOut: 'Sign out',
+  signUp: 'Sign up', signIn: 'Sign in', signOut: 'Sign out',
 };
 
 const STEP_GROUPS: { label: string; types: ActionStepType[] }[] = [
@@ -38,7 +38,7 @@ const STEP_GROUPS: { label: string; types: ActionStepType[] }[] = [
   { label: 'Data', types: ['fetch', 'mutate'] },
   { label: 'UI', types: ['toast', 'alert'] },
   { label: 'Control flow', types: ['condition', 'delay'] },
-  { label: 'Auth', types: ['signIn', 'signOut'] },
+  { label: 'Auth', types: ['signUp', 'signIn', 'signOut'] },
   { label: 'Advanced', types: ['custom'] },
 ];
 

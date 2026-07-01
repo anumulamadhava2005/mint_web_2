@@ -10,7 +10,8 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { findUserByToken } from "../../../../../lib/auth";
 import db from "../../../../../lib/db";
-import { generateMigrations } from "../../../../../lib/runtime/database";
+import { generateSyncStatements, prefixSchemaTables } from "../../../../../lib/runtime/database";
+import { ensureVersionsTable, recordVersion } from "../../../../../lib/runtime/schemaVersions";
 import type { DatabaseConfigSchema } from "../../../../../lib/runtime/schema";
 
 export async function POST(
@@ -39,12 +40,14 @@ export async function POST(
 
     const body = await req.json();
     const schema = body.schema as DatabaseConfigSchema;
+    // The unprefixed editor (figma) config — stored as a version snapshot so
+    // it can be restored verbatim into the editor on rollback.
+    const source = body.source;
+    const message = typeof body.message === "string" ? body.message : "";
 
     if (!schema?.tables?.length) {
       return NextResponse.json({ error: "No tables in schema" }, { status: 400 });
     }
-
-    const prefix = `mint_proj_${projectId.replace(/[^a-zA-Z0-9_]/g, "")}_`;
 
     // Ensure migrations table
     await db.query(`
@@ -56,59 +59,41 @@ export async function POST(
       )
     `);
 
-    // Prefix table names in the schema BEFORE generating migrations
-    // This ensures only table names get prefixed, not column names
-    const prefixedSchema: DatabaseConfigSchema = {
-      ...schema,
-      tables: schema.tables.map((t: any) => ({
-        ...t,
-        name: `${prefix}${t.name}`,
-        relations: (t.relations || []).map((r: any) => ({
-          ...r,
-          targetTable: `${prefix}${r.targetTable}`,
-          junctionTable: r.junctionTable ? `${prefix}${r.junctionTable}` : undefined,
-        })),
-        indexes: (t.indexes || []).map((idx: any) => ({
-          ...idx,
-          name: `${prefix}${idx.name}`,
-        })),
-        policies: (t.policies || []).map((p: any) => ({
-          ...p,
-          name: `${prefix}${p.name}`,
-        })),
-      })),
-    };
+    // Prefix table names so only table names get prefixed, not column names.
+    const prefixedSchema = prefixSchemaTables(schema, projectId);
 
-    // Generate migrations with prefixed table names
-    const migrations = generateMigrations(prefixedSchema);
+    // Introspect which of these tables already exist, so the sync generator
+    // knows when it can safely enforce NOT NULL on freshly-added columns.
+    const prefixedNames = prefixedSchema.tables.map((t) => t.name);
+    let existingTables = new Set<string>();
+    try {
+      const introspect = await db.query(
+        `SELECT table_name FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name = ANY($1::text[])`,
+        [prefixedNames]
+      );
+      existingTables = new Set((introspect.rows || []).map((r: { table_name: string }) => r.table_name));
+    } catch {
+      // If introspection fails, fall back to additive behaviour (treat all as new).
+    }
 
-    // Check which are already applied
-    const existing = await db.query(
-      `SELECT "id" FROM "_mint_migrations" WHERE "project_id" = $1`,
-      [projectId]
-    );
-    const appliedIds = new Set((existing.rows || []).map((r: any) => r.id));
+    // Idempotent sync plan — converges existing tables to the desired schema.
+    const plan = generateSyncStatements(prefixedSchema, existingTables);
 
     const applied: string[] = [];
     const errors: string[] = [];
 
-    for (const migration of migrations) {
-      if (appliedIds.has(migration.id)) continue;
-
+    for (const step of plan) {
       try {
-        await db.query(migration.upSQL);
-        await db.query(
-          `INSERT INTO "_mint_migrations" ("id", "project_id", "name") VALUES ($1, $2, $3)`,
-          [migration.id, projectId, migration.name]
-        );
-        applied.push(migration.id);
+        await db.query(step.sql);
+        applied.push(step.label);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        errors.push(`${migration.name}: ${msg}`);
+        errors.push(`${step.label}: ${msg}`);
       }
     }
 
-    // Store schema snapshot
+    // Store schema snapshot for history/audit.
     await db.query(
       `INSERT INTO "_mint_migrations" ("id", "project_id", "name")
        VALUES ($1, $2, $3)
@@ -116,11 +101,23 @@ export async function POST(
       [`schema_${projectId}_${Date.now()}`, projectId, `Schema: ${schema.tables.map((t) => t.name).join(", ")}`]
     );
 
+    // Record a version snapshot of the editor config (skipped if unchanged).
+    let version: number | null = null;
+    if (source && errors.length === 0) {
+      try {
+        await ensureVersionsTable();
+        version = await recordVersion(projectId, source, message || `Deploy · ${schema.tables.length} table${schema.tables.length !== 1 ? "s" : ""}`);
+      } catch (e) {
+        console.error("[MintDB] Version snapshot failed:", e);
+      }
+    }
+
     return NextResponse.json({
       success: errors.length === 0,
       applied,
       errors,
       totalTables: schema.tables.length,
+      version,
     });
   } catch (e) {
     console.error("[MintDB] Migration error:", e);

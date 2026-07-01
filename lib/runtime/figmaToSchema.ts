@@ -28,11 +28,26 @@ const LAYER_TYPE_MAP: Record<string, ComponentType> = {
   line: 'line',
   text: 'text',
   image: 'image',
+  input: 'input',
   vector: 'rect',
   component: 'frame',
   instance: 'frame',
   comment: 'text',   // shouldn't reach here — filtered above
 };
+
+// The editor's binding picker writes scoped paths ($global.x, $page.x) while the
+// runtime state engine uses flat state paths ($x). Normalize so the editor and
+// preview agree. Auth/params/api/theme/repeat-item paths pass through unchanged.
+function normalizeExpr(expr: string): string {
+  return expr.replace(/\$(global|page)\.([A-Za-z_][A-Za-z0-9_.]*)/g, '$$$2');
+}
+
+function normalizeBindings(bindings: Record<string, string> | undefined): Record<string, string> {
+  if (!bindings) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(bindings)) out[k] = normalizeExpr(v);
+  return out;
+}
 
 // ── Style builder ────────────────────────────────────────────
 
@@ -69,7 +84,9 @@ function buildStyle(layer: FigmaLayer): StyleSchema {
   };
 
   const background: BackgroundStyle = {};
-  if (fill) {
+  // A text layer's fill is its TEXT color (applied via typography below), not a
+  // background — otherwise text renders as a solid box of its own color.
+  if (fill && layer.type !== 'text') {
     if (fill.type === 'solid') {
       background.color = fill.color;
       if (fill.opacity < 1) background.opacity = fill.opacity;
@@ -150,11 +167,10 @@ function buildStyle(layer: FigmaLayer): StyleSchema {
 // ── Event mapping ────────────────────────────────────────────
 
 function buildEvents(layer: FigmaLayer): Record<string, ActionRef[]> | undefined {
-  const interactions = layer.interactions;
-  if (!interactions?.length) return undefined;
-
   const events: Record<string, ActionRef[]> = {};
-  for (const int of interactions) {
+
+  // Prototype interactions → navigation/modal events.
+  for (const int of layer.interactions ?? []) {
     const evtKey =
       int.trigger === 'click' ? 'onPress'
       : int.trigger === 'hover' ? 'onHover'
@@ -174,6 +190,16 @@ function buildEvents(layer: FigmaLayer): Record<string, ActionRef[]> | undefined
 
     if (!events[evtKey]) events[evtKey] = [];
     events[evtKey].push(ref);
+  }
+
+  // Wired action flows: layerEvents maps an event name → action flow IDs.
+  // Each flow is registered as a global action under the same ID (see
+  // figmaStoreToAppSchema), so we reference it directly.
+  for (const [evtKey, flowIds] of Object.entries(layer.layerEvents ?? {})) {
+    for (const id of flowIds) {
+      if (!events[evtKey]) events[evtKey] = [];
+      events[evtKey].push({ actionId: id });
+    }
   }
 
   return Object.keys(events).length > 0 ? events : undefined;
@@ -196,6 +222,10 @@ export function figmaLayerToComponent(layer: FigmaLayer): ComponentSchema {
     const fill = layer.fills.find(f => f.type === 'image');
     if (fill?.imageUrl) props.src = fill.imageUrl;
   }
+  if (layer.type === 'input') {
+    props.inputType = layer.inputType ?? 'text';
+    if (layer.placeholder) props.placeholder = layer.placeholder;
+  }
 
   const children: ComponentSchema[] | undefined =
     layer.children && layer.children.length > 0
@@ -210,12 +240,12 @@ export function figmaLayerToComponent(layer: FigmaLayer): ComponentSchema {
     id: layer.id,
     type,
     props,
-    bindings: layer.bindings ?? {},
+    bindings: normalizeBindings(layer.bindings),
     children,
     style: buildStyle(layer),
     ...(events ? { events } : {}),
-    ...(layer.repeatFor ? { repeatFor: layer.repeatFor } : {}),
-    ...(layer.conditionalRender ? { conditionalRender: layer.conditionalRender } : {}),
+    ...(layer.repeatFor ? { repeatFor: { ...layer.repeatFor, items: normalizeExpr(layer.repeatFor.items) } } : {}),
+    ...(layer.conditionalRender ? { conditionalRender: normalizeExpr(layer.conditionalRender) } : {}),
   };
 }
 

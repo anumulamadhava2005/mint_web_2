@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
-import { Share2, Play, ChevronDown } from 'lucide-react';
+import { Share2, Play, Zap, ChevronDown } from 'lucide-react';
 import { useFigmaStore } from '@/lib/stores/figmaStore';
 import MLogo from '@/app/M.png';
 
@@ -22,7 +22,7 @@ interface TopBarProps {
 }
 
 export default function TopBar({ onExit }: TopBarProps) {
-  const { fileName, setFileName, viewport, setViewport, editorMode, setEditorMode, undo, redo, canUndo, canRedo, setPreviewMode, saveStatus, projectId } = useFigmaStore();
+  const { fileName, setFileName, viewport, setViewport, editorMode, setEditorMode, undo, redo, canUndo, canRedo, setPreviewMode, setLivePreviewMode, saveStatus, projectId } = useFigmaStore();
 
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleVal, setTitleVal] = useState(fileName);
@@ -324,6 +324,21 @@ export default function TopBar({ onExit }: TopBarProps) {
         >
           <Share2 size={13} />
           Share
+        </button>
+
+        {/* Live preview — runs the real runtime (data-driven) */}
+        <button
+          title="Live preview (data-driven)"
+          onClick={() => setLivePreviewMode(true)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 5, height: 28, padding: '0 10px', borderRadius: 6,
+            background: 'transparent', border: '1px solid #3c3c3c', cursor: 'pointer', color: '#0d99ff', fontSize: 12, fontWeight: 600,
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(13,153,255,0.12)'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+        >
+          <Zap size={13} />
+          Live
         </button>
 
         {/* Present */}

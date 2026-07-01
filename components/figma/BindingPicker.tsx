@@ -195,6 +195,9 @@ export default function BindingPicker({ anchorRect, currentValue, layerId, onSel
   return (
     <div
       ref={containerRef}
+      // Stop mousedown from bubbling to the canvas (which would deselect / exit
+      // text-edit mode before a token's onClick runs).
+      onMouseDown={e => e.stopPropagation()}
       style={{
         ...style,
         background: '#1e1e1e',

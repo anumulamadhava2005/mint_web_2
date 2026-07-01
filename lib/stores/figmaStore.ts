@@ -3,7 +3,7 @@ import { create } from 'zustand';
 export type ToolType =
   | 'select' | 'scale' | 'frame' | 'section' | 'slice'
   | 'rect' | 'ellipse' | 'line' | 'arrow' | 'polygon' | 'star'
-  | 'pen' | 'pencil' | 'text' | 'hand' | 'comment';
+  | 'pen' | 'pencil' | 'text' | 'input' | 'hand' | 'comment';
 
 export type EditorMode = 'design' | 'prototype' | 'dev';
 
@@ -180,7 +180,7 @@ export type ActionStepType =
   | 'condition'
   | 'delay'
   | 'custom'
-  | 'signIn' | 'signOut';
+  | 'signUp' | 'signIn' | 'signOut';
 
 export interface ActionStep {
   id: string;
@@ -336,7 +336,13 @@ export interface AppWorkflow {
 
 export type LayerType =
   | 'frame' | 'section' | 'group' | 'rect' | 'ellipse'
-  | 'line' | 'text' | 'image' | 'component' | 'instance' | 'vector' | 'comment';
+  | 'line' | 'text' | 'image' | 'component' | 'instance' | 'vector' | 'comment' | 'input';
+
+// Form input field types — the slice ships text/email/password; the rest are
+// modelled so the full input library can be added without a schema change.
+export type InputFieldType =
+  | 'text' | 'email' | 'password' | 'number' | 'tel' | 'url'
+  | 'textarea' | 'date' | 'checkbox' | 'select';
 
 export interface FigmaLayer {
   id: string;
@@ -384,6 +390,14 @@ export interface FigmaLayer {
   repeatFor?: { items: string; as: string; key?: string };
   conditionalRender?: string;
   layerEvents?: Record<string, string[]>;
+  // Input layers — the field's HTML input type and its placeholder. The bound
+  // variable lives in `bindings.value` (two-way), e.g. "$form.email".
+  inputType?: InputFieldType;
+  placeholder?: string;
+  // Data-source layers — a container bound to a DB table becomes a live list.
+  // Pairs with `repeatFor` (items: "$<table>", as: "item"); the table's rows are
+  // loaded into that state var on screen mount.
+  dataSource?: { table: string };
 }
 
 export interface FigmaPage {
@@ -479,9 +493,11 @@ interface FigmaState {
   setLayoutSizing: (layerId: string, sizing: FigmaLayer['layoutSizing']) => void;
 
   previewMode: boolean;
+  livePreviewMode: boolean;
   prototypeStartFrameId: string | null;
   prototypeDevice: string;
   setPreviewMode: (on: boolean) => void;
+  setLivePreviewMode: (on: boolean) => void;
   setPrototypeStartFrame: (id: string | null) => void;
   setPrototypeDevice: (device: string) => void;
   addInteraction: (layerId: string, interaction: Interaction) => void;
@@ -535,6 +551,7 @@ interface FigmaState {
   setLayerEvent: (layerId: string, eventName: string, flowIds: string[]) => void;
 
   database: DatabaseConfig;
+  setDatabaseConfig: (config: DatabaseConfig) => void;
   setDatabaseProvider: (provider: DbProvider) => void;
   addTable: (name: string) => void;
   updateTable: (id: string, patch: Partial<Omit<DbTable, 'id'>>) => void;
@@ -638,6 +655,7 @@ export const useFigmaStore = create<FigmaState>((set, get) => ({
   nodeSelection: [],
   components: {},
   previewMode: false,
+  livePreviewMode: false,
   prototypeStartFrameId: null,
   prototypeDevice: 'none',
   _history: [],
@@ -1109,6 +1127,7 @@ export const useFigmaStore = create<FigmaState>((set, get) => ({
   })),
 
   setPreviewMode: (on) => set({ previewMode: on }),
+  setLivePreviewMode: (on) => set({ livePreviewMode: on }),
   setPrototypeStartFrame: (id) => set({ prototypeStartFrameId: id }),
   setPrototypeDevice: (device) => set({ prototypeDevice: device }),
 
@@ -1339,6 +1358,7 @@ export const useFigmaStore = create<FigmaState>((set, get) => ({
   })),
 
   // ── Database actions ──────────────────────────────────
+  setDatabaseConfig: (config) => set({ database: config }),
   setDatabaseProvider: (provider) => set(s => ({ database: { ...s.database, provider } })),
 
   addTable: (name) => set(s => ({
@@ -1409,6 +1429,51 @@ export const useFigmaStore = create<FigmaState>((set, get) => ({
       ...s.database,
       tables: s.database.tables.map(t => t.id === tableId
         ? { ...t, relations: (t.relations ?? []).filter((_, i) => i !== index) }
+        : t),
+    },
+  })),
+
+  addPolicy: (tableId, policy) => set(s => ({
+    database: {
+      ...s.database,
+      tables: s.database.tables.map(t => t.id === tableId
+        ? { ...t, policies: [...(t.policies ?? []), policy] }
+        : t),
+    },
+  })),
+
+  updatePolicy: (tableId, index, patch) => set(s => ({
+    database: {
+      ...s.database,
+      tables: s.database.tables.map(t => t.id === tableId
+        ? { ...t, policies: (t.policies ?? []).map((p, i) => i === index ? { ...p, ...patch } : p) }
+        : t),
+    },
+  })),
+
+  deletePolicy: (tableId, index) => set(s => ({
+    database: {
+      ...s.database,
+      tables: s.database.tables.map(t => t.id === tableId
+        ? { ...t, policies: (t.policies ?? []).filter((_, i) => i !== index) }
+        : t),
+    },
+  })),
+
+  addIndex: (tableId, index) => set(s => ({
+    database: {
+      ...s.database,
+      tables: s.database.tables.map(t => t.id === tableId
+        ? { ...t, indexes: [...(t.indexes ?? []), index] }
+        : t),
+    },
+  })),
+
+  deleteIndex: (tableId, name) => set(s => ({
+    database: {
+      ...s.database,
+      tables: s.database.tables.map(t => t.id === tableId
+        ? { ...t, indexes: (t.indexes ?? []).filter(idx => idx.name !== name) }
         : t),
     },
   })),

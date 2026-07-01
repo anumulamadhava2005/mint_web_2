@@ -3,6 +3,9 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useFigmaStore, type FigmaLayer, type LayerType, type ToolType, type Viewport, type LayoutGrid, type VectorPoint, type AutoLayout, type Interaction } from '@/lib/stores/figmaStore';
 import type { RemoteCursor } from '@/hooks/useFigmaCollaboration';
+import BindingPicker from './BindingPicker';
+import CanvasBindingOverlay, { type ClickActionKind, type ScreenOption } from './CanvasBindingOverlay';
+import { compileTextTemplate, pathToToken } from './bindingExpr';
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -27,6 +30,39 @@ interface HandleInfo { id: HandleType; sx: number; sy: number; cursor: string; }
 
 function screenToWorld(sx: number, sy: number, vp: Viewport): { x: number; y: number } {
   return { x: (sx - vp.x) / vp.zoom, y: (sy - vp.y) / vp.zoom };
+}
+
+/** Caret position (char offset) inside a contentEditable element. */
+function caretCharOffset(el: HTMLElement): number {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return el.innerText.length;
+  const range = sel.getRangeAt(0);
+  const pre = range.cloneRange();
+  pre.selectNodeContents(el);
+  pre.setEnd(range.endContainer, range.endOffset);
+  return pre.toString().length;
+}
+
+/** Place the caret at a char offset inside a contentEditable element. */
+function placeCaret(el: HTMLElement, offset: number): void {
+  const sel = window.getSelection();
+  if (!sel) return;
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let remaining = offset;
+  let node = walker.nextNode() as Text | null;
+  let target: Text | null = node;
+  while (node) {
+    if (remaining <= node.length) { target = node; break; }
+    remaining -= node.length;
+    target = node;
+    node = walker.nextNode() as Text | null;
+  }
+  const range = document.createRange();
+  if (target) range.setStart(target, Math.min(remaining, target.length));
+  else { range.selectNodeContents(el); range.collapse(false); }
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
 }
 
 // ── Ruler interval ─────────────────────────────────────────────
@@ -322,6 +358,26 @@ function LayerRenderer({ layer, selection, textEditId }: {
     );
   }
 
+  if (layer.type === 'input') {
+    const isCheckbox = layer.inputType === 'checkbox';
+    return (
+      <div style={{
+        ...style,
+        display: 'flex', alignItems: 'center',
+        justifyContent: isCheckbox ? 'flex-start' : undefined,
+        padding: isCheckbox ? 0 : '0 12px',
+        color: '#9a9a9a',
+        fontSize: layer.fontSize ?? 14,
+        fontFamily: layer.fontFamily ?? 'Inter, sans-serif',
+        whiteSpace: 'nowrap', overflow: 'hidden',
+      }} data-layer-id={layer.id}>
+        {isCheckbox
+          ? <span style={{ width: 16, height: 16, border: '1.5px solid #9a9a9a', borderRadius: 3 }} />
+          : (layer.inputType === 'password' ? '••••••••' : (layer.placeholder || 'Input'))}
+      </div>
+    );
+  }
+
   if (layer.type === 'comment') {
     return (
       <div
@@ -366,7 +422,7 @@ function cursorForTool(tool: ToolType, spaceDownState: boolean, dragModeState: s
   if (dragModeState === 'rotate') return 'grabbing';
   if (tool === 'hand') return 'grab';
   if (tool === 'text') return 'text';
-  if (['pen', 'frame', 'rect', 'ellipse', 'line', 'section', 'slice'].includes(tool)) return 'crosshair';
+  if (['pen', 'frame', 'rect', 'ellipse', 'line', 'input', 'section', 'slice'].includes(tool)) return 'crosshair';
   return 'default';
 }
 
@@ -377,6 +433,7 @@ function defaultFills(type: LayerType) {
   switch (type) {
     case 'frame': return [];
     case 'text': return [{ ...base, color: '#000000' }];
+    case 'input': return [{ ...base, color: '#ffffff' }];
     default: return [{ ...base, color: '#e2e2e2' }];
   }
 }
@@ -384,6 +441,7 @@ function defaultFills(type: LayerType) {
 function defaultStrokes(type: LayerType) {
   const base = { id: `stroke-${Date.now()}`, opacity: 1, weight: 1, position: 'center' as const, type: 'solid' as const, visible: true };
   if (type === 'frame') return [{ ...base, color: '#cccccc' }];
+  if (type === 'input') return [{ ...base, color: '#c8c8c8' }];
   return [];
 }
 
@@ -871,7 +929,7 @@ function CtxDivider() {
 
 // ── Main Canvas ────────────────────────────────────────────────
 
-const DRAW_TOOLS: ToolType[] = ['frame', 'rect', 'ellipse', 'line', 'text', 'section', 'slice'];
+const DRAW_TOOLS: ToolType[] = ['frame', 'rect', 'ellipse', 'line', 'text', 'input', 'section', 'slice'];
 
 interface CanvasProps {
   remoteCursors?: RemoteCursor[];
@@ -886,6 +944,7 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
     updateVectorPoint, deleteVectorPoints,
     components, createComponent, detachInstance, deleteLayer, duplicateLayer, paste,
     editorMode, showRulers, showGrid,
+    actionFlows,
   } = useFigmaStore();
 
   const currentLayers = React.useMemo(() => layers[activePageId] ?? [], [layers, activePageId]);
@@ -914,6 +973,39 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
   const textEditIdRef = useRef<string | null>(null);
   const setTextEditIdRef = useRef(setTextEditId);
   useEffect(() => { textEditIdRef.current = textEditId; }, [textEditId]);
+
+  // Data-binding picker: 'token' inserts an @token into the text being edited;
+  // 'prop' binds an arbitrary layer prop (e.g. an input's value). Anchored on
+  // the canvas, never in the right panel.
+  const [bindPicker, setBindPicker] = useState<
+    { layerId: string; mode: 'token' | 'prop'; prop?: string; current?: string; anchor: DOMRect } | null
+  >(null);
+  const bindPickerRef = useRef(bindPicker);
+  useEffect(() => { bindPickerRef.current = bindPicker; }, [bindPicker]);
+  const tokenOffsetRef = useRef(0);
+  // Set synchronously when opening the @token picker so the editor's onBlur
+  // (fired the instant the picker steals focus) doesn't close the editor before
+  // the picker-state ref updates on the next render.
+  const openingTokenRef = useRef(false);
+
+  // Insert an @token at the saved caret offset in the text being edited, then
+  // recompile the layer's text binding so the preview stays live.
+  const insertToken = useCallback((path: string) => {
+    const el = textEditRef.current;
+    const id = textEditIdRef.current;
+    if (!el || !id) { setBindPicker(null); return; }
+    const token = pathToToken(path);
+    const text = el.innerText;
+    const off = Math.min(tokenOffsetRef.current, text.length);
+    const newText = text.slice(0, off) + token + text.slice(off);
+    el.innerText = newText;
+    updateLayer(id, { text: newText });
+    const expr = compileTextTemplate(newText);
+    const store = useFigmaStore.getState();
+    if (expr) store.setBinding(id, 'text', expr); else store.removeBinding(id, 'text');
+    setBindPicker(null);
+    requestAnimationFrame(() => { el.focus(); placeCaret(el, off + token.length); openingTokenRef.current = false; });
+  }, [updateLayer]);
 
   // Pen tool state
   const [penPoints, setPenPoints] = useState<VectorPoint[]>([]);
@@ -1012,7 +1104,8 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
   // Initialize contenteditable text when entering edit mode
   useEffect(() => {
     if (!textEditId || !textEditRef.current) return;
-    const layer = layersRef.current.find(l => l.id === textEditId);
+    // Search the whole tree — the text layer may be nested inside a frame.
+    const layer = findLayerInTree(layersRef.current, textEditId);
     if (!layer) return;
     textEditRef.current.innerText = layer.text ?? '';
     // Place cursor at end
@@ -1050,6 +1143,7 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
       frame: 'Frame', rect: 'Rectangle', ellipse: 'Ellipse', line: 'Line',
       text: 'Text', group: 'Group', section: 'Section', image: 'Image',
       component: 'Component', instance: 'Instance', vector: 'Vector', comment: 'Comment',
+      input: 'Input',
     };
     const curLayers = layersRef.current;
     const countAllOfType = (arr: FigmaLayer[]): number =>
@@ -1063,8 +1157,26 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
       rotation: 0, visible: true, locked: false, opacity: 1, blendMode: 'normal',
       fills: defaultFills(type), strokes: defaultStrokes(type),
       effects: [], exports: [],
+      cornerRadius: type === 'input' ? 6 : undefined,
       ...(type === 'text' ? { text: 'Text', fontSize: 14, fontFamily: 'Inter, sans-serif', fontWeight: 'normal' } : {}),
     };
+
+    // An input is a live primitive: it auto-creates a backing variable and
+    // two-way binds its value to it, so the user can build a form without ever
+    // touching the right panel. Variables collect under a single `form` object
+    // (e.g. $form.field1), which actions then read as the request body.
+    if (type === 'input') {
+      const store = useFigmaStore.getState();
+      if (!store.globalStateVars.some(v => v.name === 'form')) {
+        store.addGlobalStateVar({ name: 'form', type: 'object', scope: 'global', defaultValue: '{}' });
+      }
+      const field = `field${countOfType + 1}`;
+      newLayer.inputType = 'text';
+      newLayer.fontSize = 14;
+      newLayer.fontFamily = 'Inter, sans-serif';
+      newLayer.placeholder = 'Enter text…';
+      newLayer.bindings = { value: `$form.${field}` };
+    }
 
     // Nest inside a frame if the new layer's center falls within one
     const cx = x + w / 2;
@@ -1545,7 +1657,7 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
     if (drag.mode === 'draw') {
       setDrawPreview(null);
       const typeMap: Partial<Record<ToolType, LayerType>> = {
-        frame: 'frame', rect: 'rect', ellipse: 'ellipse', line: 'line', text: 'text',
+        frame: 'frame', rect: 'rect', ellipse: 'ellipse', line: 'line', text: 'text', input: 'input',
       };
       const layerType = typeMap[drag.tool];
       if (!layerType) return;
@@ -1564,8 +1676,8 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
         return;
       }
 
-      const w = isClick ? (layerType === 'text' ? 200 : 100) : Math.max(4, rawW);
-      const h = isClick ? (layerType === 'text' ? 40 : 100) : Math.max(4, rawH);
+      const w = isClick ? (layerType === 'text' ? 200 : layerType === 'input' ? 240 : 100) : Math.max(4, rawW);
+      const h = isClick ? (layerType === 'text' ? 40 : layerType === 'input' ? 40 : 100) : Math.max(4, rawH);
       const x = isClick ? drag.startWX - w / 2 : Math.min(drag.startWX, drag.curWX);
       const y = isClick ? drag.startWY - h / 2 : Math.min(drag.startWY, drag.curWY);
       commitNewLayer(layerType, x, y, w, h);
@@ -1612,6 +1724,56 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
 
   const vp = viewport;
   const flatAll = React.useMemo(() => flattenWorldSpace(currentLayers), [currentLayers]);
+
+  // Screen options (top-level frames) for the click-action "then go to" picker.
+  // Route logic mirrors figmaPageToScreenSchemas so navigation targets match.
+  const screenOptions: ScreenOption[] = React.useMemo(() => {
+    const frames = currentLayers.filter(l => l.type === 'frame' || l.type === 'component' || l.type === 'section');
+    return frames.map((f, i) => ({
+      name: f.name,
+      route: i === 0 ? '/' : `/${f.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}`,
+    }));
+  }, [currentLayers]);
+
+  // DB table names for the "Repeat with data" picker.
+  const dbTables = useFigmaStore(s => s.database?.tables ?? []);
+  const tableNames = React.useMemo(() => dbTables.map(t => t.name), [dbTables]);
+
+  // Bind a container to a table (live list) or clear it. The table's rows load
+  // into $<table> on screen mount; the frame repeats per row as `item`.
+  const onSetDataSource = useCallback((layerId: string, table: string | null) => {
+    if (!table) updateLayer(layerId, { dataSource: undefined, repeatFor: undefined });
+    else updateLayer(layerId, { dataSource: { table }, repeatFor: { items: `$${table}`, as: 'item' } });
+  }, [updateLayer]);
+
+  // Wire a layer's onClick to a real action flow (sign up / log in / sign out,
+  // optionally navigating on success). Canvas-native — no right panel.
+  const onSetClickAction = useCallback((layerId: string, kind: ClickActionKind, navigateTo?: string) => {
+    const store = useFigmaStore.getState();
+    const layer = flattenWorldSpace(store.layers[store.activePageId] ?? []).find(l => l.id === layerId);
+    const existingId = layer?.layerEvents?.onClick?.[0];
+
+    if (kind === 'none') {
+      store.setLayerEvent(layerId, 'onClick', []);
+      if (existingId) store.deleteActionFlow(existingId);
+      return;
+    }
+
+    const now = Date.now();
+    const steps = [
+      { id: `step-${now}-0`, type: kind },
+      ...(navigateTo ? [{ id: `step-${now}-1`, type: 'navigate' as const, navigateTo }] : []),
+    ];
+
+    if (existingId && store.actionFlows.some(f => f.id === existingId)) {
+      store.updateActionFlow(existingId, { steps });
+    } else {
+      store.addActionFlow({ name: `${layer?.name ?? 'Layer'} onClick`, steps });
+      const newId = useFigmaStore.getState().actionFlows.at(-1)?.id;
+      if (newId) store.setLayerEvent(layerId, 'onClick', [newId]);
+    }
+  }, []);
+
   // Selection overlay needs world-space x/y so handles appear at the correct screen position
   const selectedLayersWorld = React.useMemo(() =>
     selection.map(id => {
@@ -1719,6 +1881,35 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
           </>
         )}
 
+        {/* Canvas-native data affordances: binding badges + input config chip */}
+        <CanvasBindingOverlay
+          layersWorld={flatAll}
+          selection={selection}
+          viewport={vp}
+          designMode={editorMode === 'design'}
+          screens={screenOptions}
+          actionFlows={actionFlows}
+          tables={tableNames}
+          onSetDataSource={onSetDataSource}
+          onSetClickAction={onSetClickAction}
+          onEditText={(layerId) => { setSelection([layerId]); setTextEditId(layerId); }}
+          onBindText={(layerId, anchor) => setBindPicker({ layerId, mode: 'prop', prop: 'text', current: flatAll.find(l => l.id === layerId)?.bindings?.text, anchor })}
+          onSetInputType={(layerId, type, placeholder) => {
+            const layer = flatAll.find(l => l.id === layerId);
+            const patch: Partial<FigmaLayer> = { inputType: type, placeholder };
+            // Give the auto-created variable a meaningful name once the type is
+            // known (e.g. an email field → $form.email), but only while it's
+            // still the default $form.fieldN — never clobber a user's rename.
+            const cur = layer?.bindings?.value;
+            const canonical: Partial<Record<string, string>> = { email: 'email', password: 'password' };
+            if (cur && /^\$form\.field\d+$/.test(cur) && canonical[type]) {
+              patch.bindings = { ...(layer?.bindings ?? {}), value: `$form.${canonical[type]}` };
+            }
+            updateLayer(layerId, patch);
+          }}
+          onBindValue={(layerId, anchor) => setBindPicker({ layerId, mode: 'prop', prop: 'value', current: flatAll.find(l => l.id === layerId)?.bindings?.value, anchor })}
+        />
+
         {/* Rubber band */}
         {rubberBand && rubberBand.w > 2 && rubberBand.h > 2 && (
           <div style={{
@@ -1756,10 +1947,12 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
 
         {/* Text edit overlay */}
         {textEditId && (() => {
-          const layer = currentLayers.find(l => l.id === textEditId);
+          // Use the flattened world-space entry so nested text layers (inside a
+          // frame) are found and positioned correctly — currentLayers is top-level only.
+          const layer = flatAll.find(l => l.id === textEditId);
           if (!layer) return null;
-          const sx = layer.x * vp.zoom + vp.x;
-          const sy = layer.y * vp.zoom + vp.y;
+          const sx = layer.wx * vp.zoom + vp.x;
+          const sy = layer.wy * vp.zoom + vp.y;
           const sw = layer.width * vp.zoom;
           const sh = layer.height * vp.zoom;
           const fillColor = layer.fills.find(f => f.visible !== false)?.color ?? '#000000';
@@ -1788,17 +1981,59 @@ export default function Canvas({ remoteCursors = [], emitCursor }: CanvasProps) 
               }}
               onKeyDown={e => {
                 e.stopPropagation();
-                if (e.key === 'Escape') setTextEditId(null);
+                if (e.key === 'Escape') { setTextEditId(null); return; }
+                if (e.key === '@') {
+                  // Open the data-token picker instead of typing a literal '@'.
+                  e.preventDefault();
+                  openingTokenRef.current = true; // guard onBlur synchronously
+                  const el = e.currentTarget as HTMLDivElement;
+                  tokenOffsetRef.current = caretCharOffset(el);
+                  const sel = window.getSelection();
+                  let rect = sel && sel.rangeCount ? sel.getRangeAt(0).getBoundingClientRect() : el.getBoundingClientRect();
+                  if (!rect || (rect.left === 0 && rect.top === 0)) rect = el.getBoundingClientRect();
+                  setBindPicker({ layerId: textEditId, mode: 'token', anchor: rect });
+                }
               }}
               onInput={e => {
                 const text = (e.currentTarget as HTMLDivElement).innerText;
                 updateLayer(textEditId, { text });
               }}
-              onBlur={() => setTextEditId(null)}
+              onBlur={e => {
+                // Keep editing if focus left only because the token picker opened.
+                if (openingTokenRef.current || bindPickerRef.current?.mode === 'token') return;
+                const text = (e.currentTarget as HTMLDivElement).innerText;
+                const expr = compileTextTemplate(text);
+                const store = useFigmaStore.getState();
+                if (expr) store.setBinding(textEditId, 'text', expr);
+                else store.removeBinding(textEditId, 'text');
+                setTextEditId(null);
+              }}
               onMouseDown={e => e.stopPropagation()}
             />
           );
         })()}
+
+        {/* Data-binding picker (token insert or prop bind) — canvas-anchored */}
+        {bindPicker && (
+          <BindingPicker
+            anchorRect={bindPicker.anchor}
+            currentValue={bindPicker.current}
+            layerId={bindPicker.layerId}
+            onSelect={expr => {
+              if (bindPicker.mode === 'token') {
+                insertToken(expr);
+              } else if (bindPicker.prop) {
+                useFigmaStore.getState().setBinding(bindPicker.layerId, bindPicker.prop, expr);
+                setBindPicker(null);
+              }
+            }}
+            onClose={() => {
+              const wasToken = bindPicker.mode === 'token';
+              setBindPicker(null);
+              if (wasToken) requestAnimationFrame(() => { textEditRef.current?.focus(); openingTokenRef.current = false; });
+            }}
+          />
+        )}
 
         {/* Pen preview overlay */}
         {activeTool === 'pen' && (penPoints.length > 0 || penPreview) && (() => {
